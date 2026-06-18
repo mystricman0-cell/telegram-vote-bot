@@ -3,64 +3,122 @@
 Full-featured Telegram Giveaway & Voting Bot with DRS Branding.
 **Fair · Fast · Automated**
 
-## ✨ Full Features
+## ✨ Complete Features
 
-### When Bot is Added to Channel
-- Bot automatically registers the channel
-- Sends welcome message to the person who added it with channel name
+### 📩 Bot Added to Channel
+- Bot auto-registers channel when made admin
+- Sends welcome DM to person who added it with channel name
+- Shows /start, /createpost instructions
 
-### Giveaway Creation (Full Step-by-Step Flow)
+### 🎰 Giveaway Creation (Step-by-Step)
 1. **Enter Title** — or /skip for default
-2. **Select Target Channel** — shows registered channels or manual entry
+2. **Select Target Channel** — registered channels or manual entry
 3. **Ending Mode** — Automatic (with timer) or Manual
 4. **End Date & Time** — DD-MM-YYYY HH:MM format (IST)
 5. **Paid Votes** — Enable or Disable
 6. **Currency** — INR (UPI/QR), Telegram Stars, or Both
-7. **Upload QR Code** — Photo of UPI QR
-8. **Set Vote Rate** — How many votes per 1 INR / 1 Star
+7. **Upload QR Code** — Photo of UPI QR (INR mode)
+8. **Set Vote Rate** — Votes per 1 INR / 1 Star
 
-### Channel Participant Posts
+### 📢 Channel Participant Posts
 - Each participant gets their own post in the channel
 - Post shows: Name, User-ID, Username
-- **Vote (n) button** on the post — live vote count updates
+- **📦 Vote (n)** button with live vote count update
 
-### Voting Rules
-- Only channel members can vote
-- Cannot vote for yourself
-- Channel leave = vote automatically removed
-- Vote deduction alert sent to participant
-- Channel announcement on voter leave
+### 📲 Bot Commands (Visible in "/" menu)
+| Command | Description |
+|---------|-------------|
+| /start | Start Creating professional giveaways |
+| /membership | Get access to Premium Features |
+| /support | Bot support |
+| /createpost | Create post with buttons |
 
-### Management Panel
-- Leaderboard
-- Stop/Start Paid Votes
-- Stop/Open Participation
-- End Giveaway (posts final results to channel)
-- Clear Channel Posts
-
-### Payment — INR/UPI
-- Creator uploads QR code during setup
-- User scans QR → pays → sends screenshot
-- Admin reviews → approves with vote count → votes added
-
-### Payment — Telegram Stars
-- Native Stars invoice via Telegram
-- Auto-approved on payment
-
-### Admin Commands (Main Admin Only)
+### ✅ Vote Success Popup
+When someone votes, channel shows popup alert:
 ```
-/broadcast <message>   — Send to all registered channels
-/allchannels           — List all registered channels
-/allgiveaways          — All giveaways overview
-/adminhelp             — Admin help
+☑️ VOTE ADDED SUCCESSFULLY
+
+▶ VOTE FROM : [voter name]
+▶ NEW COUNT : [n]
+▶ VOTED FOR : [participant name]
+▶ BOT : @Drsvotebot
 ```
 
-## Setup
+### ⚠️ Self-Vote Denied
+```
+⚠️ OPERATION DENIED
+
+YOU CANNOT VOTE FOR YOURSELF!
+```
+
+### ♻️ Channel Leave → Auto-Resync
+When voter leaves channel, channel message shows:
+```
+♻️ Auto-Resync: Vote Removed
+
+👤 User: [name] left the channel.
+🏅 Participant: [name]
+🗳 Updated Votes: [n]
+```
+
+Participant also gets DM: "⚠️ Vote Deduction Alert! New Count: n"
+
+### ⚙️ Management Panel
+- 🏆 Leaderboard
+- 🔴/🟢 Stop/Start Paid Votes
+- 🔴/🟢 Stop/Open Participation
+- 🏁 End Giveaway (posts final results to channel)
+- 🗑️ Clear Channel Posts
+
+### 💰 Payment — INR/UPI
+- Creator uploads QR during giveaway setup
+- User: "Pay via QR" → scans QR → pays → sends screenshot
+- Admin: Reviews screenshot → types vote count → approves
+
+### ⭐ Payment — Telegram Stars
+- Native Telegram Stars invoice
+- Auto-approved on payment, votes added instantly
+
+### 👑 VIP Membership
+- 50 Stars for 30 days
+- Unlimited giveaways, priority support
+
+---
+
+## 👑 Admin Commands (Main Admin Only)
+
+### 📢 Broadcast
+```
+/broadcast <message>    — Silent broadcast to all channels
+/loud <message>         — LOUD broadcast (with sound) to all channels
+```
+
+### 📩 Direct Send
+```
+/send <chatId> <message>       — Send to specific chat
+/sendloud <chatId> <message>   — LOUD send to specific chat
+```
+
+### 📌 Pin
+```
+/pin <chatId> <message>    — Send & pin message in channel
+```
+
+### 📊 Info
+```
+/allchannels    — All registered channels list
+/allgiveaways   — All giveaways overview
+/adminhelp      — Admin help menu
+```
+
+---
+
+## 🚀 Setup
 
 ```bash
 git clone https://github.com/mystricman0-cell/telegram-vote-bot.git
 cd telegram-vote-bot
-npm install
+npm install node-telegram-bot-api
 ```
 
 ```.env
@@ -72,20 +130,11 @@ ADMIN_ID=your_telegram_user_id
 node vote-bot.mjs
 ```
 
-## How It Works
-
-1. Add bot to your channel as **Admin**
-2. Bot sends you a welcome message with the channel name
-3. Go to bot PM → New Giveaway → follow steps
-4. Share participation link — users join channel first, then participate
-5. Each participant gets their own vote post in channel
-6. Members vote using the button on channel posts
-7. If someone leaves, their vote is auto-removed + alert sent
-
-## Notes
-- Bot must be **channel admin** (can post messages)
-- For `chat_member` events (leave detection): bot needs **"Add New Admins"** permission
-- Currently uses **in-memory storage** — add DB for production
+## ⚠️ Important Notes
+- Bot must be **channel admin** (can post & delete messages)
+- For leave detection (chat_member events): bot needs **"Add New Admins"** permission in channel
+- Currently uses **in-memory storage** — restart = data reset (add DB for production)
+- Stars payments require bot to have @BotFather billing enabled
 
 ## License
 MIT — DRS Network
