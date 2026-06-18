@@ -31,9 +31,24 @@ const userState = new Map();
 // userId -> { vip, expiry }
 const vipUsers = new Map();
 
-// pending INR vote approvals: paymentId -> { userId, giveawayId, participantId, amount, screenshotFileId }
+// pending INR vote approvals: paymentId -> { userId, giveawayId, screenshotFileId }
 const pendingPayments = new Map();
 let paymentCounter = 1;
+
+// Pending membership payments: payId -> { userId, planKey, timestamp }
+const pendingMembershipPayments = new Map();
+let membershipPayCounter = 1;
+
+// Admin-managed image file IDs (set via /setwelcomeimage and /setmembershipqr)
+let welcomeImageFileId = null;
+let membershipQrFileId = null;
+
+// Membership plans (INR)
+const MEMBERSHIP_PLANS = {
+  "1d": { label: "1 Day", days: 1, price: 10 },
+  "7d": { label: "7 Days", days: 7, price: 50 },
+  "30d": { label: "30 Days", days: 30, price: 350 }
+};
 
 function genId(len = 8) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -61,11 +76,20 @@ function voteKey(uid, gid) { return `${uid}:${gid}`; }
 
 function isAdmin(uid) { return uid === MAIN_ADMIN_ID; }
 
-function isVip(uid) {
+function getMembership(uid) {
   const d = vipUsers.get(uid);
-  if (!d?.vip) return false;
-  if (d.expiry && new Date() > d.expiry) { d.vip = false; return false; }
-  return true;
+  if (!d?.vip) return null;
+  if (d.expiry && new Date() > d.expiry) { d.vip = false; return null; }
+  return d;
+}
+
+function isVip(uid) { return getMembership(uid) !== null; }
+
+function membershipBadge(uid) {
+  const m = getMembership(uid);
+  if (!m) return "❌ Inactive";
+  const expStr = m.expiry ? m.expiry.toLocaleDateString("en-IN") : "∞";
+  return `✅ Active (${m.plan || "VIP"} — expires ${expStr})`;
 }
 
 async function isMember(chatId, userId) {
@@ -164,10 +188,12 @@ async function sendWelcome(chatId, firstName) {
     `⚡ POWERED BY: <b>DRS NETWORK</b>\n` +
     `💬 SUPPORT: @DRS_Support`;
 
-  await bot.sendMessage(chatId, text, {
-    parse_mode: "HTML",
-    reply_markup: mainMenuKeyboard()
-  });
+  const opts = { parse_mode: "HTML", reply_markup: mainMenuKeyboard() };
+  if (welcomeImageFileId) {
+    await bot.sendPhoto(chatId, welcomeImageFileId, { caption: text, ...opts });
+  } else {
+    await bot.sendMessage(chatId, text, opts);
+  }
 }
 
 // ============================================================
@@ -352,20 +378,56 @@ bot.on("callback_query", async (query) => {
 
   // ─── My Giveaways ───
   if (data === "my_giveaways") {
-    const mine = [...giveaways.values()].filter(g => g.creatorId === userId || isAdmin(userId));
-    if (!mine.length) {
-      await bot.editMessageText(
-        `<b>👀 My Giveaways</b>\n\n<i>Koi giveaway nahi. "New Giveaway" se banao!</i>`,
-        { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: backKeyboard() }
-      ).catch(() => {});
+    const kb = {
+      inline_keyboard: [
+        [
+          { text: "✍️ Created (Active)", callback_data: "mglist:created_active" },
+          { text: "📋 Created (Past)", callback_data: "mglist:created_past" }
+        ],
+        [
+          { text: "🤝 Joined (Active)", callback_data: "mglist:joined_active" },
+          { text: "📂 Joined (Past)", callback_data: "mglist:joined_past" }
+        ],
+        [{ text: "◀️ Back", callback_data: "main_menu" }]
+      ]
+    };
+    const caption = `<b>🎁 My Giveaways</b>\n\nSelect a category:`;
+    if (welcomeImageFileId) {
+      try { await bot.deleteMessage(chatId, msgId); } catch {}
+      await bot.sendPhoto(chatId, welcomeImageFileId, { caption, parse_mode: "HTML", reply_markup: kb });
+    } else {
+      await bot.editMessageText(caption, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: kb }).catch(() => {});
+    }
+    return;
+  }
+
+  // ─── My Giveaways sub-lists ───
+  if (data.startsWith("mglist:")) {
+    const cat = data.split(":")[1];
+    let list = [];
+    if (cat === "created_active")
+      list = [...giveaways.values()].filter(g => g.creatorId === userId && g.active);
+    else if (cat === "created_past")
+      list = [...giveaways.values()].filter(g => g.creatorId === userId && !g.active);
+    else if (cat === "joined_active")
+      list = [...giveaways.values()].filter(g => g.participants.has(userId) && g.active);
+    else if (cat === "joined_past")
+      list = [...giveaways.values()].filter(g => g.participants.has(userId) && !g.active);
+
+    const label = { created_active: "✍️ Created (Active)", created_past: "📋 Created (Past)", joined_active: "🤝 Joined (Active)", joined_past: "📂 Joined (Past)" }[cat];
+    if (!list.length) {
+      await bot.sendMessage(chatId,
+        `<b>${label}</b>\n\n<i>Abhi koi giveaway nahi is category mein.</i>`,
+        { parse_mode: "HTML", reply_markup: backKeyboard("my_giveaways") }
+      );
       return;
     }
-    const btns = mine.map(g => ([{ text: `${g.active ? "🟢" : "🔴"} ${g.title} (${g.participants.size})`, callback_data: `mgmt:${g.id}` }]));
-    btns.push([{ text: "◀️ Back", callback_data: "main_menu" }]);
-    await bot.editMessageText(
-      `<b>👀 My Giveaways</b>\n\n🟢 Active  🔴 Ended\nSelect karo:`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: { inline_keyboard: btns } }
-    ).catch(() => {});
+    const btns = list.map(g => ([{ text: `${g.active ? "🟢" : "🔴"} ${g.title} (${g.participants.size} joined)`, callback_data: `mgmt:${g.id}` }]));
+    btns.push([{ text: "◀️ Back", callback_data: "my_giveaways" }]);
+    await bot.sendMessage(chatId,
+      `<b>${label}</b>\n\n${list.length} giveaway${list.length !== 1 ? "s" : ""}:`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: btns } }
+    );
     return;
   }
 
@@ -791,30 +853,166 @@ bot.on("callback_query", async (query) => {
 
   // ─── VIP Membership ───
   if (data === "vip_membership") {
-    const vip = isVip(userId);
-    await bot.editMessageText(
-      vip
-        ? `<b>👑 VIP Membership</b>\n\n✅ Aap <b>VIP Member</b> hain!\n\nBenefits:\n• Unlimited giveaways\n• Priority support\n• Advanced features`
-        : `<b>👑 VIP Membership</b>\n\nBenefits:\n• ♾️ Unlimited giveaways\n• ⚡ Priority support\n• 🎨 Advanced features\n\n💰 Price: <b>50 ⭐ Stars / 30 days</b>`,
-      {
-        chat_id: chatId, message_id: msgId, parse_mode: "HTML",
-        reply_markup: vip ? backKeyboard() : {
+    const badge = membershipBadge(userId);
+    const m = getMembership(userId);
+    const featuresText =
+      `⭐ <b>MEMBERSHIP- ${badge}</b>\n\n` +
+      `🐉 <u>PREMIUM FEATURES</u> 🌀\n` +
+      `──────────◈◈◈──────────\n\n` +
+      `<blockquote>🐉 Add your own custom thumbnail / vote post image</blockquote>\n\n` +
+      `<blockquote>🐉 Auto vote deduction if a user leaves after voting during giveaways 🧿(Free for Sometime)</blockquote>\n\n` +
+      `<blockquote>🐉 Add 1 extra Force-Join channel/group before voting 🌀</blockquote>\n\n` +
+      `<blockquote>🐉 Set 1 main Force-Join for all bot users\n✅ (Available only with minimum 1-week membership 🥹)</blockquote>\n\n` +
+      `──────────◈◈◈──────────\n` +
+      `Upgrade to unlock 🤌 <b>full control &amp; maximum reach</b> 👁️`;
+
+    const kb = m
+      ? { inline_keyboard: [[{ text: "◀️ Back", callback_data: "main_menu" }]] }
+      : {
           inline_keyboard: [
-            [{ text: "💳 Buy VIP — 50 ⭐ Stars", callback_data: "buy_vip" }],
+            [{ text: "1D - ₹10", callback_data: "buy_mem:1d" }, { text: "7D - ₹50", callback_data: "buy_mem:7d" }],
+            [{ text: "30D - ₹350", callback_data: "buy_mem:30d" }],
             [{ text: "◀️ Back", callback_data: "main_menu" }]
           ]
-        }
-      }
-    ).catch(() => {});
+        };
+
+    await bot.editMessageText(featuresText, {
+      chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: kb
+    }).catch(() => {});
     return;
   }
 
-  // ─── Buy VIP ───
-  if (data === "buy_vip") {
+  // ─── Buy Membership (INR plan) ───
+  if (data.startsWith("buy_mem:")) {
+    const planKey = data.split(":")[1];
+    const plan = MEMBERSHIP_PLANS[planKey];
+    if (!plan) return;
+
+    if (!membershipQrFileId) {
+      await bot.answerCallbackQuery(query.id, {
+        text: "❌ Payment QR abhi set nahi hai. Admin se contact karo.",
+        show_alert: true
+      });
+      return;
+    }
+
+    const payId = String(membershipPayCounter++);
+    pendingMembershipPayments.set(payId, { userId, planKey, timestamp: new Date() });
+
     try {
-      await bot.sendInvoice(chatId, "VIP Membership", "30 din VIP — unlimited giveaways",
-        `vip_${userId}`, "", "XTR", [{ label: "VIP 30 Days", amount: 50 }]);
-    } catch (e) { console.error("VIP invoice:", e.message); }
+      await bot.sendPhoto(chatId, membershipQrFileId, {
+        caption:
+          `💳 <b>Purchase ${plan.label} Membership</b>\n\n` +
+          `🧾 <b>Amount: ₹${plan.price}</b>\n\n` +
+          `Scan and pay exactly this amount.\n\n` +
+          `Payment ID: <code>${payId}</code>`,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: "✅ I've Paid", callback_data: `mem_paid:${payId}` },
+              { text: "Cancel", callback_data: "vip_membership" }
+            ]
+          ]
+        }
+      });
+    } catch (e) {
+      console.error("Membership QR send error:", e.message);
+      await bot.sendMessage(chatId, "❌ QR bhejne mein error. Admin se contact karo.", { parse_mode: "HTML" });
+    }
+    return;
+  }
+
+  // ─── I've Paid (Membership) ───
+  if (data.startsWith("mem_paid:")) {
+    const payId = data.split(":")[1];
+    const pending = pendingMembershipPayments.get(payId);
+    if (!pending) {
+      await bot.answerCallbackQuery(query.id, { text: "Payment already processed ya expired.", show_alert: true });
+      return;
+    }
+    const plan = MEMBERSHIP_PLANS[pending.planKey];
+    await bot.answerCallbackQuery(query.id, { text: "✅ Request bhej di! Admin verify karega.", show_alert: true });
+    await bot.editMessageCaption(
+      `💳 <b>Purchase ${plan?.label} Membership</b>\n\n🧾 <b>Amount: ₹${plan?.price}</b>\n\n⏳ <i>Admin verification pending...</i>\nPayment ID: <code>${payId}</code>`,
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+    ).catch(() => {});
+
+    // Notify admin
+    try {
+      await bot.sendMessage(MAIN_ADMIN_ID,
+        `<b>💳 New Membership Payment Claim</b>\n\n` +
+        `Payment ID: <code>${payId}</code>\n` +
+        `User ID: <code>${userId}</code>\n` +
+        `Plan: <b>${plan?.label} — ₹${plan?.price}</b>\n\n` +
+        `User ne payment claim ki hai. Approve karein?`,
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "✅ Approve", callback_data: `approve_mem:${payId}` },
+                { text: "❌ Reject", callback_data: `reject_mem:${payId}` }
+              ]
+            ]
+          }
+        }
+      );
+    } catch (e) { console.error("Admin mem notify:", e.message); }
+    return;
+  }
+
+  // ─── Admin: Approve Membership ───
+  if (data.startsWith("approve_mem:")) {
+    if (!isAdmin(userId)) return;
+    const payId = data.split(":")[1];
+    const pending = pendingMembershipPayments.get(payId);
+    if (!pending) {
+      await bot.answerCallbackQuery(query.id, { text: "Payment nahi mila ya already processed.", show_alert: true });
+      return;
+    }
+    const plan = MEMBERSHIP_PLANS[pending.planKey];
+    pendingMembershipPayments.delete(payId);
+
+    const expiry = new Date();
+    expiry.setDate(expiry.getDate() + plan.days);
+    vipUsers.set(pending.userId, { vip: true, plan: plan.label, expiry, days: plan.days });
+
+    await bot.answerCallbackQuery(query.id, { text: `✅ Membership approved — ${plan.label}!` });
+    await bot.editMessageText(
+      `✅ <b>Membership Approved!</b>\nPayment ID: <code>${payId}</code> | Plan: ${plan.label} | User: <code>${pending.userId}</code>`,
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+    ).catch(() => {});
+    try {
+      await bot.sendMessage(pending.userId,
+        `<b>🎊 Membership Activated!</b>\n\n` +
+        `⭐ Plan: <b>${plan.label}</b>\n` +
+        `📅 Expires: <b>${expiry.toLocaleDateString("en-IN")}</b>\n\n` +
+        `Premium features ab available hain!`,
+        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 My Membership", callback_data: "vip_membership" }]] } }
+      );
+    } catch {}
+    return;
+  }
+
+  // ─── Admin: Reject Membership ───
+  if (data.startsWith("reject_mem:")) {
+    if (!isAdmin(userId)) return;
+    const payId = data.split(":")[1];
+    const pending = pendingMembershipPayments.get(payId);
+    if (!pending) return;
+    pendingMembershipPayments.delete(payId);
+    await bot.answerCallbackQuery(query.id, { text: "Payment rejected." });
+    await bot.editMessageText(
+      `❌ <b>Membership Rejected</b>\nPayment ID: <code>${payId}</code>`,
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+    ).catch(() => {});
+    try {
+      await bot.sendMessage(pending.userId,
+        `<b>❌ Membership Payment Rejected</b>\n\nPayment ID: <code>${payId}</code>\n\nPayment verify nahi ho saka. Dobara try karo ya @DRS_Support se contact karo.`,
+        { parse_mode: "HTML" }
+      );
+    } catch {}
     return;
   }
 
@@ -1118,10 +1316,27 @@ bot.on("message", async (msg) => {
   const text = msg.text?.trim() || "";
   const state = userState.get(userId);
 
-  // ─── Photo handler for QR code / INR screenshot ───
+  // ─── Photo handler for QR code / INR screenshot / admin images ───
   if (msg.photo) {
-    if (!state) return;
     const fileId = msg.photo[msg.photo.length - 1].file_id;
+
+    // Admin setting welcome image
+    if (state?.step === "set_welcome_image" && isAdmin(userId)) {
+      welcomeImageFileId = fileId;
+      userState.delete(userId);
+      await bot.sendMessage(chatId, "✅ <b>Welcome banner image set ho gaya!</b>\nAb /start karne par yeh image dikhegi.", { parse_mode: "HTML" });
+      return;
+    }
+
+    // Admin setting membership QR
+    if (state?.step === "set_membership_qr" && isAdmin(userId)) {
+      membershipQrFileId = fileId;
+      userState.delete(userId);
+      await bot.sendMessage(chatId, "✅ <b>Membership QR code set ho gaya!</b>\nAb users membership purchase kar sakte hain.", { parse_mode: "HTML" });
+      return;
+    }
+
+    if (!state) return;
 
     if (state.step === "qr_upload") {
       state.qrFileId = fileId;
@@ -1547,18 +1762,28 @@ bot.onText(/\/membership/, async (msg) => {
   if (msg.chat.type !== "private") return;
   const userId = msg.from.id;
   const chatId = msg.chat.id;
-  const vip = isVip(userId);
-  await bot.sendMessage(chatId,
-    vip
-      ? `<b>👑 VIP Membership</b>\n\n✅ Aap <b>VIP Member</b> hain!\n\nBenefits:\n• Unlimited giveaways\n• Priority support\n• Advanced features`
-      : `<b>👑 VIP Membership</b>\n\nBenefits:\n• ♾️ Unlimited giveaways\n• ⚡ Priority support\n• 🎨 Advanced features\n\n💰 Price: <b>50 ⭐ Stars / 30 days</b>`,
-    {
-      parse_mode: "HTML",
-      reply_markup: vip ? undefined : {
-        inline_keyboard: [[{ text: "💳 Buy VIP — 50 ⭐ Stars", callback_data: "buy_vip" }]]
-      }
-    }
-  );
+  const badge = membershipBadge(userId);
+  const m = getMembership(userId);
+  const text =
+    `⭐ <b>MEMBERSHIP- ${badge}</b>\n\n` +
+    `🐉 <u>PREMIUM FEATURES</u> 🌀\n` +
+    `──────────◈◈◈──────────\n\n` +
+    `<blockquote>🐉 Add your own custom thumbnail / vote post image</blockquote>\n\n` +
+    `<blockquote>🐉 Auto vote deduction if a user leaves after voting during giveaways 🧿(Free for Sometime)</blockquote>\n\n` +
+    `<blockquote>🐉 Add 1 extra Force-Join channel/group before voting 🌀</blockquote>\n\n` +
+    `<blockquote>🐉 Set 1 main Force-Join for all bot users\n✅ (Available only with minimum 1-week membership 🥹)</blockquote>\n\n` +
+    `──────────◈◈◈──────────\n` +
+    `Upgrade to unlock 🤌 <b>full control &amp; maximum reach</b> 👁️`;
+  const kb = m
+    ? { inline_keyboard: [[{ text: "◀️ Back", callback_data: "main_menu" }]] }
+    : {
+        inline_keyboard: [
+          [{ text: "1D - ₹10", callback_data: "buy_mem:1d" }, { text: "7D - ₹50", callback_data: "buy_mem:7d" }],
+          [{ text: "30D - ₹350", callback_data: "buy_mem:30d" }],
+          [{ text: "◀️ Back", callback_data: "main_menu" }]
+        ]
+      };
+  await bot.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: kb });
 });
 
 bot.onText(/\/support/, async (msg) => {
@@ -1697,10 +1922,71 @@ bot.onText(/\/allgiveaways/, async (msg) => {
   await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
 });
 
+// /setwelcomeimage — Admin uploads welcome banner
+bot.onText(/\/setwelcomeimage/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  userState.set(msg.from.id, { step: "set_welcome_image" });
+  await bot.sendMessage(msg.chat.id,
+    `<b>🖼️ Set Welcome Banner Image</b>\n\nAbhi <b>photo bhejo</b> jo /start aur "My Giveaways" pe dikhegi.\n\n<i>Current: ${welcomeImageFileId ? "✅ Set" : "❌ Not set"}</i>`,
+    { parse_mode: "HTML", reply_markup: cancelKeyboard() }
+  );
+});
+
+// /setmembershipqr — Admin uploads membership payment QR
+bot.onText(/\/setmembershipqr/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  userState.set(msg.from.id, { step: "set_membership_qr" });
+  await bot.sendMessage(msg.chat.id,
+    `<b>📸 Set Membership Payment QR</b>\n\nAbhi <b>photo bhejo</b> jo membership purchase pe dikhega.\n\n<i>Current: ${membershipQrFileId ? "✅ Set" : "❌ Not set"}</i>`,
+    { parse_mode: "HTML", reply_markup: cancelKeyboard() }
+  );
+});
+
+// /clearwelcomeimage — Remove welcome banner
+bot.onText(/\/clearwelcomeimage/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  welcomeImageFileId = null;
+  await bot.sendMessage(msg.chat.id, "✅ Welcome banner image remove kar di.", { parse_mode: "HTML" });
+});
+
+// /imageinfo — Show current image status
+bot.onText(/\/imageinfo/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  await bot.sendMessage(msg.chat.id,
+    `<b>🖼️ Image Status</b>\n\n` +
+    `Welcome Banner: ${welcomeImageFileId ? "✅ Set" : "❌ Not set"}\n` +
+    `Membership QR: ${membershipQrFileId ? "✅ Set" : "❌ Not set"}`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// /givestars <userId> <plan> — Admin manually give membership
+bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const planKey = match[2];
+  const plan = MEMBERSHIP_PLANS[planKey];
+  const expiry = new Date();
+  expiry.setDate(expiry.getDate() + plan.days);
+  vipUsers.set(targetId, { vip: true, plan: plan.label, expiry, days: plan.days });
+  await bot.sendMessage(msg.chat.id, `✅ User <code>${targetId}</code> ko <b>${plan.label} Membership</b> diya!\nExpiry: ${expiry.toLocaleDateString("en-IN")}`, { parse_mode: "HTML" });
+  try {
+    await bot.sendMessage(targetId,
+      `<b>🎊 Membership Activated!</b>\n\n⭐ Plan: <b>${plan.label}</b>\n📅 Expires: <b>${expiry.toLocaleDateString("en-IN")}</b>\n\nPremium features ab available hain!`,
+      { parse_mode: "HTML" }
+    );
+  } catch {}
+});
+
 bot.onText(/\/adminhelp/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   await bot.sendMessage(msg.chat.id,
     `<b>👑 DRS Bot — Admin Commands</b>\n\n` +
+    `<b>🖼️ Images:</b>\n` +
+    `/setwelcomeimage — Upload welcome banner photo\n` +
+    `/setmembershipqr — Upload membership payment QR photo\n` +
+    `/clearwelcomeimage — Remove welcome banner\n` +
+    `/imageinfo — Check current image status\n\n` +
     `<b>📢 Broadcast:</b>\n` +
     `/broadcast &lt;msg&gt; — Silent broadcast all channels\n` +
     `/loud &lt;msg&gt; — LOUD broadcast (with sound) all channels\n\n` +
@@ -1709,6 +1995,8 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/sendloud &lt;chatId&gt; &lt;msg&gt; — LOUD send to specific chat\n\n` +
     `<b>📌 Pin:</b>\n` +
     `/pin &lt;chatId&gt; &lt;msg&gt; — Send &amp; pin message in channel\n\n` +
+    `<b>💳 Membership:</b>\n` +
+    `/givemem &lt;userId&gt; &lt;1d|7d|30d&gt; — Manually give membership\n\n` +
     `<b>📊 Info:</b>\n` +
     `/allchannels — All registered channels\n` +
     `/allgiveaways — All giveaways overview\n` +
