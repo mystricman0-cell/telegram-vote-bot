@@ -49,44 +49,40 @@ const userLastWelcomeMsg = new Map(); // userId -> { chatId, msgId }
 // Sleep helper for animations
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// ── showLoading: animates an existing message before replacing with real content ──
+// ── showLoading: premium 4-frame transition animation ──
 async function showLoading(chatId, msgId) {
-  const frames = ["⚡", "◆ ─── <b>DRS</b> ─── ◆", "✨ <i>Loading...</i>"];
+  const frames = ["●", "● ─── ●", "✦ ─── <b>DRS</b> ─── ✦", "⚡ <i>Opening...</i>"];
   for (let i = 0; i < frames.length; i++) {
-    try {
-      await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msgId, parse_mode: "HTML" });
-    } catch {}
-    if (i < frames.length - 1) await sleep(160);
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }); } catch {}
+    if (i < frames.length - 1) await sleep(145);
   }
-  await sleep(180);
+  await sleep(160);
 }
 
-// ── animateSend: sends a new message with loading frames before final content ──
+// ── animateSend: sends new message with premium build-up animation ──
 async function animateSend(chatId, finalText, opts = {}) {
   try { await bot.sendChatAction(chatId, "typing"); } catch {}
   let msg;
-  try { msg = await bot.sendMessage(chatId, "▌", { parse_mode: "HTML" }); } catch { return null; }
-  const frames = ["◆", "◆ ─── <b>DRS</b> ─── ◆", "✨ <i>Almost ready...</i>"];
-  const delays = [120, 150, 200];
+  try { msg = await bot.sendMessage(chatId, "●", { parse_mode: "HTML" }); } catch { return null; }
+  const frames = ["● ─── ●", "✦ ─── <b>DRS</b> ─── ✦", "✦ <i>Building response...</i>"];
+  const delays = [130, 150, 180];
   for (let i = 0; i < frames.length; i++) {
     await sleep(delays[i]);
     try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
   }
-  await sleep(260);
-  try {
-    await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts });
-  } catch {}
+  await sleep(240);
+  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts }); } catch {}
   return msg;
 }
 
-// ── animateSuccess: celebratory flash before showing success content ──
+// ── animateSuccess: celebratory premium flash before confirmation screen ──
 async function animateSuccess(chatId, msgId, finalText, opts = {}) {
-  const frames = ["✅", "🎉 <b>Success!</b>", "✨ <i>Finalizing...</i>"];
+  const frames = ["✦", "✦ ── ✅ ── ✦", "🎊 <b>Confirmed!</b>", "✨ <i>Loading your card...</i>"];
   for (let i = 0; i < frames.length; i++) {
     try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }); } catch {}
-    if (i < frames.length - 1) await sleep(170);
+    if (i < frames.length - 1) await sleep(155);
   }
-  await sleep(200);
+  await sleep(190);
   try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts }); } catch {}
 }
 
@@ -155,10 +151,13 @@ async function isChannelAdmin(chatId, userId) {
 
 function formatLeaderboard(g, max = 15) {
   const parts = [...g.participants.values()].sort((a, b) => b.votes - a.votes).slice(0, max);
-  if (!parts.length) return "<i>Abhi koi votes nahi.</i>";
+  if (!parts.length) return `<i>▸ No votes yet — be the first! 🗳️</i>`;
+  const medals = ["🥇", "🥈", "🥉"];
   return parts.map((p, i) => {
-    const m = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`;
-    return `${m} <b>${h(p.name)}</b> — <b>${p.votes}</b> votes`;
+    const rank = medals[i] ?? `  <b>${i + 1}.</b>`;
+    const name = h(p.name).slice(0, 18);
+    const pad = "·".repeat(Math.max(2, 20 - name.length));
+    return `${rank} ${name} ${pad} <code>${p.votes}</code> 🗳️`;
   }).join("\n");
 }
 
@@ -187,15 +186,17 @@ function mainMenuKeyboard() {
     inline_keyboard: [
       [
         { text: "🎰 New Giveaway", callback_data: "new_giveaway" },
-        { text: "👀 My Giveaways", callback_data: "my_giveaways" }
+        { text: "📂 My Giveaways", callback_data: "my_giveaways" }
       ],
-      [{ text: "❓ How to Use", callback_data: "how_to_use" }],
       [
         { text: "➕ Add Channel", callback_data: "add_channel" },
         { text: "➕ Add Group", callback_data: "add_group" }
       ],
-      [{ text: "👑 VIP Membership", callback_data: "vip_membership" }],
-      [{ text: "📢 Create Post", callback_data: "create_post" }]
+      [
+        { text: "👑 VIP Membership", callback_data: "vip_membership" },
+        { text: "📢 Create Post", callback_data: "create_post" }
+      ],
+      [{ text: "❓ Guide & Help", callback_data: "how_to_use" }]
     ]
   };
 }
@@ -238,14 +239,14 @@ async function sendWelcome(chatId, userId) {
 
   // ── Animation frames ──
   const frames = [
-    `▌`,
-    `◆`,
-    `◆ ─────────── ◆`,
-    `◆ ───── <b>DRS</b> ───── ◆`,
-    `◆ ─────────────── ◆\n\n🎰 <b>DRS GIVEAWAY BOT</b>`,
-    `◆ ─────────────── ◆\n\n🎰 <b>DRS GIVEAWAY BOT</b> 💎\n⚡ <i>Loading your panel...</i>`,
+    `●`,
+    `● ─── ●`,
+    `✦ ───── ✦`,
+    `✦ ─── <b>DRS</b> ─── ✦`,
+    `✦ ─ <b>DRS GIVEAWAY BOT</b> ─ ✦`,
+    `✦ ─ <b>DRS GIVEAWAY BOT</b> ─ ✦\n⚡ <i>Loading your panel...</i>`,
   ];
-  const delays = [110, 130, 150, 200, 280];
+  const delays = [100, 120, 140, 190, 270];
 
   let animMsg;
   try {
@@ -265,17 +266,20 @@ async function sendWelcome(chatId, userId) {
 
   // ── Final welcome text ──
   const text =
-    `👑 <b>DRS GIVEAWAY BOT</b> 💎\n` +
-    `<i>· Fair · Fast · Automated ·</i>\n\n` +
-    `◆ ─────────────────── ◆\n\n` +
-    `<blockquote>✦ Create powerful giveaways instantly\n` +
-    `✦ Real-time voting with live updates\n` +
-    `✦ Auto vote-deduction on channel leave\n` +
-    `✦ INR &amp; Telegram Stars payments</blockquote>\n\n` +
-    `◆ ─────────────────── ◆\n\n` +
-    `<b>🎰 New Giveaway</b>  —  Create a new event\n` +
-    `<b>👀 My Giveaways</b>  —  Manage your events\n` +
-    `<b>👑 Membership</b>    —  Unlock premium\n\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `   🎰  <b>DRS GIVEAWAY BOT</b>  🎰\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>` +
+    `▸ Create powerful giveaways instantly\n` +
+    `▸ Live voting with real-time leaderboard\n` +
+    `▸ Auto vote-removal on channel leave\n` +
+    `▸ INR 🇮🇳 &amp; Telegram ⭐ Stars payments` +
+    `</blockquote>\n\n` +
+    `━━━◈ <b>QUICK ACTIONS</b> ◈━━━\n\n` +
+    `🎰 <b>New Giveaway</b>  ·  Create a contest\n` +
+    `📂 <b>My Giveaways</b>  ·  Manage events\n` +
+    `👑 <b>VIP</b>           ·  Unlock premium\n` +
+    `➕ <b>Add Channel</b>   ·  Link your channel\n\n` +
     `✦ ─────── <b>DRS NETWORK</b> ─────── ✦\n` +
     `💬 Support: @DRS_Support_DRS`;
 
@@ -463,10 +467,11 @@ bot.on("callback_query", async (query) => {
     userState.delete(userId);
     await showLoading(chatId, msgId);
     await bot.editMessageText(
-      `◆ ─────────────────── ◆\n` +
-      `❌ <b>Action Cancelled</b>\n` +
-      `◆ ─────────────────── ◆\n\n` +
-      `Main menu par wapas jaane ke liye tap karo:`,
+      `✦━━━━━━━━━━━━━━━━━━━✦\n` +
+      `      ❌  <b>CANCELLED</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>Action cancel kar diya gaya.\nMain menu par wapas jaao aur dobara start karo.</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
     ).catch(() => {});
     return;
@@ -477,11 +482,19 @@ bot.on("callback_query", async (query) => {
     userState.set(userId, { step: "title", msgId });
     await showLoading(chatId, msgId);
     await bot.editMessageText(
-      `🎰 <b>CREATE NEW GIVEAWAY</b>\n` +
-      `<i>Step 1 of 5 — Giveaway Title</i>\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `<blockquote>📝 Enter a short, catchy title for your giveaway.\n\nExamples:\n◈ iPhone 16 Giveaway Contest\n◈ Best Creator Vote 2026\n◈ Monthly Star Award</blockquote>\n\n` +
-      `<i>💡 /skip to use default title</i>`,
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `   🎰  <b>CREATE GIVEAWAY</b>  🎰\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `━━━◈ <b>STEP 1 of 5</b> ◈━━━\n` +
+      `<i>Giveaway Title</i>\n\n` +
+      `<blockquote>` +
+      `📝 Apne giveaway ke liye ek catchy title likho.\n\n` +
+      `▸ iPhone 16 Giveaway Contest\n` +
+      `▸ Best Creator Vote 2026\n` +
+      `▸ Monthly Star Award\n` +
+      `▸ DRS Community Challenge` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: cancelKeyboard() }
     ).catch(() => {});
     return;
@@ -503,10 +516,15 @@ bot.on("callback_query", async (query) => {
       ]
     };
     const caption =
-      `💎 <b>MY GIVEAWAYS</b>\n` +
-      `<i>Your giveaway dashboard</i>\n\n` +
-      `◆ ─────────────────── ◆\n\n` +
-      `<blockquote>Select a category to view your giveaways.\nManage, share links, and track votes.</blockquote>`;
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `   📂  <b>MY GIVEAWAYS</b>  📂\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>` +
+      `▸ Select a category below\n` +
+      `▸ Manage, track &amp; share your events\n` +
+      `▸ View live vote counts &amp; leaderboard` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
     if (welcomeImageFileId) {
       await showLoading(chatId, msgId);
       try { await bot.deleteMessage(chatId, msgId); } catch {}
@@ -565,18 +583,20 @@ bot.on("callback_query", async (query) => {
     const totalVotes = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
     const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
     await bot.editMessageText(
-      `⚙️ <b>MANAGEMENT PANEL</b>\n` +
-      `<i>${h(g.title)}</i>\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `   ⚙️  <b>MANAGEMENT PANEL</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `📌 <b>${h(g.title)}</b>\n\n` +
       `<blockquote>` +
-      `◈ Status       :  ${g.active ? "🟢 ACTIVE" : "🔴 ENDED"}\n` +
-      `◈ Participants :  ${g.participants.size} 👥\n` +
-      `◈ Total Votes  :  ${totalVotes} 🗳️\n` +
-      `◈ Paid Votes   :  ${g.paidVotesActive ? "🟢 ON" : "🔴 OFF"}\n` +
-      `◈ Participation:  ${g.participationOpen ? "🟢 OPEN" : "🔴 CLOSED"}` +
-      `</blockquote>\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `🔗 <a href="${link}">Participation Link</a>  ·  <code>${gId}</code>`,
+      `◈ Status        ▸  ${g.active ? "🟢 ACTIVE" : "🔴 ENDED"}\n` +
+      `◈ Participants  ▸  <b>${g.participants.size}</b> 👥\n` +
+      `◈ Total Votes   ▸  <b>${totalVotes}</b> 🗳️\n` +
+      `◈ Paid Votes    ▸  ${g.paidVotesActive ? "🟢 ON" : "🔴 OFF"}\n` +
+      `◈ Participation ▸  ${g.participationOpen ? "🟢 OPEN" : "🔴 CLOSED"}\n` +
+      `◈ ID            ▸  <code>${gId}</code>` +
+      `</blockquote>\n\n` +
+      `🔗 <a href="${link}">▸ Participation Link</a>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: mgmtKeyboard(gId, g) }
     ).catch(() => {});
     return;
@@ -588,12 +608,17 @@ bot.on("callback_query", async (query) => {
     const g = getGiveaway(gId);
     if (!g) return;
     await showLoading(chatId, msgId);
+    const totalVotesLb = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
     await bot.editMessageText(
-      `🏆 <b>LEADERBOARD</b>\n` +
-      `<i>${h(g.title)}</i>\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `   🏆  <b>LEADERBOARD</b>  🏆\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `📌 <b>${h(g.title)}</b>\n` +
+      `<i>👥 ${g.participants.size} participants  ·  🗳️ ${totalVotesLb} total votes</i>\n\n` +
+      `━━━◈━━━━━━━━━━━━━━━━◈━━━\n\n` +
       `${formatLeaderboard(g)}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━`,
+      `━━━◈━━━━━━━━━━━━━━━━◈━━━\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: backKeyboard(`mgmt:${gId}`) }
     ).catch(() => {});
     return;
@@ -727,15 +752,19 @@ bot.on("callback_query", async (query) => {
       : null;
 
     await animateSuccess(chatId, msgId,
-      `🎊 <b>PARTICIPATION CONFIRMED!</b>\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  🎊  <b>YOU'RE IN!</b>  🎊\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `📌 <b>${h(g.title)}</b>\n\n` +
       `<blockquote>` +
-      (g.channelId ? `◈ Channel  :  <a href="${g.channelUsername ? `https://t.me/${g.channelUsername}` : `https://t.me/c/${String(g.channelId).replace("-100","")}`}">Open Channel</a>\n` : "") +
-      (chLink ? `◈ Vote Post:  <a href="${chLink}">View My Card</a>\n` : "") +
-      `◈ Votes    :  0 🗳️` +
-      `</blockquote>\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n\n` +
-      `💡 <i>Share your link with friends to get more votes!</i>`,
+      (g.channelId ? `🔗 Channel   ▸  <a href="${g.channelUsername ? `https://t.me/${g.channelUsername}` : `https://t.me/c/${String(g.channelId).replace("-100","")}`}">Open Channel</a>\n` : "") +
+      (chLink ? `🃏 Vote Card ▸  <a href="${chLink}">View My Card</a>\n` : "") +
+      `🗳️ Votes     ▸  <b>0</b> (grow by sharing!)\n` +
+      `⚡ Status    ▸  🟢 Active` +
+      `</blockquote>\n\n` +
+      `━━━◈━━━━━━━━━━━━━━━━◈━━━\n` +
+      `💡 <i>Share your link to collect more votes!</i>\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       {
         reply_markup: {
           inline_keyboard: [
@@ -958,27 +987,29 @@ bot.on("callback_query", async (query) => {
   if (data === "how_to_use") {
     await showLoading(chatId, msgId);
     await bot.editMessageText(
-      `❓ <b>HOW TO USE — DRS BOT</b>\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `   ❓  <b>GUIDE &amp; HELP</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `<blockquote>` +
-      `1️⃣ <b>Bot ko Channel Admin Banao</b>\n` +
-      `   Bot add karo → Admin rights do\n\n` +
-      `2️⃣ <b>Giveaway Create Karo</b>\n` +
-      `   Title → Channel → End Type → Time\n` +
-      `   Paid Votes → Currency → QR → Rates\n\n` +
-      `3️⃣ <b>Participants Join Karein</b>\n` +
-      `   Link share karo → User click kare\n` +
-      `   Channel join kare → Confirm kare\n` +
-      `   Auto: Vote card channel mein post!\n\n` +
-      `4️⃣ <b>Voting</b>\n` +
-      `   Channel card pe "🗳️ Vote" dabaao\n` +
-      `   Only members vote kar sakte hain\n\n` +
-      `5️⃣ <b>Auto Vote Deduction</b>\n` +
-      `   Channel leave = Vote remove!\n` +
-      `   Participant ko alert milta hai` +
-      `</blockquote>\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `💡 Channel ID: @getidsbot use karo`,
+      `1️⃣  <b>Bot ko Channel Admin Banao</b>\n` +
+      `     Bot add karo ▸ Admin rights do\n\n` +
+      `2️⃣  <b>Giveaway Create Karo</b>\n` +
+      `     Title ▸ Channel ▸ End Type ▸ Time\n` +
+      `     Paid Votes ▸ Currency ▸ QR ▸ Rates\n\n` +
+      `3️⃣  <b>Participants Link se Join Karein</b>\n` +
+      `     Link share karo ▸ User click kare\n` +
+      `     Channel join kare ▸ Confirm kare\n` +
+      `     Auto: Vote card channel mein post!\n\n` +
+      `4️⃣  <b>Voting (Channel Card pe)</b>\n` +
+      `     "🗳️ Vote" button dabaao\n` +
+      `     ⚠️ Sirf channel members vote kar sakte\n\n` +
+      `5️⃣  <b>Auto Vote Deduction</b>\n` +
+      `     Channel leave ▸ votes auto-remove\n` +
+      `     Participant ko alert bhi milta hai` +
+      `</blockquote>\n\n` +
+      `━━━◈━━━━━━━━━━━━━━━━◈━━━\n` +
+      `💡 <i>Channel ID ke liye: @getidsbot use karo</i>\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: backKeyboard() }
     ).catch(() => {});
     return;
@@ -1005,15 +1036,26 @@ bot.on("callback_query", async (query) => {
     const badge = membershipBadge(userId);
     const m = getMembership(userId);
     const featuresText =
-      `⭐ <b>MEMBERSHIP- ${badge}</b>\n\n` +
-      `🐉 <u>PREMIUM FEATURES</u> 🌀\n` +
-      `──────────◈◈◈──────────\n\n` +
-      `<blockquote>🐉 Add your own custom thumbnail / vote post image</blockquote>\n\n` +
-      `<blockquote>🐉 Auto vote deduction if a user leaves after voting during giveaways 🧿(Free for Sometime)</blockquote>\n\n` +
-      `<blockquote>🐉 Add 1 extra Force-Join channel/group before voting 🌀</blockquote>\n\n` +
-      `<blockquote>🐉 Set 1 main Force-Join for all bot users\n✅ (Available only with minimum 1-week membership 🥹)</blockquote>\n\n` +
-      `──────────◈◈◈──────────\n` +
-      `Upgrade to unlock 🤌 <b>full control &amp; maximum reach</b> 👁️`;
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `   👑  <b>VIP MEMBERSHIP</b>  ${badge}\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      (m
+        ? `<blockquote>✅ <b>You are a VIP Member!</b>\n⏳ Expires: ${new Date(m.expiresAt).toLocaleDateString("en-IN")}</blockquote>\n\n`
+        : `<blockquote>🔓 Upgrade now to unlock full power of DRS Bot!</blockquote>\n\n`) +
+      `━━━◈ <b>PREMIUM FEATURES</b> ◈━━━\n\n` +
+      `<blockquote>` +
+      `▸ Custom thumbnail on vote post image\n\n` +
+      `▸ Auto vote-deduction on channel leave 🧿\n  <i>(Free for a limited time!)</i>\n\n` +
+      `▸ 1 extra Force-Join channel before voting\n\n` +
+      `▸ 1 global Force-Join for all bot users\n  <i>(Requires minimum 7-day membership)</i>` +
+      `</blockquote>\n\n` +
+      `━━━◈ <b>PLANS</b> ◈━━━\n\n` +
+      `<blockquote>` +
+      `💳 1 Day   ▸  ₹10\n` +
+      `💳 7 Days  ▸  ₹50\n` +
+      `💎 30 Days ▸  ₹350` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
 
     const kb = m
       ? { inline_keyboard: [[{ text: "◀️ Back", callback_data: "main_menu" }]] }
@@ -1373,19 +1415,18 @@ async function updateChannelPost(g, participant) {
 // ============================================================
 function participantChannelText(participant, g) {
   return (
-    `👑 <b>DRS GIVEAWAY BOT</b> 💎\n` +
-    `<i>· Fair · Fast · Automated ·</i>\n\n` +
-    `◆ ─────────────────── ◆\n` +
-    `🏅 <b>PARTICIPANT CARD</b>\n` +
-    `◆ ─────────────────── ◆\n\n` +
+    `✦━━━━━━ 🎰 DRS GIVEAWAY ━━━━━━✦\n\n` +
+    `👤 <b>${h(participant.name)}</b>\n` +
+    `🔖 <i>${h(participant.handle)}</i>  ·  🆔 <code>${participant.id}</code>\n\n` +
+    `━━━◈━━━━━━━━━━━━━━━━◈━━━\n` +
     `<blockquote>` +
-    `◈ NAME  :  <b>${h(participant.name)}</b>\n` +
-    `◈ ID    :  <b>${participant.id}</b>\n` +
-    `◈ USER  :  <b>${h(participant.handle)}</b>` +
-    `</blockquote>\n\n` +
-    `◆ ─────────────────── ◆\n` +
-    `<blockquote>⚠️ ONLY CHANNEL SUBSCRIBERS CAN VOTE</blockquote>\n\n` +
-    `✦ ─────── <b>@${BOT_USERNAME}</b> ─────── ✦`
+    `📌 <b>${h(g.title)}</b>\n` +
+    `🗳️ Votes  ▸  <b>${participant.votes}</b>\n` +
+    `⚡ Status ▸  🟢 Active` +
+    `</blockquote>\n` +
+    `━━━◈━━━━━━━━━━━━━━━━◈━━━\n\n` +
+    `🔒 <i>Channel members only can vote</i>\n` +
+    `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`
   );
 }
 
@@ -1452,18 +1493,19 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
   const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
 
   await animateSend(chatId,
-    `🎉 <b>GIVEAWAY CREATED!</b>\n` +
-    `<i>· Fair · Fast · Automated by DRS ·</i>\n\n` +
-    `◆ ─────────────────── ◆\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  🎉  <b>GIVEAWAY CREATED!</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
     `<blockquote>` +
-    `◈ Title  :  <b>${h(g.title)}</b>\n` +
-    `◈ ID     :  <code>${gId}</code>\n` +
-    `◈ Status :  🟢 ACTIVE\n` +
-    `◈ Paid   :  ${g.paidVotesActive ? "💰 Enabled" : "❌ Disabled"}\n` +
-    (g.endTime ? `◈ Ends   :  ${g.endTime.toLocaleString("en-IN")}` : `◈ Ends   :  Manual`) +
-    `</blockquote>\n` +
-    `◆ ─────────────────── ◆\n\n` +
-    `🔗 <b>Share this link to get participants:</b>\n<code>${link}</code>`,
+    `📌 Title   ▸  <b>${h(g.title)}</b>\n` +
+    `🆔 ID      ▸  <code>${gId}</code>\n` +
+    `⚡ Status  ▸  🟢 ACTIVE\n` +
+    `💰 Paid    ▸  ${g.paidVotesActive ? "✅ Enabled" : "❌ Disabled"}\n` +
+    (g.endTime ? `⏳ Ends    ▸  ${g.endTime.toLocaleString("en-IN")}` : `⏳ Ends    ▸  Manual`) +
+    `</blockquote>\n\n` +
+    `━━━◈ <b>SHARE LINK</b> ◈━━━\n` +
+    `<code>${link}</code>\n\n` +
+    `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
     {
       reply_markup: {
         inline_keyboard: [
