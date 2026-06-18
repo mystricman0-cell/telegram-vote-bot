@@ -247,7 +247,20 @@ async function saveConfig(key, value) {
 // BOT INIT
 // ============================================================
 
-const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(BOT_TOKEN, {
+  polling: {
+    params: {
+      allowed_updates: [
+        "message",
+        "callback_query",
+        "my_chat_member",
+        "chat_member",
+        "pre_checkout_query",
+        "inline_query"
+      ]
+    }
+  }
+});
 let BOT_USERNAME = "";
 
 // ============================================================
@@ -1940,6 +1953,42 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
 
   const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
 
+  // ── Send announcement to linked channel ──
+  if (g.channelId) {
+    const endStr = g.endTime
+      ? new Date(g.endTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })
+      : "Manual (Creator control)";
+    const channelAnnouncement =
+      `✦━━━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  🎰  <b>NEW GIVEAWAY STARTED!</b>  🎰\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `📌 <b>${h(g.title)}</b>\n\n` +
+      `<blockquote>` +
+      `◈ Status      ▸  🟢 ACTIVE\n` +
+      `◈ Voting      ▸  ${g.paidVotesActive ? "🆓 Free + 💰 Paid" : "🆓 Free Only"}\n` +
+      `◈ Ends        ▸  ${h(endStr)}` +
+      `</blockquote>\n\n` +
+      `━━━◈ <b>HOW TO PARTICIPATE?</b> ◈━━━\n\n` +
+      `<blockquote>` +
+      `1️⃣ Neeche button dabaao\n` +
+      `2️⃣ Bot mein apna naam register karo\n` +
+      `3️⃣ Vote card channel mein auto-post hoga\n` +
+      `4️⃣ Apna link share karo — jyada votes pao!` +
+      `</blockquote>\n\n` +
+      `🔗 <code>${link}</code>\n\n` +
+      `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`;
+    try {
+      await bot.sendMessage(g.channelId, channelAnnouncement, {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "🎰 Participate Now — Click Here!", url: link }
+          ]]
+        }
+      });
+    } catch (e) { console.error("Channel giveaway announcement error:", e.message); }
+  }
+
   await animCreate(chatId,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
     `  🎉  <b>GIVEAWAY CREATED!</b>\n` +
@@ -2355,20 +2404,28 @@ bot.on("chat_member", async (update) => {
 
         try {
           await bot.sendMessage(channelId,
-            `♻️ <b>Auto-Resync: Vote Removed</b>\n\n` +
-            `<blockquote>👤 User: ${h(leftName)} left the channel.</blockquote>\n` +
-            `<blockquote>🏅 Participant: ${h(p.name)}</blockquote>\n` +
-            `<blockquote>🗳 Updated Votes: ${p.votes}</blockquote>`,
+            `♻️ <b>Vote Auto-Removed</b>\n\n` +
+            `<blockquote>` +
+            `👤 <b>${h(leftName)}</b> channel chod gaya.\n` +
+            `🏅 Participant: <b>${h(p.name)}</b>\n` +
+            `🗳️ Updated Votes: <b>${p.votes}</b>` +
+            `</blockquote>\n\n` +
+            `<i>✦ DRS Auto-Sync System</i>`,
             { parse_mode: "HTML" }
           );
         } catch (e) { console.error("Leave channel announcement:", e.message); }
 
         try {
           await bot.sendMessage(p.id,
-            `⚠️ <b>Vote Deduction Alert!</b>\n\n` +
-            `A user (${h(leftName)}) left the required channel.\n` +
-            `Your vote count has been reduced.\n` +
-            `↳ <b>New Count: ${p.votes}</b>`,
+            `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+            `  ⚠️  <b>VOTE DEDUCTION ALERT</b>\n` +
+            `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+            `<blockquote>` +
+            `👤 User: <b>${h(leftName)}</b> ne channel chod diya.\n\n` +
+            `Aapka 1 vote auto-remove ho gaya.\n` +
+            `🗳️ New Vote Count: <b>${p.votes}</b>` +
+            `</blockquote>\n\n` +
+            `✦ ─── <b>DRS Network</b> ─── ✦`,
             { parse_mode: "HTML" }
           );
         } catch {}
