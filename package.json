@@ -8,7 +8,7 @@
     "dev": "node --watch vote-bot.mjs"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.66.0"
+    "node-telegram-bot-api": "^1.1.0"
   },
   "engines": {
     "node": ">=18.0.0"
