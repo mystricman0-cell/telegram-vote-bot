@@ -1,0 +1,16 @@
+{
+  "name": "telegram-vote-bot",
+  "version": "1.0.0",
+  "description": "Telegram Vote Bot - Channel voting with membership verification and auto vote removal",
+  "type": "module",
+  "scripts": {
+    "start": "node vote-bot.mjs",
+    "dev": "node --watch vote-bot.mjs"
+  },
+  "dependencies": {
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
