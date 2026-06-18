@@ -49,6 +49,47 @@ const userLastWelcomeMsg = new Map(); // userId -> { chatId, msgId }
 // Sleep helper for animations
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
+// ── showLoading: animates an existing message before replacing with real content ──
+async function showLoading(chatId, msgId) {
+  const frames = ["⚡", "◆ ─── <b>DRS</b> ─── ◆", "✨ <i>Loading...</i>"];
+  for (let i = 0; i < frames.length; i++) {
+    try {
+      await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msgId, parse_mode: "HTML" });
+    } catch {}
+    if (i < frames.length - 1) await sleep(160);
+  }
+  await sleep(180);
+}
+
+// ── animateSend: sends a new message with loading frames before final content ──
+async function animateSend(chatId, finalText, opts = {}) {
+  try { await bot.sendChatAction(chatId, "typing"); } catch {}
+  let msg;
+  try { msg = await bot.sendMessage(chatId, "▌", { parse_mode: "HTML" }); } catch { return null; }
+  const frames = ["◆", "◆ ─── <b>DRS</b> ─── ◆", "✨ <i>Almost ready...</i>"];
+  const delays = [120, 150, 200];
+  for (let i = 0; i < frames.length; i++) {
+    await sleep(delays[i]);
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
+  }
+  await sleep(260);
+  try {
+    await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts });
+  } catch {}
+  return msg;
+}
+
+// ── animateSuccess: celebratory flash before showing success content ──
+async function animateSuccess(chatId, msgId, finalText, opts = {}) {
+  const frames = ["✅", "🎉 <b>Success!</b>", "✨ <i>Finalizing...</i>"];
+  for (let i = 0; i < frames.length; i++) {
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }); } catch {}
+    if (i < frames.length - 1) await sleep(170);
+  }
+  await sleep(200);
+  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts }); } catch {}
+}
+
 // Membership plans (INR)
 const MEMBERSHIP_PLANS = {
   "1d": { label: "1 Day", days: 1, price: 10 },
@@ -420,6 +461,7 @@ bot.on("callback_query", async (query) => {
   // ─── Cancel flow ───
   if (data === "cancel_flow") {
     userState.delete(userId);
+    await showLoading(chatId, msgId);
     await bot.editMessageText(
       `◆ ─────────────────── ◆\n` +
       `❌ <b>Action Cancelled</b>\n` +
@@ -433,6 +475,7 @@ bot.on("callback_query", async (query) => {
   // ─── New Giveaway ───
   if (data === "new_giveaway") {
     userState.set(userId, { step: "title", msgId });
+    await showLoading(chatId, msgId);
     await bot.editMessageText(
       `🎰 <b>CREATE NEW GIVEAWAY</b>\n` +
       `<i>Step 1 of 5 — Giveaway Title</i>\n\n` +
@@ -465,9 +508,11 @@ bot.on("callback_query", async (query) => {
       `◆ ─────────────────── ◆\n\n` +
       `<blockquote>Select a category to view your giveaways.\nManage, share links, and track votes.</blockquote>`;
     if (welcomeImageFileId) {
+      await showLoading(chatId, msgId);
       try { await bot.deleteMessage(chatId, msgId); } catch {}
       await bot.sendPhoto(chatId, welcomeImageFileId, { caption, parse_mode: "HTML", reply_markup: kb });
     } else {
+      await showLoading(chatId, msgId);
       await bot.editMessageText(caption, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: kb }).catch(() => {});
     }
     return;
@@ -489,11 +534,11 @@ bot.on("callback_query", async (query) => {
     const label = { created_active: "✍️ Created (Active)", created_past: "📋 Created (Past)", joined_active: "🤝 Joined (Active)", joined_past: "📂 Joined (Past)" }[cat];
     const icon  = { created_active: "✍️", created_past: "📋", joined_active: "🤝", joined_past: "📂" }[cat];
     if (!list.length) {
-      await bot.sendMessage(chatId,
+      await animateSend(chatId,
         `${icon} <b>${label}</b>\n\n` +
         `◆ ─────────────────── ◆\n\n` +
         `<blockquote>Is category mein abhi koi giveaway nahi hai.\nNaya banao ya kisi giveaway mein join ho!</blockquote>`,
-        { parse_mode: "HTML", reply_markup: backKeyboard("my_giveaways") }
+        { reply_markup: backKeyboard("my_giveaways") }
       );
       return;
     }
@@ -502,11 +547,11 @@ bot.on("callback_query", async (query) => {
       callback_data: `mgmt:${g.id}`
     }]));
     btns.push([{ text: "◀️ Back", callback_data: "my_giveaways" }]);
-    await bot.sendMessage(chatId,
+    await animateSend(chatId,
       `${icon} <b>${label}</b>\n\n` +
       `◆ ─────────────────── ◆\n` +
       `<i>${list.length} giveaway${list.length !== 1 ? "s" : ""} found</i>`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: btns } }
+      { reply_markup: { inline_keyboard: btns } }
     );
     return;
   }
@@ -516,6 +561,7 @@ bot.on("callback_query", async (query) => {
     const gId = data.split(":")[1];
     const g = getGiveaway(gId);
     if (!g) return;
+    await showLoading(chatId, msgId);
     const totalVotes = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
     const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
     await bot.editMessageText(
@@ -541,6 +587,7 @@ bot.on("callback_query", async (query) => {
     const gId = data.split(":")[1];
     const g = getGiveaway(gId);
     if (!g) return;
+    await showLoading(chatId, msgId);
     await bot.editMessageText(
       `🏆 <b>LEADERBOARD</b>\n` +
       `<i>${h(g.title)}</i>\n\n` +
@@ -679,7 +726,7 @@ bot.on("callback_query", async (query) => {
       ? `https://t.me/c/${String(g.channelId).replace("-100", "")}/${channelMsgId}`
       : null;
 
-    await bot.editMessageText(
+    await animateSuccess(chatId, msgId,
       `🎊 <b>PARTICIPATION CONFIRMED!</b>\n\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `<blockquote>` +
@@ -690,7 +737,6 @@ bot.on("callback_query", async (query) => {
       `━━━━━━━━━━━━━━━━━━━━\n\n` +
       `💡 <i>Share your link with friends to get more votes!</i>`,
       {
-        chat_id: chatId, message_id: msgId, parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
             [{ text: "📋 Copy Vote Link", switch_inline_query: link }],
@@ -700,7 +746,7 @@ bot.on("callback_query", async (query) => {
           ]
         }
       }
-    ).catch(() => {});
+    );
     return;
   }
 
@@ -805,6 +851,7 @@ bot.on("callback_query", async (query) => {
     }
     btns.push([{ text: "◀️ Back", callback_data: `my_links:${gId}` }]);
 
+    await showLoading(chatId, msgId);
     await bot.editMessageText(
       `💰 <b>BUY PAID VOTES</b>\n` +
       `<i>${h(g.title)}</i>\n\n` +
@@ -909,6 +956,7 @@ bot.on("callback_query", async (query) => {
 
   // ─── How to Use ───
   if (data === "how_to_use") {
+    await showLoading(chatId, msgId);
     await bot.editMessageText(
       `❓ <b>HOW TO USE — DRS BOT</b>\n\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
@@ -940,6 +988,7 @@ bot.on("callback_query", async (query) => {
   if (data === "add_channel" || data === "add_group") {
     const type = data === "add_channel" ? "channel" : "group";
     userState.set(userId, { step: "reg_chat", type });
+    await showLoading(chatId, msgId);
     await bot.editMessageText(
       `<b>➕ ${type === "channel" ? "Channel" : "Group"} Add Karo</b>\n\n` +
       `${type === "channel" ? "Channel" : "Group"} ID bhejo:\n<i>Example: -1001234567890</i>\n\n` +
@@ -952,6 +1001,7 @@ bot.on("callback_query", async (query) => {
 
   // ─── VIP Membership ───
   if (data === "vip_membership") {
+    await showLoading(chatId, msgId);
     const badge = membershipBadge(userId);
     const m = getMembership(userId);
     const featuresText =
@@ -1117,6 +1167,7 @@ bot.on("callback_query", async (query) => {
 
   // ─── Create Post ───
   if (data === "create_post") {
+    await showLoading(chatId, msgId);
     const myChannels = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
     if (!myChannels.length) {
       await bot.editMessageText(
@@ -1400,7 +1451,7 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
 
   const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
 
-  await bot.sendMessage(chatId,
+  await animateSend(chatId,
     `🎉 <b>GIVEAWAY CREATED!</b>\n` +
     `<i>· Fair · Fast · Automated by DRS ·</i>\n\n` +
     `◆ ─────────────────── ◆\n` +
@@ -1414,7 +1465,6 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
     `◆ ─────────────────── ◆\n\n` +
     `🔗 <b>Share this link to get participants:</b>\n<code>${link}</code>`,
     {
-      parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
           [{ text: "⚙️ Manage Giveaway", callback_data: `mgmt:${gId}` }],
