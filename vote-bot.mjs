@@ -582,7 +582,10 @@ bot.on("callback_query", async (query) => {
 
     // Can't vote for yourself
     if (userId === participantUserId) {
-      await bot.answerCallbackQuery(query.id, { text: "Aap khud ko vote nahi de sakte!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, {
+        text: "⚠️ OPERATION DENIED\n\nYOU CANNOT VOTE FOR YOURSELF!",
+        show_alert: true
+      });
       return;
     }
 
@@ -613,7 +616,16 @@ bot.on("callback_query", async (query) => {
     participant.voters.add(userId);
     g.voterMap.set(userId, participantUserId);
 
-    await bot.answerCallbackQuery(query.id, { text: `✅ Vote diya! ${participant.name} ko ${participant.votes} votes.`, show_alert: true });
+    const voterName = (query.from.first_name || "") + (query.from.last_name ? ` ${query.from.last_name}` : "");
+    await bot.answerCallbackQuery(query.id, {
+      text:
+        `☑️ VOTE ADDED SUCCESSFULLY\n\n` +
+        `▶ VOTE FROM : ${voterName}\n` +
+        `▶ NEW COUNT : ${participant.votes}\n` +
+        `▶ VOTED FOR : ${participant.name}\n` +
+        `▶ BOT : @${BOT_USERNAME}`,
+      show_alert: true
+    });
 
     // Update channel post
     await updateChannelPost(g, participant);
@@ -1489,14 +1501,13 @@ bot.on("chat_member", async (update) => {
         g.voterMap.delete(leftUserId);
         await updateChannelPost(g, p);
 
-        // Channel announcement
+        // Channel announcement — "Auto-Resync: Vote Removed" format
         try {
           await bot.sendMessage(channelId,
-            `<b>🔴 Voter Left — Vote Removed</b>\n━━━━━━━━━━━━━━━━━━\n` +
-            `👤 <b>Voter:</b> ${h(leftName)}\n` +
-            `↳ <b>Affected:</b> ${h(p.name)} (ID: ${p.id})\n` +
-            `📌 <b>Giveaway:</b> ${gId}\n` +
-            `━━━━━━━━━━━━━━━━━━`,
+            `♻️ <b>Auto-Resync: Vote Removed</b>\n\n` +
+            `<blockquote>👤 User: ${h(leftName)} left the channel.</blockquote>\n` +
+            `<blockquote>🏅 Participant: ${h(p.name)}</blockquote>\n` +
+            `<blockquote>🗳 Updated Votes: ${p.votes}</blockquote>`,
             { parse_mode: "HTML" }
           );
         } catch (e) { console.error("Leave channel announcement:", e.message); }
@@ -1504,8 +1515,8 @@ bot.on("chat_member", async (update) => {
         // Notify participant (the one who lost a vote)
         try {
           await bot.sendMessage(p.id,
-            `<b>⚠️ Vote Deduction Alert!</b>\n\n` +
-            `A user (<b>${h(leftName)}</b>) left the required channel.\n` +
+            `⚠️ <b>Vote Deduction Alert!</b>\n\n` +
+            `A user (${h(leftName)}) left the required channel.\n` +
             `Your vote count has been reduced.\n` +
             `↳ <b>New Count: ${p.votes}</b>`,
             { parse_mode: "HTML" }
@@ -1529,18 +1540,140 @@ bot.on("chat_member", async (update) => {
 });
 
 // ============================================================
+// USER COMMANDS
+// ============================================================
+
+bot.onText(/\/membership/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
+  const vip = isVip(userId);
+  await bot.sendMessage(chatId,
+    vip
+      ? `<b>👑 VIP Membership</b>\n\n✅ Aap <b>VIP Member</b> hain!\n\nBenefits:\n• Unlimited giveaways\n• Priority support\n• Advanced features`
+      : `<b>👑 VIP Membership</b>\n\nBenefits:\n• ♾️ Unlimited giveaways\n• ⚡ Priority support\n• 🎨 Advanced features\n\n💰 Price: <b>50 ⭐ Stars / 30 days</b>`,
+    {
+      parse_mode: "HTML",
+      reply_markup: vip ? undefined : {
+        inline_keyboard: [[{ text: "💳 Buy VIP — 50 ⭐ Stars", callback_data: "buy_vip" }]]
+      }
+    }
+  );
+});
+
+bot.onText(/\/support/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  await bot.sendMessage(msg.chat.id,
+    `<b>💬 DRS Bot Support</b>\n\n` +
+    `Need help? Contact us:\n\n` +
+    `📩 Support: @DRS_Support\n` +
+    `⚡ Powered by: <b>DRS NETWORK</b>\n\n` +
+    `<i>Please describe your issue clearly when contacting support.</i>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+bot.onText(/\/createpost/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
+  const myChannels = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
+  if (!myChannels.length) {
+    return bot.sendMessage(chatId,
+      `<b>📢 Create Post</b>\n\n❌ Koi registered channel nahi.\nPehle channel mein bot ko admin banao.`,
+      { parse_mode: "HTML" }
+    );
+  }
+  userState.set(userId, { step: "create_post" });
+  await bot.sendMessage(chatId,
+    `<b>📢 Create Post</b>\n\nWoh message bhejo jo channel mein post karna hai.\n\n` +
+    `<i>Registered channels: ${myChannels.map(([, c]) => c.title).join(", ")}</i>`,
+    { parse_mode: "HTML", reply_markup: cancelKeyboard() }
+  );
+});
+
+// ============================================================
 // MAIN ADMIN COMMANDS
 // ============================================================
 
+// /broadcast <message> — Silent broadcast to all channels
 bot.onText(/\/broadcast\s+([\s\S]+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const message = match[1];
   let sent = 0, failed = 0;
   for (const [id] of registeredChannels) {
-    try { await bot.sendMessage(id, `<b>📢 DRS Broadcast</b>\n\n${h(message)}`, { parse_mode: "HTML" }); sent++; }
-    catch { failed++; }
+    try {
+      await bot.sendMessage(id, `<b>📢 DRS Broadcast</b>\n\n${h(message)}`, {
+        parse_mode: "HTML",
+        disable_notification: true
+      });
+      sent++;
+    } catch { failed++; }
   }
-  await bot.sendMessage(msg.chat.id, `✅ Broadcast done!\n✅ Sent: ${sent}\n❌ Failed: ${failed}`);
+  await bot.sendMessage(msg.chat.id, `✅ Broadcast done! (Silent)\n✅ Sent: ${sent}\n❌ Failed: ${failed}`);
+});
+
+// /loud <message> — LOUD broadcast (notification sound) to all channels
+bot.onText(/\/loud\s+([\s\S]+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const message = match[1];
+  let sent = 0, failed = 0;
+  for (const [id] of registeredChannels) {
+    try {
+      await bot.sendMessage(id, `<b>📢 DRS Broadcast</b>\n\n${h(message)}`, {
+        parse_mode: "HTML",
+        disable_notification: false
+      });
+      sent++;
+    } catch { failed++; }
+  }
+  await bot.sendMessage(msg.chat.id, `✅ LOUD Broadcast done! (With sound)\n✅ Sent: ${sent}\n❌ Failed: ${failed}`);
+});
+
+// /pin <chatId> <message> — Send and pin a message in a channel
+bot.onText(/\/pin\s+(-?\d+)\s+([\s\S]+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const targetChatId = match[1];
+  const message = match[2];
+  try {
+    const sent = await bot.sendMessage(targetChatId, `📌 <b>${h(message)}</b>`, { parse_mode: "HTML" });
+    await bot.pinChatMessage(targetChatId, sent.message_id, { disable_notification: false });
+    await bot.sendMessage(chatId, `✅ Message pinned in <code>${targetChatId}</code>!`, { parse_mode: "HTML" });
+  } catch (e) {
+    await bot.sendMessage(chatId, `❌ Error: ${h(e.message)}`, { parse_mode: "HTML" });
+  }
+});
+
+// /send <chatId> <message> — Send message to any specific chat
+bot.onText(/\/send\s+(-?\d+)\s+([\s\S]+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const targetChatId = match[1];
+  const message = match[2];
+  try {
+    await bot.sendMessage(targetChatId, `<b>📩 DRS Message</b>\n\n${h(message)}`, { parse_mode: "HTML" });
+    await bot.sendMessage(chatId, `✅ Message sent to <code>${targetChatId}</code>!`, { parse_mode: "HTML" });
+  } catch (e) {
+    await bot.sendMessage(chatId, `❌ Error: ${h(e.message)}`, { parse_mode: "HTML" });
+  }
+});
+
+// /sendloud <chatId> <message> — Send LOUD message to any specific chat
+bot.onText(/\/sendloud\s+(-?\d+)\s+([\s\S]+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const targetChatId = match[1];
+  const message = match[2];
+  try {
+    await bot.sendMessage(targetChatId, `<b>🔔 DRS Message</b>\n\n${h(message)}`, {
+      parse_mode: "HTML",
+      disable_notification: false
+    });
+    await bot.sendMessage(chatId, `✅ LOUD message sent to <code>${targetChatId}</code>!`, { parse_mode: "HTML" });
+  } catch (e) {
+    await bot.sendMessage(chatId, `❌ Error: ${h(e.message)}`, { parse_mode: "HTML" });
+  }
 });
 
 bot.onText(/\/allchannels/, async (msg) => {
@@ -1567,8 +1700,19 @@ bot.onText(/\/allgiveaways/, async (msg) => {
 bot.onText(/\/adminhelp/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   await bot.sendMessage(msg.chat.id,
-    `<b>👑 Main Admin Commands:</b>\n\n` +
-    `/broadcast &lt;msg&gt;\n/allchannels\n/allgiveaways\n/adminhelp`,
+    `<b>👑 DRS Bot — Admin Commands</b>\n\n` +
+    `<b>📢 Broadcast:</b>\n` +
+    `/broadcast &lt;msg&gt; — Silent broadcast all channels\n` +
+    `/loud &lt;msg&gt; — LOUD broadcast (with sound) all channels\n\n` +
+    `<b>📩 Direct Send:</b>\n` +
+    `/send &lt;chatId&gt; &lt;msg&gt; — Send to specific chat\n` +
+    `/sendloud &lt;chatId&gt; &lt;msg&gt; — LOUD send to specific chat\n\n` +
+    `<b>📌 Pin:</b>\n` +
+    `/pin &lt;chatId&gt; &lt;msg&gt; — Send &amp; pin message in channel\n\n` +
+    `<b>📊 Info:</b>\n` +
+    `/allchannels — All registered channels\n` +
+    `/allgiveaways — All giveaways overview\n` +
+    `/adminhelp — This help menu`,
     { parse_mode: "HTML" }
   );
 });
@@ -1580,8 +1724,20 @@ bot.onText(/\/adminhelp/, async (msg) => {
 bot.on("polling_error", e => console.error("Polling error:", e.message));
 bot.on("error", e => console.error("Bot error:", e.message));
 
-bot.getMe().then(me => {
+bot.getMe().then(async (me) => {
   BOT_USERNAME = me.username;
+
+  // Register bot commands (shows in Telegram "/" menu)
+  try {
+    await bot.setMyCommands([
+      { command: "start", description: "Start Creating professional giveaways" },
+      { command: "membership", description: "Get access to Premium Features" },
+      { command: "support", description: "Bot support" },
+      { command: "createpost", description: "Create post with buttons" }
+    ]);
+    console.log("✅ Bot commands registered!");
+  } catch (e) { console.error("setMyCommands error:", e.message); }
+
   console.log(`
 ✅ DRS Giveaway Bot Started!
 🤖 @${me.username}
