@@ -664,18 +664,42 @@ bot.on("callback_query", async (query) => {
       return;
     }
     g.active = false; g.participationOpen = false; g.paidVotesActive = false;
-    const lb = formatLeaderboard(g);
-    if (g.channelId) {
-      try {
-        await bot.sendMessage(g.channelId,
-          `<b>🏁 ${h(g.title)} — GIVEAWAY ENDED!</b>\n\n<b>Final Leaderboard:</b>\n${lb}`,
-          { parse_mode: "HTML" }
-        );
-      } catch (e) { console.error("Channel end msg:", e.message); }
-    }
+
+    // ── Show "ending..." animation on the panel ──
+    await showLoading(chatId, msgId);
+
+    // ── Announce winners to channel + DMs ──
+    await announceWinners(g, gId, g.creatorId);
+
+    // ── Update panel to show ended state ──
+    const parts = [...g.participants.values()].sort((a, b) => b.votes - a.votes);
+    const totalVotes = parts.reduce((s, p) => s + p.votes, 0);
+    const top3lines = parts.slice(0, 3).map((p, i) => {
+      const medals = ["🥇", "🥈", "🥉"];
+      return `${medals[i]}  <b>${h(p.name)}</b>  ·  <code>${p.votes}</code> 🗳️`;
+    }).join("\n") || `<i>▸ Koi votes nahi the</i>`;
+
     await bot.editMessageText(
-      `<b>🏁 Giveaway Ended!</b>\n\n<b>${h(g.title)}</b>\n\n<b>Final Results:</b>\n${lb}`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: backKeyboard("my_giveaways") }
+      `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  🏁  <b>GIVEAWAY ENDED!</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `📌 <b>${h(g.title)}</b>\n\n` +
+      `<blockquote>` +
+      `◈ Status       ▸  🔴 ENDED\n` +
+      `◈ Participants ▸  <b>${g.participants.size}</b> 👥\n` +
+      `◈ Total Votes  ▸  <b>${totalVotes}</b> 🗳️` +
+      `</blockquote>\n\n` +
+      `━━━◈ 🏆 TOP WINNERS ◈━━━\n\n` +
+      `${top3lines}\n\n` +
+      `━━━◈━━━━━━━━━━━━━━━━━◈━━━\n` +
+      `✅ <i>Winner cards sent to channel &amp; DMs!</i>\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [
+          [{ text: "🏆 Full Leaderboard", callback_data: `lb:${gId}` }],
+          [{ text: "◀️ My Giveaways", callback_data: "my_giveaways" }]
+        ]}
+      }
     ).catch(() => {});
     return;
   }
@@ -1411,6 +1435,90 @@ async function updateChannelPost(g, participant) {
 }
 
 // ============================================================
+// HELPER: announceWinners  — channel + creator DM + winner DMs
+// ============================================================
+async function announceWinners(g, gId, creatorId) {
+  const parts = [...g.participants.values()].sort((a, b) => b.votes - a.votes);
+  const totalVotes = parts.reduce((s, p) => s + p.votes, 0);
+  const medals  = ["🥇", "🥈", "🥉"];
+  const rankNames = ["1st 🥇", "2nd 🥈", "3rd 🥉"];
+  const top3   = parts.slice(0, 3);
+  const now    = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }).replace(",","");
+
+  // ── Winner podium text ──
+  const podiumText = top3.length
+    ? top3.map((p, i) => {
+        const name = h(p.name).slice(0, 18);
+        const pad  = "·".repeat(Math.max(2, 20 - name.length));
+        return `${medals[i]}  <b>${name}</b>  ${pad}  <code>${p.votes}</code> 🗳️`;
+      }).join("\n")
+    : `<i>▸ Koi votes nahi the</i>`;
+
+  // ── Channel announcement card ──
+  const channelCard =
+    `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  🏆  <b>GIVEAWAY ENDED!</b>  🏆\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `🎊  🎉  🥳  🎊  🎉  🥳  🎊\n\n` +
+    `📌 <b>${h(g.title)}</b>\n\n` +
+    `━━━◈  🏆 WINNERS 🏆  ◈━━━\n\n` +
+    `${podiumText}\n\n` +
+    `━━━◈━━━━━━━━━━━━━━━━━◈━━━\n` +
+    `<blockquote>` +
+    `👥 Participants  ▸  <b>${g.participants.size}</b>\n` +
+    `🗳️ Total Votes   ▸  <b>${totalVotes}</b>\n` +
+    `📅 Ended At      ▸  ${now}` +
+    `</blockquote>\n\n` +
+    `🎊 <i>Sabko participation ke liye shukriya!</i>\n` +
+    `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`;
+
+  // ── Creator DM card ──
+  const creatorCard =
+    `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  🏁  <b>GIVEAWAY RESULTS</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `📌 <b>${h(g.title)}</b>\n` +
+    `🆔 <code>${gId}</code>\n\n` +
+    `━━━◈ 🏆 FINAL WINNERS ◈━━━\n\n` +
+    `${podiumText}\n\n` +
+    `━━━◈━━━━━━━━━━━━━━━━━◈━━━\n` +
+    `<blockquote>` +
+    `👥 Participants  ▸  <b>${g.participants.size}</b>\n` +
+    `🗳️ Total Votes   ▸  <b>${totalVotes}</b>\n` +
+    `📅 Ended At      ▸  ${now}` +
+    `</blockquote>\n\n` +
+    `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
+
+  // ── Post to channel ──
+  if (g.channelId) {
+    try { await bot.sendMessage(g.channelId, channelCard, { parse_mode: "HTML" }); } catch {}
+  }
+
+  // ── DM to creator ──
+  try { await bot.sendMessage(creatorId, creatorCard, { parse_mode: "HTML" }); } catch {}
+
+  // ── Individual congratulations DM to each top-3 winner ──
+  for (let i = 0; i < top3.length; i++) {
+    const winner = top3[i];
+    if (winner.id === creatorId) continue;
+    const winnerDM =
+      `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  🎊  <b>CONGRATULATIONS!</b>  🎊\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `🥳 <b>Aap ${rankNames[i]} Place Jeet Gaye!</b>\n\n` +
+      `📌 <b>${h(g.title)}</b>\n\n` +
+      `<blockquote>` +
+      `🏆 Rank    ▸  <b>${rankNames[i]}</b>\n` +
+      `🗳️ Votes   ▸  <b>${winner.votes}</b>\n` +
+      `👥 Players ▸  ${g.participants.size} total` +
+      `</blockquote>\n\n` +
+      `🎉 <i>DRS Network ki taraf se dil se badhai!</i>\n` +
+      `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`;
+    try { await bot.sendMessage(winner.id, winnerDM, { parse_mode: "HTML" }); } catch {}
+  }
+}
+
+// ============================================================
 // HELPER: participantChannelText
 // ============================================================
 function participantChannelText(participant, g) {
@@ -1471,21 +1579,8 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
         giveaway.active = false;
         giveaway.participationOpen = false;
         giveaway.paidVotesActive = false;
-        const lb = formatLeaderboard(giveaway);
-        if (giveaway.channelId) {
-          try {
-            await bot.sendMessage(giveaway.channelId,
-              `<b>🏁 ${h(giveaway.title)} — AUTO ENDED!</b>\n\n<b>Final Results:</b>\n${lb}`,
-              { parse_mode: "HTML" }
-            );
-          } catch {}
-        }
-        try {
-          await bot.sendMessage(userId,
-            `<b>🏁 Aapka Giveaway Auto-End Ho Gaya!</b>\n\n<b>${h(giveaway.title)}</b>\n\n<b>Final Results:</b>\n${lb}`,
-            { parse_mode: "HTML" }
-          );
-        } catch {}
+        // ── Announce winners to channel + all DMs ──
+        await announceWinners(giveaway, gId, userId);
       }, ms);
     }
   }
