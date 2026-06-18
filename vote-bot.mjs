@@ -255,22 +255,20 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // ✨ UNIQUE ANIMATIONS PER CONTEXT ✨
 // ============================================================
 
-// 🌟 Welcome animation — grand entrance
+// 🌟 Welcome animation — sleek DRS reveal
 async function animWelcome(chatId) {
   const frames = [
-    `⬛⬛⬛⬛⬛`,
-    `🟥⬛⬛⬛⬛`,
-    `🟥🟧⬛⬛⬛`,
-    `🟥🟧🟨⬛⬛`,
-    `🟥🟧🟨🟩⬛`,
-    `🟥🟧🟨🟩🟦`,
-    `✨ <b>DRS GIVEAWAY BOT</b> ✨`,
+    `·  ·  ·`,
+    `◈  ·  ·  ◈`,
+    `◈ · <b>DRS</b> · ◈`,
+    `⚡ <b>DRS GIVEAWAY</b> ⚡`,
+    `🎰 <b>DRS GIVEAWAY BOT</b> 🎰`,
   ];
-  const delays = [80, 80, 80, 80, 80, 220];
+  const delays = [130, 160, 200, 250];
   let msg;
   try { msg = await bot.sendMessage(chatId, frames[0], { parse_mode: "HTML" }); } catch { return null; }
   for (let i = 1; i < frames.length; i++) {
-    await sleep(delays[i - 1] || 120);
+    await sleep(delays[i - 1] || 150);
     try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
   }
   await sleep(300);
@@ -477,24 +475,37 @@ function nowIST() {
 // ============================================================
 
 async function checkForceJoin(userId) {
-  const configured = forceJoinChannels.filter(c => c.id);
-  if (!configured.length) return { passed: true, missing: [] };
+  // VIP members bypass force join entirely
+  if (isVip(userId)) return { passed: true, missing: [] };
+
+  const allWithLink = forceJoinChannels.filter(c => c.link);
+  if (!allWithLink.length) return { passed: true, missing: [] };
+
   const missing = [];
-  for (const ch of configured) {
-    try {
-      const member = await isMember(ch.id, userId);
-      if (!member) missing.push(ch);
-    } catch { }
+  for (const ch of allWithLink) {
+    if (ch.id) {
+      // Can verify membership properly
+      try {
+        const member = await isMember(ch.id, userId);
+        if (!member) missing.push(ch);
+      } catch { missing.push(ch); }
+    }
+    // No ID = can't verify, trust the user (they still see join buttons)
   }
   return { passed: missing.length === 0, missing };
 }
 
-function forceJoinKeyboard(missing) {
-  const btns = missing.map(ch => ([{
-    text: `${ch.label} — Join Now`,
+function shouldShowForceJoin(userId) {
+  if (isVip(userId)) return false;
+  return forceJoinChannels.some(c => c.link);
+}
+
+function forceJoinKeyboard(channels) {
+  const btns = channels.map(ch => ([{
+    text: `📢 ${ch.label} — Join Now`,
     url: ch.link
   }]));
-  btns.push([{ text: "✅ I've Joined — Continue", callback_data: "check_force_join" }]);
+  btns.push([{ text: "✅ Joined — Verify & Continue", callback_data: "check_force_join" }]);
   return { inline_keyboard: btns };
 }
 
@@ -558,6 +569,13 @@ async function sendWelcome(chatId, userId) {
 
   try { await bot.sendChatAction(chatId, "typing"); } catch {}
 
+  // If welcome image set — send it as a spoiler photo (no buttons, separate message)
+  if (welcomeImageUrl) {
+    try {
+      await bot.sendPhoto(chatId, welcomeImageUrl, { has_spoiler: true });
+    } catch {}
+  }
+
   const welcomeText =
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
     `   🎰  <b>DRS GIVEAWAY BOT</b>  🎰\n` +
@@ -576,35 +594,21 @@ async function sendWelcome(chatId, userId) {
     `✦ ─────── <b>DRS NETWORK</b> ─────── ✦\n` +
     `💬 Support: @DRS_Support_DRS`;
 
+  // Always send welcome as TEXT message so callbacks can editMessageText on it
   const opts = { parse_mode: "HTML", reply_markup: mainMenuKeyboard() };
+  const animMsg = await animWelcome(chatId);
   let finalMsg;
-
-  if (welcomeImageUrl) {
-    const animMsg = await animWelcome(chatId);
-    try { if (animMsg) await bot.deleteMessage(chatId, animMsg.message_id); } catch {}
+  if (animMsg) {
     try {
-      finalMsg = await bot.sendPhoto(chatId, welcomeImageUrl, {
-        caption: welcomeText,
-        has_spoiler: true,
-        ...opts
+      await bot.editMessageText(welcomeText, {
+        chat_id: chatId, message_id: animMsg.message_id, ...opts
       });
+      finalMsg = animMsg;
     } catch {
       finalMsg = await bot.sendMessage(chatId, welcomeText, opts);
     }
   } else {
-    const animMsg = await animWelcome(chatId);
-    if (animMsg) {
-      try {
-        await bot.editMessageText(welcomeText, {
-          chat_id: chatId, message_id: animMsg.message_id, ...opts
-        });
-        finalMsg = animMsg;
-      } catch {
-        finalMsg = await bot.sendMessage(chatId, welcomeText, opts);
-      }
-    } else {
-      finalMsg = await bot.sendMessage(chatId, welcomeText, opts);
-    }
+    finalMsg = await bot.sendMessage(chatId, welcomeText, opts);
   }
 
   const msgId = finalMsg?.message_id;
@@ -624,20 +628,29 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   userState.delete(userId);
 
   // ── Force Join Check ──
-  const { passed, missing } = await checkForceJoin(userId);
-  if (!passed) {
-    await bot.sendMessage(chatId,
-      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-      `  📢  <b>JOIN REQUIRED</b>  📢\n` +
-      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-      `<blockquote>` +
-      `Bot use karne ke liye pehle ye channels join karo:\n\n` +
-      missing.map(c => `🔗 ${c.label}`).join("\n") +
-      `\n\nJoin karne ke baad ✅ button dabaao.</blockquote>\n\n` +
-      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { parse_mode: "HTML", reply_markup: forceJoinKeyboard(missing) }
-    );
-    return;
+  // Show force join if any channels are configured with links (VIP bypasses)
+  if (shouldShowForceJoin(userId)) {
+    const { passed, missing } = await checkForceJoin(userId);
+    const allChannels = forceJoinChannels.filter(c => c.link);
+    if (!passed) {
+      // Show all channels with join buttons, highlight missing ones
+      const missingIds = new Set(missing.map(c => c.link));
+      const displayList = allChannels.map(c =>
+        `${missingIds.has(c.link) ? "❌" : "✅"} ${c.label}`
+      ).join("\n");
+      await bot.sendMessage(chatId,
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+        `  📢  <b>JOIN REQUIRED</b>  📢\n` +
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+        `<blockquote>` +
+        `🔒 Bot use karne ke liye pehle ye channels join karo:\n\n` +
+        `${displayList}\n\n` +
+        `Join karne ke baad ✅ <b>Verify button</b> dabaao.</blockquote>\n\n` +
+        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+        { parse_mode: "HTML", reply_markup: forceJoinKeyboard(allChannels) }
+      );
+      return;
+    }
   }
 
   // Deep link: /start <giveawayId>
@@ -759,19 +772,24 @@ bot.on("callback_query", async (query) => {
   const data = query.data;
   await bot.answerCallbackQuery(query.id).catch(() => {});
 
-  // ─── Force join re-check ───
+  // ─── Force join re-check (Verify button) ───
   if (data === "check_force_join") {
     const { passed, missing } = await checkForceJoin(userId);
     if (!passed) {
+      const allChannels = forceJoinChannels.filter(c => c.link);
+      const missingLinks = new Set(missing.map(c => c.link));
+      const displayList = allChannels.map(c =>
+        `${missingLinks.has(c.link) ? "❌" : "✅"} ${c.label}`
+      ).join("\n");
       await bot.editMessageText(
         `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
         `  📢  <b>JOIN REQUIRED</b>  📢\n` +
         `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-        `<blockquote>⚠️ Abhi bhi ye channels join nahi kiye:\n\n` +
-        missing.map(c => `❌ ${c.label}`).join("\n") +
-        `\n\nSabhi join karo phir ✅ button dabaao.</blockquote>\n\n` +
+        `<blockquote>⚠️ Kuch channels abhi join nahi kiye:\n\n` +
+        `${displayList}\n\n` +
+        `❌ Channels join karo phir ✅ Verify button dabaao.</blockquote>\n\n` +
         `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-        { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: forceJoinKeyboard(missing) }
+        { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: forceJoinKeyboard(allChannels) }
       ).catch(() => {});
     } else {
       try { await bot.deleteMessage(chatId, msgId); } catch {}
