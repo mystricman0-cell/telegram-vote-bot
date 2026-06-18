@@ -1,7 +1,7 @@
 {
   "name": "telegram-vote-bot",
-  "version": "1.0.0",
-  "description": "Telegram Vote Bot - Channel voting with membership verification and auto vote removal",
+  "version": "2.0.0",
+  "description": "VTH-style Telegram Giveaway Vote Bot with Telegram Stars payments",
   "type": "module",
   "scripts": {
     "start": "node vote-bot.mjs",
