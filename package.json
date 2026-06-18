@@ -1,13 +1,14 @@
 {
   "name": "telegram-vote-bot",
-  "version": "2.0.0",
-  "description": "VTH-style Telegram Giveaway Vote Bot with Telegram Stars payments",
+  "version": "3.0.0",
+  "description": "DRS Giveaway Bot — MongoDB Persistent | Force Join | Stylish Animations | Spoiler Image",
   "type": "module",
   "scripts": {
     "start": "node vote-bot.mjs",
     "dev": "node --watch vote-bot.mjs"
   },
   "dependencies": {
+    "mongoose": "^8.24.0",
     "node-telegram-bot-api": "^1.1.0"
   },
   "engines": {

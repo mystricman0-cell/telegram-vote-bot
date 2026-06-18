@@ -1,97 +1,406 @@
 /**
- * 🎰 DRS GIVEAWAY BOT
+ * 🎰 DRS GIVEAWAY BOT v3.0
  * Full-featured Telegram Giveaway & Voting System
  * DRS Branding — Fair · Fast · Automated
+ * MongoDB Persistent Storage | Force Join | Stylish Animations
  */
 
 import TelegramBot from "node-telegram-bot-api";
+import mongoose from "mongoose";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const MAIN_ADMIN_ID = Number(process.env.ADMIN_ID);
+const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!BOT_TOKEN) { console.error("❌ TELEGRAM_BOT_TOKEN not set!"); process.exit(1); }
 if (!MAIN_ADMIN_ID) { console.error("❌ ADMIN_ID not set!"); process.exit(1); }
+if (!MONGODB_URI) { console.error("❌ MONGODB_URI not set!"); process.exit(1); }
+
+// ============================================================
+// MONGODB SCHEMAS
+// ============================================================
+
+const giveawaySchema = new mongoose.Schema({
+  id: { type: String, required: true, unique: true },
+  title: String,
+  creatorId: Number,
+  channelId: String,
+  channelUsername: String,
+  participants: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
+  voterMap: { type: Map, of: Number, default: {} },
+  active: { type: Boolean, default: true },
+  participationOpen: { type: Boolean, default: true },
+  paidVotesActive: { type: Boolean, default: false },
+  autoEnd: { type: Boolean, default: false },
+  endTime: Date,
+  paymentMode: { type: String, default: "none" },
+  qrFileId: String,
+  votesPerInr: { type: Number, default: 10 },
+  votesPerStar: { type: Number, default: 5 },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const channelSchema = new mongoose.Schema({
+  channelId: { type: String, required: true, unique: true },
+  title: String,
+  type: String,
+  addedBy: Number,
+  username: String
+});
+
+const vipSchema = new mongoose.Schema({
+  userId: { type: Number, required: true, unique: true },
+  vip: Boolean,
+  plan: String,
+  expiry: Date,
+  days: Number
+});
+
+const pendingPaymentSchema = new mongoose.Schema({
+  payId: { type: String, required: true, unique: true },
+  userId: Number,
+  giveawayId: String,
+  screenshotFileId: String,
+  timestamp: { type: Date, default: Date.now }
+});
+
+const pendingMembershipSchema = new mongoose.Schema({
+  payId: { type: String, required: true, unique: true },
+  userId: Number,
+  planKey: String,
+  timestamp: { type: Date, default: Date.now }
+});
+
+const botConfigSchema = new mongoose.Schema({
+  key: { type: String, required: true, unique: true },
+  value: mongoose.Schema.Types.Mixed
+});
+
+const GiveawayModel = mongoose.model("Giveaway", giveawaySchema);
+const ChannelModel = mongoose.model("Channel", channelSchema);
+const VipModel = mongoose.model("Vip", vipSchema);
+const PendingPaymentModel = mongoose.model("PendingPayment", pendingPaymentSchema);
+const PendingMembershipModel = mongoose.model("PendingMembership", pendingMembershipSchema);
+const BotConfigModel = mongoose.model("BotConfig", botConfigSchema);
+
+// ============================================================
+// IN-MEMORY STATE (fast access, synced to Mongo)
+// ============================================================
+
+const giveaways = new Map();
+const registeredChannels = new Map();
+const userState = new Map();
+const vipUsers = new Map();
+const pendingPayments = new Map();
+const pendingMembershipPayments = new Map();
+let paymentCounter = 1;
+let membershipPayCounter = 1;
+let welcomeImageUrl = null;
+let membershipQrFileId = null;
+let forceJoinChannels = [];
+
+// Force join default channels (invite links + IDs — set via /setforcejoin)
+// Format: { id: "-100xxxxxxxxxx", link: "https://t.me/+xxxx", label: "..." }
+const DEFAULT_FORCE_CHANNELS = [
+  { id: null, link: "https://t.me/+aMvgXc_nnNAzNThl", label: "🎁 Free Contents" },
+  { id: null, link: "https://t.me/+uv1o-BJg3mE3ZmQ1", label: "📢 Updates" }
+];
+
+// ============================================================
+// CONNECT MONGODB + LOAD STATE
+// ============================================================
+
+async function connectDB() {
+  try {
+    await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 10000 });
+    console.log("✅ MongoDB Connected!");
+    await loadStateFromDB();
+  } catch (e) {
+    console.error("❌ MongoDB connection error:", e.message);
+  }
+}
+
+async function loadStateFromDB() {
+  // Load giveaways
+  const allGiveaways = await GiveawayModel.find({});
+  for (const g of allGiveaways) {
+    const obj = g.toObject();
+    obj.participants = new Map(
+      Object.entries(obj.participants || {}).map(([k, v]) => {
+        if (v.voters && !Array.isArray(v.voters)) v.voters = [];
+        v.voters = new Set(Array.isArray(v.voters) ? v.voters : []);
+        return [Number(k), v];
+      })
+    );
+    obj.voterMap = new Map(
+      Object.entries(obj.voterMap || {}).map(([k, v]) => [Number(k), Number(v)])
+    );
+    giveaways.set(obj.id, obj);
+
+    // Re-arm auto-end timers
+    if (obj.autoEnd && obj.endTime && obj.active) {
+      const ms = new Date(obj.endTime).getTime() - Date.now();
+      if (ms > 0) {
+        setTimeout(async () => {
+          const giveaway = getGiveaway(obj.id);
+          if (!giveaway || !giveaway.active) return;
+          giveaway.active = false;
+          giveaway.participationOpen = false;
+          giveaway.paidVotesActive = false;
+          await saveGiveaway(giveaway);
+          await announceWinners(giveaway, obj.id, giveaway.creatorId);
+        }, ms);
+      }
+    }
+  }
+
+  // Load channels
+  const allChannels = await ChannelModel.find({});
+  for (const c of allChannels) {
+    registeredChannels.set(c.channelId, {
+      title: c.title, type: c.type, addedBy: c.addedBy, username: c.username
+    });
+  }
+
+  // Load VIP users
+  const allVip = await VipModel.find({});
+  for (const v of allVip) {
+    vipUsers.set(v.userId, { vip: v.vip, plan: v.plan, expiry: v.expiry, days: v.days });
+  }
+
+  // Load pending payments
+  const allPending = await PendingPaymentModel.find({});
+  for (const p of allPending) {
+    pendingPayments.set(p.payId, {
+      userId: p.userId, giveawayId: p.giveawayId,
+      screenshotFileId: p.screenshotFileId, timestamp: p.timestamp
+    });
+  }
+  paymentCounter = allPending.length + 1;
+
+  // Load pending membership
+  const allMemPending = await PendingMembershipModel.find({});
+  for (const m of allMemPending) {
+    pendingMembershipPayments.set(m.payId, {
+      userId: m.userId, planKey: m.planKey, timestamp: m.timestamp
+    });
+  }
+  membershipPayCounter = allMemPending.length + 1;
+
+  // Load config
+  const imgConfig = await BotConfigModel.findOne({ key: "welcomeImageUrl" });
+  if (imgConfig) welcomeImageUrl = imgConfig.value;
+
+  const qrConfig = await BotConfigModel.findOne({ key: "membershipQrFileId" });
+  if (qrConfig) membershipQrFileId = qrConfig.value;
+
+  const fjConfig = await BotConfigModel.findOne({ key: "forceJoinChannels" });
+  if (fjConfig) forceJoinChannels = fjConfig.value;
+  else forceJoinChannels = [...DEFAULT_FORCE_CHANNELS];
+
+  console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users`);
+}
+
+async function saveGiveaway(g) {
+  try {
+    const obj = { ...g };
+    const participantsObj = {};
+    for (const [k, v] of (g.participants || new Map())) {
+      participantsObj[String(k)] = { ...v, voters: [...v.voters] };
+    }
+    const voterMapObj = {};
+    for (const [k, v] of (g.voterMap || new Map())) {
+      voterMapObj[String(k)] = v;
+    }
+    await GiveawayModel.findOneAndUpdate(
+      { id: g.id },
+      { ...obj, participants: participantsObj, voterMap: voterMapObj },
+      { upsert: true, new: true }
+    );
+  } catch (e) { console.error("saveGiveaway error:", e.message); }
+}
+
+async function saveChannel(id, data) {
+  try {
+    await ChannelModel.findOneAndUpdate({ channelId: id }, { channelId: id, ...data }, { upsert: true });
+  } catch (e) { console.error("saveChannel error:", e.message); }
+}
+
+async function saveVip(userId, data) {
+  try {
+    await VipModel.findOneAndUpdate({ userId }, { userId, ...data }, { upsert: true });
+  } catch (e) { console.error("saveVip error:", e.message); }
+}
+
+async function saveConfig(key, value) {
+  try {
+    await BotConfigModel.findOneAndUpdate({ key }, { key, value }, { upsert: true });
+  } catch (e) { console.error("saveConfig error:", e.message); }
+}
+
+// ============================================================
+// BOT INIT
+// ============================================================
 
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
 let BOT_USERNAME = "";
 
 // ============================================================
-// IN-MEMORY STATE
+// SLEEP HELPER
 // ============================================================
 
-// giveawayId -> giveaway object
-const giveaways = new Map();
-
-// channelId -> { title, addedBy (userId), type }
-const registeredChannels = new Map();
-
-// userId -> conversation state
-const userState = new Map();
-
-// userId -> { vip, expiry }
-const vipUsers = new Map();
-
-// pending INR vote approvals: paymentId -> { userId, giveawayId, screenshotFileId }
-const pendingPayments = new Map();
-let paymentCounter = 1;
-
-// Pending membership payments: payId -> { userId, planKey, timestamp }
-const pendingMembershipPayments = new Map();
-let membershipPayCounter = 1;
-
-// Admin-managed image file IDs (set via /setwelcomeimage and /setmembershipqr)
-let welcomeImageFileId = null;
-let membershipQrFileId = null;
-
-// Track last welcome message per user (delete on next /start = clean UX)
-const userLastWelcomeMsg = new Map(); // userId -> { chatId, msgId }
-
-// Sleep helper for animations
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
-// ── showLoading: premium 4-frame transition animation ──
-async function showLoading(chatId, msgId) {
-  const frames = ["●", "● ─── ●", "✦ ─── <b>DRS</b> ─── ✦", "⚡ <i>Opening...</i>"];
-  for (let i = 0; i < frames.length; i++) {
-    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }); } catch {}
-    if (i < frames.length - 1) await sleep(145);
-  }
-  await sleep(160);
-}
+// ============================================================
+// ✨ UNIQUE ANIMATIONS PER CONTEXT ✨
+// ============================================================
 
-// ── animateSend: sends new message with premium build-up animation ──
-async function animateSend(chatId, finalText, opts = {}) {
-  try { await bot.sendChatAction(chatId, "typing"); } catch {}
+// 🌟 Welcome animation — grand entrance
+async function animWelcome(chatId) {
+  const frames = [
+    `⬛⬛⬛⬛⬛`,
+    `🟥⬛⬛⬛⬛`,
+    `🟥🟧⬛⬛⬛`,
+    `🟥🟧🟨⬛⬛`,
+    `🟥🟧🟨🟩⬛`,
+    `🟥🟧🟨🟩🟦`,
+    `✨ <b>DRS GIVEAWAY BOT</b> ✨`,
+  ];
+  const delays = [80, 80, 80, 80, 80, 220];
   let msg;
-  try { msg = await bot.sendMessage(chatId, "●", { parse_mode: "HTML" }); } catch { return null; }
-  const frames = ["● ─── ●", "✦ ─── <b>DRS</b> ─── ✦", "✦ <i>Building response...</i>"];
-  const delays = [130, 150, 180];
-  for (let i = 0; i < frames.length; i++) {
-    await sleep(delays[i]);
+  try { msg = await bot.sendMessage(chatId, frames[0], { parse_mode: "HTML" }); } catch { return null; }
+  for (let i = 1; i < frames.length; i++) {
+    await sleep(delays[i - 1] || 120);
     try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
   }
-  await sleep(240);
+  await sleep(300);
+  return msg;
+}
+
+// 🔄 Loading animation — minimal spinner
+async function animLoading(chatId, msgId) {
+  const frames = ["⏳", "🔄", "⚙️ <i>Loading...</i>", "✦ <i>Please wait...</i>"];
+  const delays = [100, 130, 160];
+  for (let i = 0; i < frames.length; i++) {
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }); } catch {}
+    if (i < frames.length - 1) await sleep(delays[i]);
+  }
+  await sleep(150);
+}
+
+// 🎯 Action animation — for button responses (new message)
+async function animAction(chatId, finalText, opts = {}) {
+  try { await bot.sendChatAction(chatId, "typing"); } catch {}
+  const frames = ["💫", "💫 ─ 💫", "⚡ <b>DRS</b> ⚡", "🔥 <i>Processing...</i>"];
+  const delays = [100, 130, 160];
+  let msg;
+  try { msg = await bot.sendMessage(chatId, frames[0], { parse_mode: "HTML" }); } catch { return null; }
+  for (let i = 1; i < frames.length; i++) {
+    await sleep(delays[i - 1]);
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
+  }
+  await sleep(200);
   try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts }); } catch {}
   return msg;
 }
 
-// ── animateSuccess: celebratory premium flash before confirmation screen ──
-async function animateSuccess(chatId, msgId, finalText, opts = {}) {
-  const frames = ["✦", "✦ ── ✅ ── ✦", "🎊 <b>Confirmed!</b>", "✨ <i>Loading your card...</i>"];
+// ✅ Success animation — celebratory flash
+async function animSuccess(chatId, msgId, finalText, opts = {}) {
+  const frames = ["🎊", "🎊 ─ ✅ ─ 🎊", "🥳 <b>Confirmed!</b>", "✨ <i>Generating your card...</i>"];
+  const delays = [120, 150, 180];
   for (let i = 0; i < frames.length; i++) {
     try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }); } catch {}
-    if (i < frames.length - 1) await sleep(155);
+    if (i < frames.length - 1) await sleep(delays[i]);
   }
-  await sleep(190);
+  await sleep(200);
   try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts }); } catch {}
 }
 
-// Membership plans (INR)
+// 🗳️ Vote animation — quick pulse
+async function animVote(chatId, finalText, opts = {}) {
+  try { await bot.sendChatAction(chatId, "typing"); } catch {}
+  const frames = ["🗳️", "🗳️ ─── 📊", "📊 <b>Counting votes...</b>"];
+  const delays = [90, 120];
+  let msg;
+  try { msg = await bot.sendMessage(chatId, frames[0], { parse_mode: "HTML" }); } catch { return null; }
+  for (let i = 1; i < frames.length; i++) {
+    await sleep(delays[i - 1]);
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
+  }
+  await sleep(150);
+  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts }); } catch {}
+  return msg;
+}
+
+// 🎰 Giveaway creation animation
+async function animCreate(chatId, finalText, opts = {}) {
+  try { await bot.sendChatAction(chatId, "typing"); } catch {}
+  const frames = ["🎰", "🎰 ═══ 🎰", "✦ <b>Creating Giveaway...</b>", "🚀 <i>Almost ready!</i>"];
+  const delays = [110, 140, 170];
+  let msg;
+  try { msg = await bot.sendMessage(chatId, frames[0], { parse_mode: "HTML" }); } catch { return null; }
+  for (let i = 1; i < frames.length; i++) {
+    await sleep(delays[i - 1]);
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
+  }
+  await sleep(200);
+  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts }); } catch {}
+  return msg;
+}
+
+// 🔴 Error/Cancel animation
+async function animCancel(chatId, msgId, finalText, opts = {}) {
+  const frames = ["⚠️", "❌ ─── ⚠️", "🚫 <b>Cancelling...</b>"];
+  const delays = [100, 130];
+  for (let i = 0; i < frames.length; i++) {
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }); } catch {}
+    if (i < frames.length - 1) await sleep(delays[i]);
+  }
+  await sleep(160);
+  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts }); } catch {}
+}
+
+// 💎 Payment/VIP animation
+async function animPayment(chatId, finalText, opts = {}) {
+  try { await bot.sendChatAction(chatId, "typing"); } catch {}
+  const frames = ["💎", "💎 ─── 💰", "💰 <b>Processing Payment...</b>", "🏦 <i>Verifying...</i>"];
+  const delays = [100, 130, 160];
+  let msg;
+  try { msg = await bot.sendMessage(chatId, frames[0], { parse_mode: "HTML" }); } catch { return null; }
+  for (let i = 1; i < frames.length; i++) {
+    await sleep(delays[i - 1]);
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
+  }
+  await sleep(200);
+  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts }); } catch {}
+  return msg;
+}
+
+// 🏆 Leaderboard animation
+async function animLeaderboard(chatId, msgId, finalText, opts = {}) {
+  const frames = ["🏆", "🏅 ─── 🏆 ─── 🏅", "📊 <b>Fetching Rankings...</b>"];
+  const delays = [110, 140];
+  for (let i = 0; i < frames.length; i++) {
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }); } catch {}
+    if (i < frames.length - 1) await sleep(delays[i]);
+  }
+  await sleep(180);
+  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts }); } catch {}
+}
+
+// ============================================================
+// MEMBERSHIP PLANS
+// ============================================================
+
 const MEMBERSHIP_PLANS = {
   "1d": { label: "1 Day", days: 1, price: 10 },
   "7d": { label: "7 Days", days: 7, price: 50 },
   "30d": { label: "30 Days", days: 30, price: 350 }
 };
+
+// ============================================================
+// HELPERS
+// ============================================================
 
 function genId(len = 8) {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -100,23 +409,11 @@ function genId(len = 8) {
   return id;
 }
 
-// participant object shape:
-// { id, name, creatorId (userId who added), votes, voters: Set<userId>,
-//   channelMsgId (message_id in channel), votePostMsgId }
-
-// ============================================================
-// HELPERS
-// ============================================================
-
 function h(t) {
-  return String(t ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function getGiveaway(id) { return giveaways.get(String(id)); }
-
-function voteKey(uid, gid) { return `${uid}:${gid}`; }
-
 function isAdmin(uid) { return uid === MAIN_ADMIN_ID; }
 
 function getMembership(uid) {
@@ -131,7 +428,7 @@ function isVip(uid) { return getMembership(uid) !== null; }
 function membershipBadge(uid) {
   const m = getMembership(uid);
   if (!m) return "❌ Inactive";
-  const expStr = m.expiry ? m.expiry.toLocaleDateString("en-IN") : "∞";
+  const expStr = m.expiry ? new Date(m.expiry).toLocaleDateString("en-IN") : "∞";
   return `✅ Active (${m.plan || "VIP"} — expires ${expStr})`;
 }
 
@@ -162,19 +459,43 @@ function formatLeaderboard(g, max = 15) {
 }
 
 function parseIST(str) {
-  // Format: DD-MM-YYYY HH:MM
   const [datePart, timePart] = str.trim().split(" ");
   if (!datePart || !timePart) return null;
   const [dd, mm, yyyy] = datePart.split("-");
   const [hh, min] = timePart.split(":");
   if (!dd || !mm || !yyyy || !hh || !min) return null;
-  const d = new Date(Date.UTC(+yyyy, +mm - 1, +dd, +hh - 5, +min - 30)); // IST = UTC+5:30
+  const d = new Date(Date.UTC(+yyyy, +mm - 1, +dd, +hh - 5, +min - 30));
   return isNaN(d.getTime()) ? null : d;
 }
 
 function nowIST() {
-  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false })
-    .replace(",", "");
+  return new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }).replace(",", "");
+}
+
+// ============================================================
+// FORCE JOIN CHECK
+// ============================================================
+
+async function checkForceJoin(userId) {
+  const configured = forceJoinChannels.filter(c => c.id);
+  if (!configured.length) return { passed: true, missing: [] };
+  const missing = [];
+  for (const ch of configured) {
+    try {
+      const member = await isMember(ch.id, userId);
+      if (!member) missing.push(ch);
+    } catch { }
+  }
+  return { passed: missing.length === 0, missing };
+}
+
+function forceJoinKeyboard(missing) {
+  const btns = missing.map(ch => ([{
+    text: `${ch.label} — Join Now`,
+    url: ch.link
+  }]));
+  btns.push([{ text: "✅ I've Joined — Continue", callback_data: "check_force_join" }]);
+  return { inline_keyboard: btns };
 }
 
 // ============================================================
@@ -226,46 +547,18 @@ function mgmtKeyboard(gId, g) {
 // SEND WELCOME (DRS Branding)
 // ============================================================
 
+const userLastWelcomeMsg = new Map();
+
 async function sendWelcome(chatId, userId) {
-  // ── Delete previous welcome message (clean UX) ──
   const prev = userLastWelcomeMsg.get(userId);
   if (prev) {
     try { await bot.deleteMessage(prev.chatId, prev.msgId); } catch {}
     userLastWelcomeMsg.delete(userId);
   }
 
-  // ── Typing indicator ──
   try { await bot.sendChatAction(chatId, "typing"); } catch {}
 
-  // ── Animation frames ──
-  const frames = [
-    `●`,
-    `● ─── ●`,
-    `✦ ───── ✦`,
-    `✦ ─── <b>DRS</b> ─── ✦`,
-    `✦ ─ <b>DRS GIVEAWAY BOT</b> ─ ✦`,
-    `✦ ─ <b>DRS GIVEAWAY BOT</b> ─ ✦\n⚡ <i>Loading your panel...</i>`,
-  ];
-  const delays = [100, 120, 140, 190, 270];
-
-  let animMsg;
-  try {
-    animMsg = await bot.sendMessage(chatId, frames[0], { parse_mode: "HTML" });
-  } catch { return; }
-
-  for (let i = 1; i < frames.length; i++) {
-    await sleep(delays[i - 1] || 200);
-    try {
-      await bot.editMessageText(frames[i], {
-        chat_id: chatId, message_id: animMsg.message_id, parse_mode: "HTML"
-      });
-    } catch {}
-  }
-
-  await sleep(340);
-
-  // ── Final welcome text ──
-  const text =
+  const welcomeText =
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
     `   🎰  <b>DRS GIVEAWAY BOT</b>  🎰\n` +
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
@@ -286,28 +579,35 @@ async function sendWelcome(chatId, userId) {
   const opts = { parse_mode: "HTML", reply_markup: mainMenuKeyboard() };
   let finalMsg;
 
-  if (welcomeImageFileId) {
-    // Delete text animation, send photo with caption
-    try { await bot.deleteMessage(chatId, animMsg.message_id); } catch {}
+  if (welcomeImageUrl) {
+    const animMsg = await animWelcome(chatId);
+    try { if (animMsg) await bot.deleteMessage(chatId, animMsg.message_id); } catch {}
     try {
-      finalMsg = await bot.sendPhoto(chatId, welcomeImageFileId, { caption: text, ...opts });
+      finalMsg = await bot.sendPhoto(chatId, welcomeImageUrl, {
+        caption: welcomeText,
+        has_spoiler: true,
+        ...opts
+      });
     } catch {
-      finalMsg = await bot.sendMessage(chatId, text, opts);
+      finalMsg = await bot.sendMessage(chatId, welcomeText, opts);
     }
   } else {
-    // Morph animation message into final welcome
-    try {
-      await bot.editMessageText(text, {
-        chat_id: chatId, message_id: animMsg.message_id, ...opts
-      });
-      finalMsg = animMsg;
-    } catch {
-      finalMsg = await bot.sendMessage(chatId, text, opts);
+    const animMsg = await animWelcome(chatId);
+    if (animMsg) {
+      try {
+        await bot.editMessageText(welcomeText, {
+          chat_id: chatId, message_id: animMsg.message_id, ...opts
+        });
+        finalMsg = animMsg;
+      } catch {
+        finalMsg = await bot.sendMessage(chatId, welcomeText, opts);
+      }
+    } else {
+      finalMsg = await bot.sendMessage(chatId, welcomeText, opts);
     }
   }
 
-  // ── Track message ID for next /start cleanup ──
-  const msgId = finalMsg?.message_id ?? animMsg?.message_id;
+  const msgId = finalMsg?.message_id;
   if (msgId) userLastWelcomeMsg.set(userId, { chatId, msgId });
 }
 
@@ -323,7 +623,24 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
 
   userState.delete(userId);
 
-  // Deep link: /start <giveawayId>  — participant joining a giveaway
+  // ── Force Join Check ──
+  const { passed, missing } = await checkForceJoin(userId);
+  if (!passed) {
+    await bot.sendMessage(chatId,
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  📢  <b>JOIN REQUIRED</b>  📢\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>` +
+      `Bot use karne ke liye pehle ye channels join karo:\n\n` +
+      missing.map(c => `🔗 ${c.label}`).join("\n") +
+      `\n\nJoin karne ke baad ✅ button dabaao.</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML", reply_markup: forceJoinKeyboard(missing) }
+    );
+    return;
+  }
+
+  // Deep link: /start <giveawayId>
   if (param) {
     const g = getGiveaway(param);
     if (!g) {
@@ -335,11 +652,9 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
         { parse_mode: "HTML" }
       );
     }
-    // Check channel membership
     if (g.channelId) {
       const member = await isMember(g.channelId, userId);
       if (!member) {
-        const ch = registeredChannels.get(String(g.channelId));
         return bot.sendMessage(chatId,
           `<b>❌ Channel Member Nahi Ho!</b>\n\n` +
           `<b>${h(g.title)}</b> mein participate karne ke liye pehle channel join karo:\n` +
@@ -348,13 +663,10 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
         );
       }
     }
-    // Check if already participating
     const existing = g.participants.get(userId);
     const userName = (msg.from.first_name || "") + (msg.from.last_name ? ` ${msg.from.last_name}` : "");
-    const userHandle = msg.from.username ? `@${msg.from.username}` : "@NoUser";
 
     if (existing) {
-      // Already a participant — show their post links
       return bot.sendMessage(chatId,
         `<b>🎉 Aap pehle se Participant Hain!</b>\n\n` +
         `📌 <b>${h(g.title)}</b>\n` +
@@ -376,7 +688,6 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
       );
     }
 
-    // Show confirmation
     await bot.sendMessage(chatId,
       `<b>💎 Verification Successful</b>\n\n` +
       `Event: <b>${h(g.title)}</b>\n\n` +
@@ -400,7 +711,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
 });
 
 // ============================================================
-// BOT ADDED TO CHANNEL (my_chat_member)
+// BOT ADDED TO CHANNEL
 // ============================================================
 
 bot.on("my_chat_member", async (update) => {
@@ -411,16 +722,11 @@ bot.on("my_chat_member", async (update) => {
   const wasAdmin = ["administrator", "creator"].includes(update.old_chat_member?.status);
 
   if (isNowAdmin && !wasAdmin) {
-    // Bot just became admin — register channel
     const key = String(chat.id);
-    registeredChannels.set(key, {
-      title: chat.title || "Unknown",
-      type: chat.type,
-      addedBy: from.id,
-      username: chat.username || null
-    });
+    const data = { title: chat.title || "Unknown", type: chat.type, addedBy: from.id, username: chat.username || null };
+    registeredChannels.set(key, data);
+    await saveChannel(key, data);
 
-    // Send welcome to the person who added
     try {
       await bot.sendMessage(from.id,
         `👑 <b>DRS GIVEAWAY BOT</b> 💎\n` +
@@ -453,10 +759,30 @@ bot.on("callback_query", async (query) => {
   const data = query.data;
   await bot.answerCallbackQuery(query.id).catch(() => {});
 
+  // ─── Force join re-check ───
+  if (data === "check_force_join") {
+    const { passed, missing } = await checkForceJoin(userId);
+    if (!passed) {
+      await bot.editMessageText(
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+        `  📢  <b>JOIN REQUIRED</b>  📢\n` +
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+        `<blockquote>⚠️ Abhi bhi ye channels join nahi kiye:\n\n` +
+        missing.map(c => `❌ ${c.label}`).join("\n") +
+        `\n\nSabhi join karo phir ✅ button dabaao.</blockquote>\n\n` +
+        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+        { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: forceJoinKeyboard(missing) }
+      ).catch(() => {});
+    } else {
+      try { await bot.deleteMessage(chatId, msgId); } catch {}
+      await sendWelcome(chatId, userId);
+    }
+    return;
+  }
+
   // ─── Main Menu ───
   if (data === "main_menu") {
     userState.delete(userId);
-    // Delete current message and show animated welcome
     try { await bot.deleteMessage(chatId, msgId); } catch {}
     await sendWelcome(chatId, userId);
     return;
@@ -465,22 +791,21 @@ bot.on("callback_query", async (query) => {
   // ─── Cancel flow ───
   if (data === "cancel_flow") {
     userState.delete(userId);
-    await showLoading(chatId, msgId);
-    await bot.editMessageText(
+    await animCancel(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━✦\n` +
       `      ❌  <b>CANCELLED</b>\n` +
       `✦━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `<blockquote>Action cancel kar diya gaya.\nMain menu par wapas jaao aur dobara start karo.</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
-    ).catch(() => {});
+      { reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+    );
     return;
   }
 
   // ─── New Giveaway ───
   if (data === "new_giveaway") {
     userState.set(userId, { step: "title", msgId });
-    await showLoading(chatId, msgId);
+    await animLoading(chatId, msgId);
     await bot.editMessageText(
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `   🎰  <b>CREATE GIVEAWAY</b>  🎰\n` +
@@ -491,8 +816,7 @@ bot.on("callback_query", async (query) => {
       `📝 Apne giveaway ke liye ek catchy title likho.\n\n` +
       `▸ iPhone 16 Giveaway Contest\n` +
       `▸ Best Creator Vote 2026\n` +
-      `▸ Monthly Star Award\n` +
-      `▸ DRS Community Challenge` +
+      `▸ Monthly Star Award` +
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: cancelKeyboard() }
@@ -525,14 +849,8 @@ bot.on("callback_query", async (query) => {
       `▸ View live vote counts &amp; leaderboard` +
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
-    if (welcomeImageFileId) {
-      await showLoading(chatId, msgId);
-      try { await bot.deleteMessage(chatId, msgId); } catch {}
-      await bot.sendPhoto(chatId, welcomeImageFileId, { caption, parse_mode: "HTML", reply_markup: kb });
-    } else {
-      await showLoading(chatId, msgId);
-      await bot.editMessageText(caption, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: kb }).catch(() => {});
-    }
+    await animLoading(chatId, msgId);
+    await bot.editMessageText(caption, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: kb }).catch(() => {});
     return;
   }
 
@@ -540,19 +858,16 @@ bot.on("callback_query", async (query) => {
   if (data.startsWith("mglist:")) {
     const cat = data.split(":")[1];
     let list = [];
-    if (cat === "created_active")
-      list = [...giveaways.values()].filter(g => g.creatorId === userId && g.active);
-    else if (cat === "created_past")
-      list = [...giveaways.values()].filter(g => g.creatorId === userId && !g.active);
-    else if (cat === "joined_active")
-      list = [...giveaways.values()].filter(g => g.participants.has(userId) && g.active);
-    else if (cat === "joined_past")
-      list = [...giveaways.values()].filter(g => g.participants.has(userId) && !g.active);
+    if (cat === "created_active") list = [...giveaways.values()].filter(g => g.creatorId === userId && g.active);
+    else if (cat === "created_past") list = [...giveaways.values()].filter(g => g.creatorId === userId && !g.active);
+    else if (cat === "joined_active") list = [...giveaways.values()].filter(g => g.participants.has(userId) && g.active);
+    else if (cat === "joined_past") list = [...giveaways.values()].filter(g => g.participants.has(userId) && !g.active);
 
     const label = { created_active: "✍️ Created (Active)", created_past: "📋 Created (Past)", joined_active: "🤝 Joined (Active)", joined_past: "📂 Joined (Past)" }[cat];
-    const icon  = { created_active: "✍️", created_past: "📋", joined_active: "🤝", joined_past: "📂" }[cat];
+    const icon = { created_active: "✍️", created_past: "📋", joined_active: "🤝", joined_past: "📂" }[cat];
+
     if (!list.length) {
-      await animateSend(chatId,
+      await animAction(chatId,
         `${icon} <b>${label}</b>\n\n` +
         `◆ ─────────────────── ◆\n\n` +
         `<blockquote>Is category mein abhi koi giveaway nahi hai.\nNaya banao ya kisi giveaway mein join ho!</blockquote>`,
@@ -561,11 +876,11 @@ bot.on("callback_query", async (query) => {
       return;
     }
     const btns = list.map(g => ([{
-      text: `${g.active ? "🟢" : "🔴"} ${g.title}  ·  ${g.participants.size} 👥  ·  ${[...g.participants.values()].reduce((s,p)=>s+p.votes,0)} 🗳️`,
+      text: `${g.active ? "🟢" : "🔴"} ${g.title}  ·  ${g.participants.size} 👥  ·  ${[...g.participants.values()].reduce((s, p) => s + p.votes, 0)} 🗳️`,
       callback_data: `mgmt:${g.id}`
     }]));
     btns.push([{ text: "◀️ Back", callback_data: "my_giveaways" }]);
-    await animateSend(chatId,
+    await animAction(chatId,
       `${icon} <b>${label}</b>\n\n` +
       `◆ ─────────────────── ◆\n` +
       `<i>${list.length} giveaway${list.length !== 1 ? "s" : ""} found</i>`,
@@ -579,7 +894,7 @@ bot.on("callback_query", async (query) => {
     const gId = data.split(":")[1];
     const g = getGiveaway(gId);
     if (!g) return;
-    await showLoading(chatId, msgId);
+    await animLoading(chatId, msgId);
     const totalVotes = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
     const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
     await bot.editMessageText(
@@ -607,9 +922,8 @@ bot.on("callback_query", async (query) => {
     const gId = data.split(":")[1];
     const g = getGiveaway(gId);
     if (!g) return;
-    await showLoading(chatId, msgId);
     const totalVotesLb = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
-    await bot.editMessageText(
+    await animLeaderboard(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `   🏆  <b>LEADERBOARD</b>  🏆\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
@@ -619,8 +933,8 @@ bot.on("callback_query", async (query) => {
       `${formatLeaderboard(g)}\n\n` +
       `━━━◈━━━━━━━━━━━━━━━━◈━━━\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: backKeyboard(`mgmt:${gId}`) }
-    ).catch(() => {});
+      { reply_markup: backKeyboard(`mgmt:${gId}`) }
+    );
     return;
   }
 
@@ -634,6 +948,7 @@ bot.on("callback_query", async (query) => {
       return;
     }
     g.paidVotesActive = !g.paidVotesActive;
+    await saveGiveaway(g);
     await bot.editMessageReplyMarkup(mgmtKeyboard(gId, g), { chat_id: chatId, message_id: msgId }).catch(() => {});
     await bot.answerCallbackQuery(query.id, { text: `Paid votes ${g.paidVotesActive ? "ON" : "OFF"}!` });
     return;
@@ -649,6 +964,7 @@ bot.on("callback_query", async (query) => {
       return;
     }
     g.participationOpen = !g.participationOpen;
+    await saveGiveaway(g);
     await bot.editMessageReplyMarkup(mgmtKeyboard(gId, g), { chat_id: chatId, message_id: msgId }).catch(() => {});
     await bot.answerCallbackQuery(query.id, { text: `Participation ${g.participationOpen ? "OPEN" : "CLOSED"}!` });
     return;
@@ -664,14 +980,11 @@ bot.on("callback_query", async (query) => {
       return;
     }
     g.active = false; g.participationOpen = false; g.paidVotesActive = false;
+    await saveGiveaway(g);
 
-    // ── Show "ending..." animation on the panel ──
-    await showLoading(chatId, msgId);
-
-    // ── Announce winners to channel + DMs ──
+    await animLoading(chatId, msgId);
     await announceWinners(g, gId, g.creatorId);
 
-    // ── Update panel to show ended state ──
     const parts = [...g.participants.values()].sort((a, b) => b.votes - a.votes);
     const totalVotes = parts.reduce((s, p) => s + p.votes, 0);
     const top3lines = parts.slice(0, 3).map((p, i) => {
@@ -694,11 +1007,14 @@ bot.on("callback_query", async (query) => {
       `━━━◈━━━━━━━━━━━━━━━━━◈━━━\n` +
       `✅ <i>Winner cards sent to channel &amp; DMs!</i>\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML",
-        reply_markup: { inline_keyboard: [
-          [{ text: "🏆 Full Leaderboard", callback_data: `lb:${gId}` }],
-          [{ text: "◀️ My Giveaways", callback_data: "my_giveaways" }]
-        ]}
+      {
+        chat_id: chatId, message_id: msgId, parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "🏆 Full Leaderboard", callback_data: `lb:${gId}` }],
+            [{ text: "◀️ My Giveaways", callback_data: "my_giveaways" }]
+          ]
+        }
       }
     ).catch(() => {});
     return;
@@ -720,6 +1036,7 @@ bot.on("callback_query", async (query) => {
         p.channelMsgId = null;
       }
     }
+    await saveGiveaway(g);
     await bot.answerCallbackQuery(query.id, { text: `${cleared} posts delete kiye!`, show_alert: true });
     return;
   }
@@ -737,18 +1054,12 @@ bot.on("callback_query", async (query) => {
     const userName = (query.from.first_name || "") + (query.from.last_name ? ` ${query.from.last_name}` : "");
     const userHandle = query.from.username ? `@${query.from.username}` : "@NoUser";
 
-    // Add participant
     const participant = {
-      id: userId,
-      name: userName,
-      handle: userHandle,
-      votes: 0,
-      voters: new Set(),
-      channelMsgId: null
+      id: userId, name: userName, handle: userHandle,
+      votes: 0, voters: new Set(), channelMsgId: null
     };
     g.participants.set(userId, participant);
 
-    // Post in channel
     let channelMsgId = null;
     if (g.channelId) {
       try {
@@ -770,12 +1081,14 @@ bot.on("callback_query", async (query) => {
       } catch (e) { console.error("Channel post error:", e.message); }
     }
 
+    await saveGiveaway(g);
+
     const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
     const chLink = g.channelId && channelMsgId
       ? `https://t.me/c/${String(g.channelId).replace("-100", "")}/${channelMsgId}`
       : null;
 
-    await animateSuccess(chatId, msgId,
+    await animSuccess(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `  🎊  <b>YOU'RE IN!</b>  🎊\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
@@ -803,7 +1116,7 @@ bot.on("callback_query", async (query) => {
     return;
   }
 
-  // ─── Channel Vote Button (from channel) ───
+  // ─── Channel Vote Button ───
   if (data.startsWith("ch_vote:")) {
     const parts = data.split(":");
     const gId = parts[1];
@@ -814,24 +1127,13 @@ bot.on("callback_query", async (query) => {
       await bot.answerCallbackQuery(query.id, { text: "Voting active nahi hai!", show_alert: true });
       return;
     }
-    if (!g.participationOpen && !g.participants.has(userId)) {
-      await bot.answerCallbackQuery(query.id, { text: "Participation band hai!", show_alert: true });
-      return;
-    }
-
-    // Check channel membership
     if (g.channelId) {
       const member = await isMember(g.channelId, userId);
       if (!member) {
-        await bot.answerCallbackQuery(query.id, {
-          text: "⚠️ Pehle channel join karo, phir vote do!",
-          show_alert: true
-        });
+        await bot.answerCallbackQuery(query.id, { text: "⚠️ Pehle channel join karo, phir vote do!", show_alert: true });
         return;
       }
     }
-
-    // Can't vote for yourself
     if (userId === participantUserId) {
       await bot.answerCallbackQuery(query.id, {
         text: "⚠️ OPERATION DENIED\n\nYOU CANNOT VOTE FOR YOURSELF!",
@@ -840,14 +1142,12 @@ bot.on("callback_query", async (query) => {
       return;
     }
 
-    const key = voteKey(userId, gId);
     const participant = g.participants.get(participantUserId);
     if (!participant) {
       await bot.answerCallbackQuery(query.id, { text: "Participant nahi mila!", show_alert: true });
       return;
     }
 
-    // Remove old vote
     const existingVote = g.voterMap?.get(userId);
     if (existingVote) {
       if (existingVote === participantUserId) {
@@ -866,6 +1166,7 @@ bot.on("callback_query", async (query) => {
     participant.votes += 1;
     participant.voters.add(userId);
     g.voterMap.set(userId, participantUserId);
+    await saveGiveaway(g);
 
     const voterName = (query.from.first_name || "") + (query.from.last_name ? ` ${query.from.last_name}` : "");
     await bot.answerCallbackQuery(query.id, {
@@ -880,7 +1181,6 @@ bot.on("callback_query", async (query) => {
       show_alert: true
     });
 
-    // Update channel post
     await updateChannelPost(g, participant);
     return;
   }
@@ -896,24 +1196,20 @@ bot.on("callback_query", async (query) => {
     }
 
     const btns = [];
-    if (g.paymentMode === "inr" || g.paymentMode === "both") {
+    if (g.paymentMode === "inr" || g.paymentMode === "both")
       btns.push([{ text: "🇮🇳 Pay via INR/UPI (QR)", callback_data: `pay_inr:${gId}` }]);
-    }
-    if (g.paymentMode === "stars" || g.paymentMode === "both") {
+    if (g.paymentMode === "stars" || g.paymentMode === "both")
       btns.push([{ text: "⭐ Pay via Telegram Stars", callback_data: `pay_stars:${gId}` }]);
-    }
     btns.push([{ text: "◀️ Back", callback_data: `my_links:${gId}` }]);
 
-    await showLoading(chatId, msgId);
+    await animLoading(chatId, msgId);
     await bot.editMessageText(
       `💰 <b>BUY PAID VOTES</b>\n` +
       `<i>${h(g.title)}</i>\n\n` +
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `<blockquote>` +
-      (g.paymentMode === "inr" || g.paymentMode === "both"
-        ? `🇮🇳 INR Rate  :  ${g.votesPerInr} votes / ₹1\n` : "") +
-      (g.paymentMode === "stars" || g.paymentMode === "both"
-        ? `⭐ Stars Rate :  ${g.votesPerStar} votes / 1 ⭐` : "") +
+      (g.paymentMode === "inr" || g.paymentMode === "both" ? `🇮🇳 INR Rate  :  ${g.votesPerInr} votes / ₹1\n` : "") +
+      (g.paymentMode === "stars" || g.paymentMode === "both" ? `⭐ Stars Rate :  ${g.votesPerStar} votes / 1 ⭐` : "") +
       `</blockquote>\n` +
       `━━━━━━━━━━━━━━━━━━━━\n\n` +
       `Payment method choose karo:`,
@@ -958,7 +1254,6 @@ bot.on("callback_query", async (query) => {
       await bot.answerCallbackQuery(query.id, { text: "Pehle giveaway join karo!", show_alert: true });
       return;
     }
-    // Send Stars invoice (1 star = votesPerStar votes)
     try {
       await bot.sendInvoice(
         chatId,
@@ -1009,7 +1304,7 @@ bot.on("callback_query", async (query) => {
 
   // ─── How to Use ───
   if (data === "how_to_use") {
-    await showLoading(chatId, msgId);
+    await animLoading(chatId, msgId);
     await bot.editMessageText(
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `   ❓  <b>GUIDE &amp; HELP</b>\n` +
@@ -1039,11 +1334,11 @@ bot.on("callback_query", async (query) => {
     return;
   }
 
-  // ─── Add Channel ───
+  // ─── Add Channel / Group ───
   if (data === "add_channel" || data === "add_group") {
     const type = data === "add_channel" ? "channel" : "group";
     userState.set(userId, { step: "reg_chat", type });
-    await showLoading(chatId, msgId);
+    await animLoading(chatId, msgId);
     await bot.editMessageText(
       `<b>➕ ${type === "channel" ? "Channel" : "Group"} Add Karo</b>\n\n` +
       `${type === "channel" ? "Channel" : "Group"} ID bhejo:\n<i>Example: -1001234567890</i>\n\n` +
@@ -1056,20 +1351,21 @@ bot.on("callback_query", async (query) => {
 
   // ─── VIP Membership ───
   if (data === "vip_membership") {
-    await showLoading(chatId, msgId);
+    await animLoading(chatId, msgId);
     const badge = membershipBadge(userId);
     const m = getMembership(userId);
     const featuresText =
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-      `   👑  <b>VIP MEMBERSHIP</b>  ${badge}\n` +
+      `   👑  <b>VIP MEMBERSHIP</b>\n` +
+      `   ${badge}\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       (m
-        ? `<blockquote>✅ <b>You are a VIP Member!</b>\n⏳ Expires: ${new Date(m.expiresAt).toLocaleDateString("en-IN")}</blockquote>\n\n`
+        ? `<blockquote>✅ <b>You are a VIP Member!</b>\n⏳ Expires: ${new Date(m.expiry).toLocaleDateString("en-IN")}</blockquote>\n\n`
         : `<blockquote>🔓 Upgrade now to unlock full power of DRS Bot!</blockquote>\n\n`) +
       `━━━◈ <b>PREMIUM FEATURES</b> ◈━━━\n\n` +
       `<blockquote>` +
       `▸ Custom thumbnail on vote post image\n\n` +
-      `▸ Auto vote-deduction on channel leave 🧿\n  <i>(Free for a limited time!)</i>\n\n` +
+      `▸ Auto vote-deduction on channel leave 🧿\n\n` +
       `▸ 1 extra Force-Join channel before voting\n\n` +
       `▸ 1 global Force-Join for all bot users\n  <i>(Requires minimum 7-day membership)</i>` +
       `</blockquote>\n\n` +
@@ -1112,7 +1408,9 @@ bot.on("callback_query", async (query) => {
     }
 
     const payId = String(membershipPayCounter++);
-    pendingMembershipPayments.set(payId, { userId, planKey, timestamp: new Date() });
+    const memData = { userId, planKey, timestamp: new Date() };
+    pendingMembershipPayments.set(payId, memData);
+    await PendingMembershipModel.create({ payId, ...memData });
 
     try {
       await bot.sendPhoto(chatId, membershipQrFileId, {
@@ -1153,7 +1451,6 @@ bot.on("callback_query", async (query) => {
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
     ).catch(() => {});
 
-    // Notify admin
     try {
       await bot.sendMessage(MAIN_ADMIN_ID,
         `<b>💳 New Membership Payment Claim</b>\n\n` +
@@ -1188,10 +1485,13 @@ bot.on("callback_query", async (query) => {
     }
     const plan = MEMBERSHIP_PLANS[pending.planKey];
     pendingMembershipPayments.delete(payId);
+    await PendingMembershipModel.deleteOne({ payId });
 
     const expiry = new Date();
     expiry.setDate(expiry.getDate() + plan.days);
-    vipUsers.set(pending.userId, { vip: true, plan: plan.label, expiry, days: plan.days });
+    const vipData = { vip: true, plan: plan.label, expiry, days: plan.days };
+    vipUsers.set(pending.userId, vipData);
+    await saveVip(pending.userId, vipData);
 
     await bot.answerCallbackQuery(query.id, { text: `✅ Membership approved — ${plan.label}!` });
     await bot.editMessageText(
@@ -1217,6 +1517,7 @@ bot.on("callback_query", async (query) => {
     const pending = pendingMembershipPayments.get(payId);
     if (!pending) return;
     pendingMembershipPayments.delete(payId);
+    await PendingMembershipModel.deleteOne({ payId });
     await bot.answerCallbackQuery(query.id, { text: "Payment rejected." });
     await bot.editMessageText(
       `❌ <b>Membership Rejected</b>\nPayment ID: <code>${payId}</code>`,
@@ -1233,7 +1534,7 @@ bot.on("callback_query", async (query) => {
 
   // ─── Create Post ───
   if (data === "create_post") {
-    await showLoading(chatId, msgId);
+    await animLoading(chatId, msgId);
     const myChannels = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
     if (!myChannels.length) {
       await bot.editMessageText(
@@ -1250,9 +1551,7 @@ bot.on("callback_query", async (query) => {
     return;
   }
 
-  // ─── Giveaway creation sub-steps ───
-
-  // Channel select from registered list
+  // ─── Channel select from registered list ───
   if (data.startsWith("sel_ch:")) {
     const chId = data.split(":")[1];
     const state = userState.get(userId);
@@ -1376,7 +1675,6 @@ bot.on("callback_query", async (query) => {
         { parse_mode: "HTML", reply_markup: backKeyboard("cancel_flow") }
       );
     } else {
-      // Stars only
       state.step = "stars_rate";
       userState.set(userId, state);
       await bot.sendMessage(chatId,
@@ -1386,6 +1684,45 @@ bot.on("callback_query", async (query) => {
         { parse_mode: "HTML", reply_markup: backKeyboard("cancel_flow") }
       );
     }
+    return;
+  }
+
+  // ─── Admin: Approve INR payment ───
+  if (data.startsWith("approve_pay:")) {
+    if (!isAdmin(userId)) return;
+    const payId = data.split(":")[1];
+    const payment = pendingPayments.get(payId);
+    if (!payment) {
+      return bot.answerCallbackQuery(query.id, { text: "Payment nahi mila!", show_alert: true });
+    }
+    userState.set(userId, { step: "approve_votes", paymentId: payId });
+    await bot.answerCallbackQuery(query.id);
+    await bot.sendMessage(MAIN_ADMIN_ID,
+      `Kitne votes dene hain user <code>${payment.userId}</code> ko? (number bhejo)`,
+      { parse_mode: "HTML" }
+    );
+    return;
+  }
+
+  // ─── Admin: Reject INR payment ───
+  if (data.startsWith("reject_pay:")) {
+    if (!isAdmin(userId)) return;
+    const payId = data.split(":")[1];
+    const payment = pendingPayments.get(payId);
+    if (!payment) return;
+    pendingPayments.delete(payId);
+    await PendingPaymentModel.deleteOne({ payId });
+    await bot.answerCallbackQuery(query.id, { text: "Payment rejected!" });
+    await bot.editMessageCaption(
+      `❌ Payment Rejected — ID: ${payId}`,
+      { chat_id: chatId, message_id: msgId }
+    ).catch(() => {});
+    try {
+      await bot.sendMessage(payment.userId,
+        `<b>❌ Payment Rejected</b>\n\nAapki payment verify nahi ho saki.\nPayment ID: <code>${payId}</code>\n\nDubara try karo ya support se contact karo.`,
+        { parse_mode: "HTML" }
+      );
+    } catch {}
     return;
   }
 });
@@ -1435,26 +1772,24 @@ async function updateChannelPost(g, participant) {
 }
 
 // ============================================================
-// HELPER: announceWinners  — channel + creator DM + winner DMs
+// HELPER: announceWinners
 // ============================================================
 async function announceWinners(g, gId, creatorId) {
   const parts = [...g.participants.values()].sort((a, b) => b.votes - a.votes);
   const totalVotes = parts.reduce((s, p) => s + p.votes, 0);
-  const medals  = ["🥇", "🥈", "🥉"];
+  const medals = ["🥇", "🥈", "🥉"];
   const rankNames = ["1st 🥇", "2nd 🥈", "3rd 🥉"];
-  const top3   = parts.slice(0, 3);
-  const now    = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }).replace(",","");
+  const top3 = parts.slice(0, 3);
+  const now = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }).replace(",", "");
 
-  // ── Winner podium text ──
   const podiumText = top3.length
     ? top3.map((p, i) => {
         const name = h(p.name).slice(0, 18);
-        const pad  = "·".repeat(Math.max(2, 20 - name.length));
+        const pad = "·".repeat(Math.max(2, 20 - name.length));
         return `${medals[i]}  <b>${name}</b>  ${pad}  <code>${p.votes}</code> 🗳️`;
       }).join("\n")
     : `<i>▸ Koi votes nahi the</i>`;
 
-  // ── Channel announcement card ──
   const channelCard =
     `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
     `  🏆  <b>GIVEAWAY ENDED!</b>  🏆\n` +
@@ -1472,7 +1807,6 @@ async function announceWinners(g, gId, creatorId) {
     `🎊 <i>Sabko participation ke liye shukriya!</i>\n` +
     `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`;
 
-  // ── Creator DM card ──
   const creatorCard =
     `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
     `  🏁  <b>GIVEAWAY RESULTS</b>\n` +
@@ -1489,15 +1823,11 @@ async function announceWinners(g, gId, creatorId) {
     `</blockquote>\n\n` +
     `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
 
-  // ── Post to channel ──
   if (g.channelId) {
     try { await bot.sendMessage(g.channelId, channelCard, { parse_mode: "HTML" }); } catch {}
   }
-
-  // ── DM to creator ──
   try { await bot.sendMessage(creatorId, creatorCard, { parse_mode: "HTML" }); } catch {}
 
-  // ── Individual congratulations DM to each top-3 winner ──
   for (let i = 0; i < top3.length; i++) {
     const winner = top3[i];
     if (winner.id === creatorId) continue;
@@ -1567,9 +1897,9 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
   };
 
   giveaways.set(gId, g);
+  await saveGiveaway(g);
   userState.delete(userId);
 
-  // Set auto-end timer
   if (g.autoEnd && g.endTime) {
     const ms = g.endTime.getTime() - Date.now();
     if (ms > 0) {
@@ -1579,7 +1909,7 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
         giveaway.active = false;
         giveaway.participationOpen = false;
         giveaway.paidVotesActive = false;
-        // ── Announce winners to channel + all DMs ──
+        await saveGiveaway(giveaway);
         await announceWinners(giveaway, gId, userId);
       }, ms);
     }
@@ -1587,7 +1917,7 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
 
   const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
 
-  await animateSend(chatId,
+  await animCreate(chatId,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
     `  🎉  <b>GIVEAWAY CREATED!</b>\n` +
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
@@ -1614,7 +1944,7 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
 }
 
 // ============================================================
-// MESSAGE HANDLER (multi-step flow + photo handler)
+// MESSAGE HANDLER
 // ============================================================
 
 bot.on("message", async (msg) => {
@@ -1626,21 +1956,13 @@ bot.on("message", async (msg) => {
   const text = msg.text?.trim() || "";
   const state = userState.get(userId);
 
-  // ─── Photo handler for QR code / INR screenshot / admin images ───
+  // ─── Photo handler ───
   if (msg.photo) {
     const fileId = msg.photo[msg.photo.length - 1].file_id;
 
-    // Admin setting welcome image
-    if (state?.step === "set_welcome_image" && isAdmin(userId)) {
-      welcomeImageFileId = fileId;
-      userState.delete(userId);
-      await bot.sendMessage(chatId, "✅ <b>Welcome banner image set ho gaya!</b>\nAb /start karne par yeh image dikhegi.", { parse_mode: "HTML" });
-      return;
-    }
-
-    // Admin setting membership QR
     if (state?.step === "set_membership_qr" && isAdmin(userId)) {
       membershipQrFileId = fileId;
+      await saveConfig("membershipQrFileId", fileId);
       userState.delete(userId);
       await bot.sendMessage(chatId, "✅ <b>Membership QR code set ho gaya!</b>\nAb users membership purchase kar sakte hain.", { parse_mode: "HTML" });
       return;
@@ -1662,15 +1984,14 @@ bot.on("message", async (msg) => {
     }
 
     if (state.step === "awaiting_inr_screenshot") {
-      // User sent payment screenshot
       const gId = state.giveawayId;
       const g = getGiveaway(gId);
       if (!g) return;
 
       const payId = String(paymentCounter++);
-      pendingPayments.set(payId, {
-        userId, giveawayId: gId, screenshotFileId: fileId, timestamp: new Date()
-      });
+      const payData = { userId, giveawayId: gId, screenshotFileId: fileId, timestamp: new Date() };
+      pendingPayments.set(payId, payData);
+      await PendingPaymentModel.create({ payId, ...payData });
       userState.delete(userId);
 
       await bot.sendMessage(chatId,
@@ -1680,7 +2001,6 @@ bot.on("message", async (msg) => {
         { parse_mode: "HTML" }
       );
 
-      // Notify main admin
       try {
         await bot.sendPhoto(MAIN_ADMIN_ID, fileId, {
           caption:
@@ -1708,6 +2028,50 @@ bot.on("message", async (msg) => {
   if (!text || text.startsWith("/")) return;
   if (!state) return;
 
+  // ─── Admin approving vote count ───
+  if (userId === MAIN_ADMIN_ID && state.step === "approve_votes") {
+    const votes = parseInt(text, 10);
+    if (isNaN(votes) || votes < 1) {
+      await bot.sendMessage(MAIN_ADMIN_ID, "❌ Valid number bhejo.");
+      return;
+    }
+    const payId = state.paymentId;
+    const payment = pendingPayments.get(payId);
+    if (!payment) {
+      userState.delete(MAIN_ADMIN_ID);
+      return bot.sendMessage(MAIN_ADMIN_ID, "❌ Payment nahi mila!");
+    }
+    userState.delete(MAIN_ADMIN_ID);
+    pendingPayments.delete(payId);
+    await PendingPaymentModel.deleteOne({ payId });
+
+    const g = getGiveaway(payment.giveawayId);
+    if (!g) return;
+
+    let participant = g.participants.get(payment.userId);
+    if (!participant) {
+      const user = await bot.getChat(payment.userId).catch(() => null);
+      const name = user ? ((user.first_name || "") + (user.last_name ? ` ${user.last_name}` : "")) : String(payment.userId);
+      participant = { id: payment.userId, name, handle: `@${user?.username || "NoUser"}`, votes: 0, voters: new Set(), channelMsgId: null };
+      g.participants.set(payment.userId, participant);
+    }
+    participant.votes += votes;
+    await saveGiveaway(g);
+    await updateChannelPost(g, participant);
+
+    await bot.sendMessage(MAIN_ADMIN_ID, `✅ ${votes} votes add kiye user ${payment.userId} ko!`);
+    try {
+      await bot.sendMessage(payment.userId,
+        `<b>✅ Payment Approved!</b>\n\n` +
+        `<b>${votes} votes</b> aapke account mein add ho gaye!\n` +
+        `<b>${h(g.title)}</b>\n\n` +
+        `Current Votes: <b>${participant.votes}</b>`,
+        { parse_mode: "HTML" }
+      );
+    } catch {}
+    return;
+  }
+
   // ─── GIVEAWAY CREATION STEPS ───
 
   if (state.step === "title") {
@@ -1716,13 +2080,8 @@ bot.on("message", async (msg) => {
     state.step = "pick_channel";
     userState.set(userId, state);
 
-    // Show channels where bot is admin (registered channels by this user)
     const myChans = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
-
-    const btns = myChans.map(([id, c]) => ([{
-      text: `📢 ${c.title}`,
-      callback_data: `sel_ch:${id}`
-    }]));
+    const btns = myChans.map(([id, c]) => ([{ text: `📢 ${c.title}`, callback_data: `sel_ch:${id}` }]));
     btns.push([{ text: "✏️ Enter Manually", callback_data: "ch_manual" }]);
     btns.push([{ text: "◀️ Back", callback_data: "cancel_flow" }]);
 
@@ -1734,7 +2093,6 @@ bot.on("message", async (msg) => {
   }
 
   if (state.step === "pick_channel" && text) {
-    // Manual channel ID entry
     try {
       const chatInfo = await bot.getChat(text);
       state.channelId = String(chatInfo.id);
@@ -1744,6 +2102,7 @@ bot.on("message", async (msg) => {
         title: chatInfo.title, type: chatInfo.type,
         addedBy: userId, username: chatInfo.username || null
       });
+      await saveChannel(state.channelId, { title: chatInfo.title, type: chatInfo.type, addedBy: userId, username: chatInfo.username || null });
     } catch {
       state.channelId = text;
       state.channelTitle = text;
@@ -1751,7 +2110,7 @@ bot.on("message", async (msg) => {
     state.step = "end_type";
     userState.set(userId, state);
     await bot.sendMessage(chatId,
-      `<b>⏳ Giveaway Ending Configuration</b>\n\n🤖 <b>Automatic:</b> Ends automatically at a specific time.\n✋ <b>Manual:</b> You stop it manually using the panel.`,
+      `<b>⏳ Giveaway Ending Configuration</b>\n\n🤖 <b>Automatic:</b> Ends at a specific time.\n✋ <b>Manual:</b> You stop it manually.`,
       {
         parse_mode: "HTML",
         reply_markup: {
@@ -1819,16 +2178,12 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  // ─── Register chat manually ───
   if (state.step === "reg_chat") {
     try {
       const chatInfo = await bot.getChat(text);
-      registeredChannels.set(String(chatInfo.id), {
-        title: chatInfo.title || text,
-        type: chatInfo.type,
-        addedBy: userId,
-        username: chatInfo.username || null
-      });
+      const data = { title: chatInfo.title || text, type: chatInfo.type, addedBy: userId, username: chatInfo.username || null };
+      registeredChannels.set(String(chatInfo.id), data);
+      await saveChannel(String(chatInfo.id), data);
       userState.delete(userId);
       await bot.sendMessage(chatId,
         `<b>✅ ${h(state.type === "channel" ? "Channel" : "Group")} Registered!</b>\n\n` +
@@ -1837,15 +2192,11 @@ bot.on("message", async (msg) => {
         { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
       );
     } catch {
-      await bot.sendMessage(chatId,
-        `❌ Chat nahi mila. Bot ko admin banao phir try karo.`,
-        { parse_mode: "HTML" }
-      );
+      await bot.sendMessage(chatId, `❌ Chat nahi mila. Bot ko admin banao phir try karo.`, { parse_mode: "HTML" });
     }
     return;
   }
 
-  // ─── Create post ───
   if (state.step === "create_post") {
     const myChans = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
     let sent = 0, failed = 0;
@@ -1860,100 +2211,45 @@ bot.on("message", async (msg) => {
     );
     return;
   }
-});
 
-// ============================================================
-// ADMIN: Approve/Reject INR payment
-// ============================================================
-
-bot.on("callback_query", async (query) => {
-  const data = query.data;
-  const userId = query.from.id;
-  const chatId = query.message.chat.id;
-  const msgId = query.message.message_id;
-
-  if (data.startsWith("approve_pay:")) {
-    if (!isAdmin(userId)) return;
-    const payId = data.split(":")[1];
-    const payment = pendingPayments.get(payId);
-    if (!payment) {
-      return bot.answerCallbackQuery(query.id, { text: "Payment nahi mila!", show_alert: true });
+  // ─── Admin: set welcome image URL ───
+  if (state.step === "set_welcome_image_url" && isAdmin(userId)) {
+    const url = text.trim();
+    if (!url.startsWith("http")) {
+      await bot.sendMessage(chatId, "❌ Valid URL bhejo (http/https se shuru ho).");
+      return;
     }
-    // Ask admin how many votes to give
-    userState.set(userId, { step: "approve_votes", paymentId: payId });
-    await bot.answerCallbackQuery(query.id);
-    await bot.sendMessage(MAIN_ADMIN_ID,
-      `Kitne votes dene hain user <code>${payment.userId}</code> ko? (number bhejo)`,
+    welcomeImageUrl = url;
+    await saveConfig("welcomeImageUrl", url);
+    userState.delete(userId);
+    await bot.sendMessage(chatId,
+      `✅ <b>Welcome image URL set ho gaya!</b>\n\nURL: <code>${h(url)}</code>\n\nAb /start karne par yeh image <b>spoiler mode</b> mein dikhegi. 🎭`,
       { parse_mode: "HTML" }
     );
     return;
   }
 
-  if (data.startsWith("reject_pay:")) {
-    if (!isAdmin(userId)) return;
-    const payId = data.split(":")[1];
-    const payment = pendingPayments.get(payId);
-    if (!payment) return;
-    pendingPayments.delete(payId);
-    await bot.answerCallbackQuery(query.id, { text: "Payment rejected!" });
-    await bot.editMessageCaption(
-      `❌ Payment Rejected — ID: ${payId}`,
-      { chat_id: chatId, message_id: msgId }
-    ).catch(() => {});
-    try {
-      await bot.sendMessage(payment.userId,
-        `<b>❌ Payment Rejected</b>\n\nAapki payment verify nahi ho saki.\nPayment ID: <code>${payId}</code>\n\nDubara try karo ya support se contact karo.`,
-        { parse_mode: "HTML" }
-      );
-    } catch {}
-    return;
-  }
-});
+  // ─── Admin: set force join channel ───
+  if (state.step === "set_force_join" && isAdmin(userId)) {
+    const parts = text.split(" ");
+    if (parts.length < 2) {
+      await bot.sendMessage(chatId, "❌ Format: <code>CHANNEL_ID INVITE_LINK LABEL</code>\nExample: <code>-1001234567890 https://t.me/+xxx Free Contents</code>", { parse_mode: "HTML" });
+      return;
+    }
+    const chId = parts[0];
+    const link = parts[1];
+    const label = parts.slice(2).join(" ") || "Join Channel";
+    const idx = state.channelIndex;
 
-// Handle admin typing vote count for approval
-bot.on("message", async (msg) => {
-  if (msg.chat.type !== "private") return;
-  if (msg.from.id !== MAIN_ADMIN_ID) return;
-  const state = userState.get(MAIN_ADMIN_ID);
-  if (!state || state.step !== "approve_votes") return;
-  const votes = parseInt(msg.text?.trim(), 10);
-  if (isNaN(votes) || votes < 1) {
-    await bot.sendMessage(MAIN_ADMIN_ID, "❌ Valid number bhejo.");
-    return;
-  }
-  const payId = state.paymentId;
-  const payment = pendingPayments.get(payId);
-  if (!payment) {
-    userState.delete(MAIN_ADMIN_ID);
-    return bot.sendMessage(MAIN_ADMIN_ID, "❌ Payment nahi mila!");
-  }
-  userState.delete(MAIN_ADMIN_ID);
-  pendingPayments.delete(payId);
-
-  const g = getGiveaway(payment.giveawayId);
-  if (!g) return;
-
-  // Add votes to the participant
-  let participant = g.participants.get(payment.userId);
-  if (!participant) {
-    const user = await bot.getChat(payment.userId).catch(() => null);
-    const name = user ? ((user.first_name || "") + (user.last_name ? ` ${user.last_name}` : "")) : String(payment.userId);
-    participant = { id: payment.userId, name, handle: `@${user?.username || "NoUser"}`, votes: 0, voters: new Set(), channelMsgId: null };
-    g.participants.set(payment.userId, participant);
-  }
-  participant.votes += votes;
-  await updateChannelPost(g, participant);
-
-  await bot.sendMessage(MAIN_ADMIN_ID, `✅ ${votes} votes add kiye user ${payment.userId} ko!`);
-  try {
-    await bot.sendMessage(payment.userId,
-      `<b>✅ Payment Approved!</b>\n\n` +
-      `<b>${votes} votes</b> aapke account mein add ho gaye!\n` +
-      `<b>${h(g.title)}</b>\n\n` +
-      `Current Votes: <b>${participant.votes}</b>`,
+    forceJoinChannels[idx] = { id: chId, link, label };
+    await saveConfig("forceJoinChannels", forceJoinChannels);
+    userState.delete(userId);
+    await bot.sendMessage(chatId,
+      `✅ <b>Force Join Channel ${idx + 1} set ho gaya!</b>\n\nID: <code>${chId}</code>\nLink: ${link}\nLabel: ${label}`,
       { parse_mode: "HTML" }
     );
-  } catch {}
+    return;
+  }
 });
 
 // ============================================================
@@ -1974,7 +2270,9 @@ bot.on("message", async (msg) => {
   if (payload.startsWith("vip_")) {
     const expiry = new Date();
     expiry.setDate(expiry.getDate() + 30);
-    vipUsers.set(userId, { vip: true, expiry });
+    const vipData = { vip: true, plan: "30 Days", expiry, days: 30 };
+    vipUsers.set(userId, vipData);
+    await saveVip(userId, vipData);
     await bot.sendMessage(chatId,
       `<b>👑 VIP Activated!</b>\n\nExpiry: <b>${expiry.toLocaleDateString("en-IN")}</b>`,
       { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
@@ -1988,10 +2286,11 @@ bot.on("message", async (msg) => {
     const participantUserId = Number(parts[3]);
     const g = getGiveaway(gId);
     if (!g) return;
-    let participant = g.participants.get(participantUserId);
+    const participant = g.participants.get(participantUserId);
     if (!participant) return;
     const votesToAdd = stars * g.votesPerStar;
     participant.votes += votesToAdd;
+    await saveGiveaway(g);
     await updateChannelPost(g, participant);
     await bot.sendMessage(chatId,
       `<b>✅ Stars Payment Done!</b>\n\n` +
@@ -2028,9 +2327,9 @@ bot.on("chat_member", async (update) => {
         p.votes = Math.max(0, p.votes - 1);
         p.voters.delete(leftUserId);
         g.voterMap.delete(leftUserId);
+        await saveGiveaway(g);
         await updateChannelPost(g, p);
 
-        // Channel announcement — "Auto-Resync: Vote Removed" format
         try {
           await bot.sendMessage(channelId,
             `♻️ <b>Auto-Resync: Vote Removed</b>\n\n` +
@@ -2041,7 +2340,6 @@ bot.on("chat_member", async (update) => {
           );
         } catch (e) { console.error("Leave channel announcement:", e.message); }
 
-        // Notify participant (the one who lost a vote)
         try {
           await bot.sendMessage(p.id,
             `⚠️ <b>Vote Deduction Alert!</b>\n\n` +
@@ -2054,15 +2352,14 @@ bot.on("chat_member", async (update) => {
       }
     }
 
-    // Also remove them as participant if they joined
     const participantData = g.participants.get(leftUserId);
     if (participantData) {
-      // Remove their votes from whoever they voted for
       const theirVotedFor = g.voterMap?.get(leftUserId);
       if (theirVotedFor) {
         const theirP = g.participants.get(theirVotedFor);
         if (theirP) { theirP.votes = Math.max(0, theirP.votes - 1); await updateChannelPost(g, theirP); }
         g.voterMap.delete(leftUserId);
+        await saveGiveaway(g);
       }
     }
   }
@@ -2079,11 +2376,11 @@ bot.onText(/\/membership/, async (msg) => {
   const badge = membershipBadge(userId);
   const m = getMembership(userId);
   const text =
-    `⭐ <b>MEMBERSHIP- ${badge}</b>\n\n` +
+    `⭐ <b>MEMBERSHIP — ${badge}</b>\n\n` +
     `🐉 <u>PREMIUM FEATURES</u> 🌀\n` +
     `──────────◈◈◈──────────\n\n` +
     `<blockquote>🐉 Add your own custom thumbnail / vote post image</blockquote>\n\n` +
-    `<blockquote>🐉 Auto vote deduction if a user leaves after voting during giveaways 🧿(Free for Sometime)</blockquote>\n\n` +
+    `<blockquote>🐉 Auto vote deduction if a user leaves after voting 🧿</blockquote>\n\n` +
     `<blockquote>🐉 Add 1 extra Force-Join channel/group before voting 🌀</blockquote>\n\n` +
     `<blockquote>🐉 Set 1 main Force-Join for all bot users\n✅ (Available only with minimum 1-week membership 🥹)</blockquote>\n\n` +
     `──────────◈◈◈──────────\n` +
@@ -2135,83 +2432,57 @@ bot.onText(/\/createpost/, async (msg) => {
 // MAIN ADMIN COMMANDS
 // ============================================================
 
-// /broadcast <message> — Silent broadcast to all channels
 bot.onText(/\/broadcast\s+([\s\S]+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const message = match[1];
   let sent = 0, failed = 0;
   for (const [id] of registeredChannels) {
-    try {
-      await bot.sendMessage(id, `<b>📢 DRS Broadcast</b>\n\n${h(message)}`, {
-        parse_mode: "HTML",
-        disable_notification: true
-      });
-      sent++;
-    } catch { failed++; }
+    try { await bot.sendMessage(id, `<b>📢 DRS Broadcast</b>\n\n${h(message)}`, { parse_mode: "HTML", disable_notification: true }); sent++; }
+    catch { failed++; }
   }
   await bot.sendMessage(msg.chat.id, `✅ Broadcast done! (Silent)\n✅ Sent: ${sent}\n❌ Failed: ${failed}`);
 });
 
-// /loud <message> — LOUD broadcast (notification sound) to all channels
 bot.onText(/\/loud\s+([\s\S]+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const message = match[1];
   let sent = 0, failed = 0;
   for (const [id] of registeredChannels) {
-    try {
-      await bot.sendMessage(id, `<b>📢 DRS Broadcast</b>\n\n${h(message)}`, {
-        parse_mode: "HTML",
-        disable_notification: false
-      });
-      sent++;
-    } catch { failed++; }
+    try { await bot.sendMessage(id, `<b>📢 DRS Broadcast</b>\n\n${h(message)}`, { parse_mode: "HTML", disable_notification: false }); sent++; }
+    catch { failed++; }
   }
-  await bot.sendMessage(msg.chat.id, `✅ LOUD Broadcast done! (With sound)\n✅ Sent: ${sent}\n❌ Failed: ${failed}`);
+  await bot.sendMessage(msg.chat.id, `✅ LOUD Broadcast done!\n✅ Sent: ${sent}\n❌ Failed: ${failed}`);
 });
 
-// /pin <chatId> <message> — Send and pin a message in a channel
 bot.onText(/\/pin\s+(-?\d+)\s+([\s\S]+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const chatId = msg.chat.id;
-  const targetChatId = match[1];
-  const message = match[2];
   try {
-    const sent = await bot.sendMessage(targetChatId, `📌 <b>${h(message)}</b>`, { parse_mode: "HTML" });
-    await bot.pinChatMessage(targetChatId, sent.message_id, { disable_notification: false });
-    await bot.sendMessage(chatId, `✅ Message pinned in <code>${targetChatId}</code>!`, { parse_mode: "HTML" });
+    const sent = await bot.sendMessage(match[1], `📌 <b>${h(match[2])}</b>`, { parse_mode: "HTML" });
+    await bot.pinChatMessage(match[1], sent.message_id, { disable_notification: false });
+    await bot.sendMessage(chatId, `✅ Message pinned in <code>${match[1]}</code>!`, { parse_mode: "HTML" });
   } catch (e) {
     await bot.sendMessage(chatId, `❌ Error: ${h(e.message)}`, { parse_mode: "HTML" });
   }
 });
 
-// /send <chatId> <message> — Send message to any specific chat
 bot.onText(/\/send\s+(-?\d+)\s+([\s\S]+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
-  const chatId = msg.chat.id;
-  const targetChatId = match[1];
-  const message = match[2];
   try {
-    await bot.sendMessage(targetChatId, `<b>📩 DRS Message</b>\n\n${h(message)}`, { parse_mode: "HTML" });
-    await bot.sendMessage(chatId, `✅ Message sent to <code>${targetChatId}</code>!`, { parse_mode: "HTML" });
+    await bot.sendMessage(match[1], `<b>📩 DRS Message</b>\n\n${h(match[2])}`, { parse_mode: "HTML" });
+    await bot.sendMessage(msg.chat.id, `✅ Message sent to <code>${match[1]}</code>!`, { parse_mode: "HTML" });
   } catch (e) {
-    await bot.sendMessage(chatId, `❌ Error: ${h(e.message)}`, { parse_mode: "HTML" });
+    await bot.sendMessage(msg.chat.id, `❌ Error: ${h(e.message)}`, { parse_mode: "HTML" });
   }
 });
 
-// /sendloud <chatId> <message> — Send LOUD message to any specific chat
 bot.onText(/\/sendloud\s+(-?\d+)\s+([\s\S]+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
-  const chatId = msg.chat.id;
-  const targetChatId = match[1];
-  const message = match[2];
   try {
-    await bot.sendMessage(targetChatId, `<b>🔔 DRS Message</b>\n\n${h(message)}`, {
-      parse_mode: "HTML",
-      disable_notification: false
-    });
-    await bot.sendMessage(chatId, `✅ LOUD message sent to <code>${targetChatId}</code>!`, { parse_mode: "HTML" });
+    await bot.sendMessage(match[1], `<b>🔔 DRS Message</b>\n\n${h(match[2])}`, { parse_mode: "HTML", disable_notification: false });
+    await bot.sendMessage(msg.chat.id, `✅ LOUD message sent to <code>${match[1]}</code>!`, { parse_mode: "HTML" });
   } catch (e) {
-    await bot.sendMessage(chatId, `❌ Error: ${h(e.message)}`, { parse_mode: "HTML" });
+    await bot.sendMessage(msg.chat.id, `❌ Error: ${h(e.message)}`, { parse_mode: "HTML" });
   }
 });
 
@@ -2236,14 +2507,22 @@ bot.onText(/\/allgiveaways/, async (msg) => {
   await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
 });
 
-// /setwelcomeimage — Admin uploads welcome banner
-bot.onText(/\/setwelcomeimage/, async (msg) => {
+// /setwelcomeimageurl — Set welcome image via URL (displayed with spoiler effect)
+bot.onText(/\/setwelcomeimageurl/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
-  userState.set(msg.from.id, { step: "set_welcome_image" });
+  userState.set(msg.from.id, { step: "set_welcome_image_url" });
   await bot.sendMessage(msg.chat.id,
-    `<b>🖼️ Set Welcome Banner Image</b>\n\nAbhi <b>photo bhejo</b> jo /start aur "My Giveaways" pe dikhegi.\n\n<i>Current: ${welcomeImageFileId ? "✅ Set" : "❌ Not set"}</i>`,
+    `<b>🖼️ Set Welcome Image via URL</b>\n\nImage ka direct URL bhejo (http/https).\nYe image /start pe <b>Spoiler Mode</b> 🎭 mein dikhegi.\n\n<i>Current: ${welcomeImageUrl ? "✅ Set" : "❌ Not set"}</i>`,
     { parse_mode: "HTML", reply_markup: cancelKeyboard() }
   );
+});
+
+// /clearwelcomeimage — Remove welcome banner
+bot.onText(/\/clearwelcomeimage/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  welcomeImageUrl = null;
+  await saveConfig("welcomeImageUrl", null);
+  await bot.sendMessage(msg.chat.id, "✅ Welcome banner image remove kar di.", { parse_mode: "HTML" });
 });
 
 // /setmembershipqr — Admin uploads membership payment QR
@@ -2256,25 +2535,48 @@ bot.onText(/\/setmembershipqr/, async (msg) => {
   );
 });
 
-// /clearwelcomeimage — Remove welcome banner
-bot.onText(/\/clearwelcomeimage/, async (msg) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
-  welcomeImageFileId = null;
-  await bot.sendMessage(msg.chat.id, "✅ Welcome banner image remove kar di.", { parse_mode: "HTML" });
-});
-
 // /imageinfo — Show current image status
 bot.onText(/\/imageinfo/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   await bot.sendMessage(msg.chat.id,
     `<b>🖼️ Image Status</b>\n\n` +
-    `Welcome Banner: ${welcomeImageFileId ? "✅ Set" : "❌ Not set"}\n` +
+    `Welcome Image URL: ${welcomeImageUrl ? `✅ Set\n<code>${h(welcomeImageUrl)}</code>` : "❌ Not set"}\n` +
     `Membership QR: ${membershipQrFileId ? "✅ Set" : "❌ Not set"}`,
     { parse_mode: "HTML" }
   );
 });
 
-// /givestars <userId> <plan> — Admin manually give membership
+// /setforcejoin <index 1 or 2> — Configure force join channel
+bot.onText(/\/setforcejoin(?:\s+(\d+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const idx = Math.max(0, Math.min(1, (Number(match[1] || 1) - 1)));
+  const current = forceJoinChannels[idx];
+  userState.set(msg.from.id, { step: "set_force_join", channelIndex: idx });
+  await bot.sendMessage(msg.chat.id,
+    `<b>⚙️ Set Force Join Channel ${idx + 1}</b>\n\n` +
+    `Current: ${current?.id ? `✅ ID: <code>${current.id}</code>` : "❌ Not configured"}\n\n` +
+    `Format bhejo:\n<code>CHANNEL_ID INVITE_LINK LABEL</code>\n\n` +
+    `Example:\n<code>-1001234567890 https://t.me/+xxx Free Contents</code>\n\n` +
+    `<i>Channel ID ke liye bot ko us channel ka admin banao, phir @getidsbot se ID lo.</i>`,
+    { parse_mode: "HTML", reply_markup: cancelKeyboard() }
+  );
+});
+
+// /forcejoininfo — Show current force join config
+bot.onText(/\/forcejoininfo/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  let text = `<b>📢 Force Join Config</b>\n\n`;
+  forceJoinChannels.forEach((ch, i) => {
+    text += `Channel ${i + 1}:\n`;
+    text += `  ID: ${ch?.id ? `<code>${ch.id}</code>` : "❌ Not set"}\n`;
+    text += `  Link: ${ch?.link || "❌ Not set"}\n`;
+    text += `  Label: ${ch?.label || "❌ Not set"}\n\n`;
+  });
+  text += `<i>Use /setforcejoin 1 or /setforcejoin 2 to configure.</i>`;
+  await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
+});
+
+// /givemem — Admin manually give membership
 bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const targetId = Number(match[1]);
@@ -2282,7 +2584,9 @@ bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
   const plan = MEMBERSHIP_PLANS[planKey];
   const expiry = new Date();
   expiry.setDate(expiry.getDate() + plan.days);
-  vipUsers.set(targetId, { vip: true, plan: plan.label, expiry, days: plan.days });
+  const vipData = { vip: true, plan: plan.label, expiry, days: plan.days };
+  vipUsers.set(targetId, vipData);
+  await saveVip(targetId, vipData);
   await bot.sendMessage(msg.chat.id, `✅ User <code>${targetId}</code> ko <b>${plan.label} Membership</b> diya!\nExpiry: ${expiry.toLocaleDateString("en-IN")}`, { parse_mode: "HTML" });
   try {
     await bot.sendMessage(targetId,
@@ -2292,29 +2596,100 @@ bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
   } catch {}
 });
 
+// /cleandb — Admin: Remove old ended giveaways and expired data
+bot.onText(/\/cleandb/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+
+  try { await bot.sendChatAction(chatId, "typing"); } catch {}
+  await bot.sendMessage(chatId, "🧹 <b>Cleaning database...</b>", { parse_mode: "HTML" });
+
+  let removedGiveaways = 0;
+  let removedPayments = 0;
+  let removedMemberships = 0;
+  let removedVip = 0;
+
+  // Remove ended giveaways older than 30 days
+  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  for (const [id, g] of giveaways) {
+    if (!g.active && g.createdAt && new Date(g.createdAt) < cutoff) {
+      giveaways.delete(id);
+      await GiveawayModel.deleteOne({ id });
+      removedGiveaways++;
+    }
+  }
+
+  // Remove old pending payments (older than 7 days)
+  const paymentCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  for (const [payId, p] of pendingPayments) {
+    if (new Date(p.timestamp) < paymentCutoff) {
+      pendingPayments.delete(payId);
+      await PendingPaymentModel.deleteOne({ payId });
+      removedPayments++;
+    }
+  }
+
+  // Remove old pending memberships (older than 3 days)
+  const memCutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+  for (const [payId, m] of pendingMembershipPayments) {
+    if (new Date(m.timestamp) < memCutoff) {
+      pendingMembershipPayments.delete(payId);
+      await PendingMembershipModel.deleteOne({ payId });
+      removedMemberships++;
+    }
+  }
+
+  // Remove expired VIP users
+  for (const [uid, v] of vipUsers) {
+    if (v.expiry && new Date(v.expiry) < new Date()) {
+      vipUsers.delete(uid);
+      await VipModel.deleteOne({ userId: uid });
+      removedVip++;
+    }
+  }
+
+  await bot.sendMessage(chatId,
+    `✅ <b>Database Cleaned!</b>\n\n` +
+    `<blockquote>` +
+    `🗑️ Ended Giveaways (30d+)  ▸  <b>${removedGiveaways}</b> removed\n` +
+    `💸 Old Pending Payments (7d+) ▸  <b>${removedPayments}</b> removed\n` +
+    `💳 Old Membership Claims (3d+) ▸  <b>${removedMemberships}</b> removed\n` +
+    `👑 Expired VIP Users  ▸  <b>${removedVip}</b> removed` +
+    `</blockquote>\n\n` +
+    `<i>Active data safe hai.</i>`,
+    { parse_mode: "HTML" }
+  );
+});
+
 bot.onText(/\/adminhelp/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   await bot.sendMessage(msg.chat.id,
     `<b>👑 DRS Bot — Admin Commands</b>\n\n` +
     `<b>🖼️ Images:</b>\n` +
-    `/setwelcomeimage — Upload welcome banner photo\n` +
-    `/setmembershipqr — Upload membership payment QR photo\n` +
+    `/setwelcomeimageurl — Set welcome image via URL (spoiler mode)\n` +
     `/clearwelcomeimage — Remove welcome banner\n` +
+    `/setmembershipqr — Upload membership payment QR photo\n` +
     `/imageinfo — Check current image status\n\n` +
+    `<b>📢 Force Join:</b>\n` +
+    `/setforcejoin 1 — Configure force join channel 1\n` +
+    `/setforcejoin 2 — Configure force join channel 2\n` +
+    `/forcejoininfo — View force join config\n\n` +
     `<b>📢 Broadcast:</b>\n` +
     `/broadcast &lt;msg&gt; — Silent broadcast all channels\n` +
-    `/loud &lt;msg&gt; — LOUD broadcast (with sound) all channels\n\n` +
+    `/loud &lt;msg&gt; — LOUD broadcast (with sound)\n\n` +
     `<b>📩 Direct Send:</b>\n` +
     `/send &lt;chatId&gt; &lt;msg&gt; — Send to specific chat\n` +
-    `/sendloud &lt;chatId&gt; &lt;msg&gt; — LOUD send to specific chat\n\n` +
+    `/sendloud &lt;chatId&gt; &lt;msg&gt; — LOUD send\n\n` +
     `<b>📌 Pin:</b>\n` +
-    `/pin &lt;chatId&gt; &lt;msg&gt; — Send &amp; pin message in channel\n\n` +
+    `/pin &lt;chatId&gt; &lt;msg&gt; — Send &amp; pin in channel\n\n` +
     `<b>💳 Membership:</b>\n` +
     `/givemem &lt;userId&gt; &lt;1d|7d|30d&gt; — Manually give membership\n\n` +
     `<b>📊 Info:</b>\n` +
     `/allchannels — All registered channels\n` +
     `/allgiveaways — All giveaways overview\n` +
-    `/adminhelp — This help menu`,
+    `/adminhelp — This help menu\n\n` +
+    `<b>🧹 Maintenance:</b>\n` +
+    `/cleandb — Clean junk/expired data from database`,
     { parse_mode: "HTML" }
   );
 });
@@ -2326,48 +2701,60 @@ bot.onText(/\/adminhelp/, async (msg) => {
 bot.on("polling_error", e => console.error("Polling error:", e.message));
 bot.on("error", e => console.error("Bot error:", e.message));
 
-bot.getMe().then(async (me) => {
-  BOT_USERNAME = me.username;
+// ============================================================
+// MAIN START
+// ============================================================
 
-  // Register bot commands (shows in Telegram "/" menu)
-  try {
-    // User commands (visible to everyone)
-    await bot.setMyCommands([
-      { command: "start",      description: "🎰 Open DRS Giveaway Bot" },
-      { command: "membership", description: "👑 Get Premium Membership" },
-      { command: "support",    description: "💬 Contact Support" },
-      { command: "createpost", description: "📢 Create a channel post" }
-    ]);
+async function main() {
+  await connectDB();
 
-    // Admin commands (visible only to admin in private chat)
-    await bot.setMyCommands([
-      { command: "start",            description: "🎰 Open DRS Giveaway Bot" },
-      { command: "membership",       description: "👑 Get Premium Membership" },
-      { command: "support",          description: "💬 Contact Support" },
-      { command: "createpost",       description: "📢 Create a channel post" },
-      { command: "adminhelp",        description: "👑 Admin command list" },
-      { command: "broadcast",        description: "📢 Silent broadcast to all channels" },
-      { command: "loud",             description: "🔊 LOUD broadcast to all channels" },
-      { command: "send",             description: "📩 Send message to specific chat" },
-      { command: "sendloud",         description: "🔊 LOUD send to specific chat" },
-      { command: "pin",              description: "📌 Send & pin in channel" },
-      { command: "allchannels",      description: "📋 List all registered channels" },
-      { command: "allgiveaways",     description: "🎁 List all giveaways" },
-      { command: "givemem",          description: "💳 Give membership to user" },
-      { command: "setwelcomeimage",  description: "🖼️ Upload welcome banner image" },
-      { command: "setmembershipqr",  description: "📸 Upload membership QR code" },
-      { command: "clearwelcomeimage",description: "🗑️ Remove welcome banner" },
-      { command: "imageinfo",        description: "ℹ️ Check current image status" }
-    ], { scope: { type: "chat", chat_id: MAIN_ADMIN_ID } });
+  bot.getMe().then(async (me) => {
+    BOT_USERNAME = me.username;
 
-    console.log("✅ Bot commands registered!");
-  } catch (e) { console.error("setMyCommands error:", e.message); }
+    try {
+      await bot.setMyCommands([
+        { command: "start",      description: "🎰 Open DRS Giveaway Bot" },
+        { command: "membership", description: "👑 Get Premium Membership" },
+        { command: "support",    description: "💬 Contact Support" },
+        { command: "createpost", description: "📢 Create a channel post" }
+      ]);
 
-  console.log(`
-✅ DRS Giveaway Bot Started!
+      await bot.setMyCommands([
+        { command: "start",                description: "🎰 Open DRS Giveaway Bot" },
+        { command: "membership",           description: "👑 Get Premium Membership" },
+        { command: "support",              description: "💬 Contact Support" },
+        { command: "createpost",           description: "📢 Create a channel post" },
+        { command: "adminhelp",            description: "👑 Admin command list" },
+        { command: "broadcast",            description: "📢 Silent broadcast to all channels" },
+        { command: "loud",                 description: "🔊 LOUD broadcast to all channels" },
+        { command: "send",                 description: "📩 Send message to specific chat" },
+        { command: "sendloud",             description: "🔊 LOUD send to specific chat" },
+        { command: "pin",                  description: "📌 Send & pin in channel" },
+        { command: "allchannels",          description: "📋 List all registered channels" },
+        { command: "allgiveaways",         description: "🎁 List all giveaways" },
+        { command: "givemem",              description: "💳 Give membership to user" },
+        { command: "setwelcomeimageurl",   description: "🖼️ Set welcome image via URL (spoiler)" },
+        { command: "setmembershipqr",      description: "📸 Upload membership QR code" },
+        { command: "clearwelcomeimage",    description: "🗑️ Remove welcome banner" },
+        { command: "imageinfo",            description: "ℹ️ Check image status" },
+        { command: "setforcejoin",         description: "📢 Configure force join channel" },
+        { command: "forcejoininfo",        description: "ℹ️ View force join config" },
+        { command: "cleandb",              description: "🧹 Clean junk/expired data" }
+      ], { scope: { type: "chat", chat_id: MAIN_ADMIN_ID } });
+
+      console.log("✅ Bot commands registered!");
+    } catch (e) { console.error("setMyCommands error:", e.message); }
+
+    console.log(`
+✅ DRS Giveaway Bot v3.0 Started!
 🤖 @${me.username}
 👑 Admin ID: ${MAIN_ADMIN_ID}
+💾 MongoDB: Connected
+📢 Force Join: ${forceJoinChannels.filter(c => c.id).length}/${forceJoinChannels.length} channels configured
 
 Ready!
-  `);
-});
+    `);
+  });
+}
+
+main();
