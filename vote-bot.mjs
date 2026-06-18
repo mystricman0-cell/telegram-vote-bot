@@ -43,6 +43,12 @@ let membershipPayCounter = 1;
 let welcomeImageFileId = null;
 let membershipQrFileId = null;
 
+// Track last welcome message per user (delete on next /start = clean UX)
+const userLastWelcomeMsg = new Map(); // userId -> { chatId, msgId }
+
+// Sleep helper for animations
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
 // Membership plans (INR)
 const MEMBERSHIP_PLANS = {
   "1d": { label: "1 Day", days: 1, price: 10 },
@@ -178,12 +184,53 @@ function mgmtKeyboard(gId, g) {
 // SEND WELCOME (DRS Branding)
 // ============================================================
 
-async function sendWelcome(chatId, firstName) {
+async function sendWelcome(chatId, userId) {
+  // ── Delete previous welcome message (clean UX) ──
+  const prev = userLastWelcomeMsg.get(userId);
+  if (prev) {
+    try { await bot.deleteMessage(prev.chatId, prev.msgId); } catch {}
+    userLastWelcomeMsg.delete(userId);
+  }
+
+  // ── Typing indicator ──
+  try { await bot.sendChatAction(chatId, "typing"); } catch {}
+
+  // ── Animation frames ──
+  const frames = [
+    `▌`,
+    `◆`,
+    `◆ ─────────── ◆`,
+    `◆ ───── <b>DRS</b> ───── ◆`,
+    `◆ ─────────────── ◆\n\n🎰 <b>DRS GIVEAWAY BOT</b>`,
+    `◆ ─────────────── ◆\n\n🎰 <b>DRS GIVEAWAY BOT</b> 💎\n⚡ <i>Loading your panel...</i>`,
+  ];
+  const delays = [110, 130, 150, 200, 280];
+
+  let animMsg;
+  try {
+    animMsg = await bot.sendMessage(chatId, frames[0], { parse_mode: "HTML" });
+  } catch { return; }
+
+  for (let i = 1; i < frames.length; i++) {
+    await sleep(delays[i - 1] || 200);
+    try {
+      await bot.editMessageText(frames[i], {
+        chat_id: chatId, message_id: animMsg.message_id, parse_mode: "HTML"
+      });
+    } catch {}
+  }
+
+  await sleep(340);
+
+  // ── Final welcome text ──
   const text =
     `👑 <b>DRS GIVEAWAY BOT</b> 💎\n` +
     `<i>· Fair · Fast · Automated ·</i>\n\n` +
     `◆ ─────────────────── ◆\n\n` +
-    `<blockquote>✦ Create powerful giveaways instantly\n✦ Real-time voting with live updates\n✦ Auto vote-deduction on channel leave\n✦ INR &amp; Telegram Stars payments</blockquote>\n\n` +
+    `<blockquote>✦ Create powerful giveaways instantly\n` +
+    `✦ Real-time voting with live updates\n` +
+    `✦ Auto vote-deduction on channel leave\n` +
+    `✦ INR &amp; Telegram Stars payments</blockquote>\n\n` +
     `◆ ─────────────────── ◆\n\n` +
     `<b>🎰 New Giveaway</b>  —  Create a new event\n` +
     `<b>👀 My Giveaways</b>  —  Manage your events\n` +
@@ -192,11 +239,31 @@ async function sendWelcome(chatId, firstName) {
     `💬 Support: @DRS_Support_DRS`;
 
   const opts = { parse_mode: "HTML", reply_markup: mainMenuKeyboard() };
+  let finalMsg;
+
   if (welcomeImageFileId) {
-    await bot.sendPhoto(chatId, welcomeImageFileId, { caption: text, ...opts });
+    // Delete text animation, send photo with caption
+    try { await bot.deleteMessage(chatId, animMsg.message_id); } catch {}
+    try {
+      finalMsg = await bot.sendPhoto(chatId, welcomeImageFileId, { caption: text, ...opts });
+    } catch {
+      finalMsg = await bot.sendMessage(chatId, text, opts);
+    }
   } else {
-    await bot.sendMessage(chatId, text, opts);
+    // Morph animation message into final welcome
+    try {
+      await bot.editMessageText(text, {
+        chat_id: chatId, message_id: animMsg.message_id, ...opts
+      });
+      finalMsg = animMsg;
+    } catch {
+      finalMsg = await bot.sendMessage(chatId, text, opts);
+    }
   }
+
+  // ── Track message ID for next /start cleanup ──
+  const msgId = finalMsg?.message_id ?? animMsg?.message_id;
+  if (msgId) userLastWelcomeMsg.set(userId, { chatId, msgId });
 }
 
 // ============================================================
@@ -284,7 +351,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     return;
   }
 
-  await sendWelcome(chatId, msg.from.first_name || "");
+  await sendWelcome(chatId, userId);
 });
 
 // ============================================================
@@ -344,19 +411,9 @@ bot.on("callback_query", async (query) => {
   // ─── Main Menu ───
   if (data === "main_menu") {
     userState.delete(userId);
-    await bot.editMessageText(
-      `👑 <b>DRS GIVEAWAY BOT</b> 💎\n` +
-      `<i>· Fair · Fast · Automated ·</i>\n\n` +
-      `◆ ─────────────────── ◆\n\n` +
-      `<blockquote>✦ Create powerful giveaways instantly\n✦ Real-time voting with live updates\n✦ Auto vote-deduction on channel leave\n✦ INR &amp; Telegram Stars payments</blockquote>\n\n` +
-      `◆ ─────────────────── ◆\n\n` +
-      `<b>🎰 New Giveaway</b>  —  Create a new event\n` +
-      `<b>👀 My Giveaways</b>  —  Manage your events\n` +
-      `<b>👑 Membership</b>    —  Unlock premium\n\n` +
-      `✦ ─────── <b>DRS NETWORK</b> ─────── ✦\n` +
-      `💬 Support: @DRS_Support_DRS`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: mainMenuKeyboard() }
-    ).catch(() => {});
+    // Delete current message and show animated welcome
+    try { await bot.deleteMessage(chatId, msgId); } catch {}
+    await sendWelcome(chatId, userId);
     return;
   }
 
