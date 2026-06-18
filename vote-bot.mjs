@@ -99,11 +99,11 @@ let welcomeImageUrl = null;
 let membershipQrFileId = null;
 let forceJoinChannels = [];
 
-// Force join default channels (invite links + IDs — set via /setforcejoin)
-// Format: { id: "-100xxxxxxxxxx", link: "https://t.me/+xxxx", label: "..." }
+// Force join default channels — hardcoded by admin
+// IDs can be updated via /setforcejoin; links/labels always come from defaults
 const DEFAULT_FORCE_CHANNELS = [
   { id: null, link: "https://t.me/+aMvgXc_nnNAzNThl", label: "🎁 Free Contents" },
-  { id: null, link: "https://t.me/+uv1o-BJg3mE3ZmQ1", label: "📢 Updates" }
+  { id: "-1003984623458", link: "https://t.me/+uv1o-BJg3mE3ZmQ1", label: "📢 Updates" }
 ];
 
 // ============================================================
@@ -194,9 +194,14 @@ async function loadStateFromDB() {
   const qrConfig = await BotConfigModel.findOne({ key: "membershipQrFileId" });
   if (qrConfig) membershipQrFileId = qrConfig.value;
 
+  // Always base force join on hardcoded defaults (links/labels from code)
+  // Only IDs are persisted in MongoDB (via /setforcejoin)
   const fjConfig = await BotConfigModel.findOne({ key: "forceJoinChannels" });
-  if (fjConfig) forceJoinChannels = fjConfig.value;
-  else forceJoinChannels = [...DEFAULT_FORCE_CHANNELS];
+  forceJoinChannels = DEFAULT_FORCE_CHANNELS.map((def, i) => ({
+    ...def,
+    id: fjConfig?.value?.[i]?.id ?? def.id
+  }));
+  await saveConfig("forceJoinChannels", forceJoinChannels);
 
   console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users`);
 }
@@ -2247,23 +2252,23 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  // ─── Admin: set force join channel ───
+  // ─── Admin: set force join channel ID ───
   if (state.step === "set_force_join" && isAdmin(userId)) {
-    const parts = text.split(" ");
-    if (parts.length < 2) {
-      await bot.sendMessage(chatId, "❌ Format: <code>CHANNEL_ID INVITE_LINK LABEL</code>\nExample: <code>-1001234567890 https://t.me/+xxx Free Contents</code>", { parse_mode: "HTML" });
+    const chId = text.trim();
+    if (!chId.startsWith("-")) {
+      await bot.sendMessage(chatId, "❌ Sirf Channel ID bhejo.\nFormat: <code>-1001234567890</code>\n\n<i>Channel ID @getidsbot se milega.</i>", { parse_mode: "HTML" });
       return;
     }
-    const chId = parts[0];
-    const link = parts[1];
-    const label = parts.slice(2).join(" ") || "Join Channel";
     const idx = state.channelIndex;
-
-    forceJoinChannels[idx] = { id: chId, link, label };
+    forceJoinChannels[idx] = { ...DEFAULT_FORCE_CHANNELS[idx], id: chId };
     await saveConfig("forceJoinChannels", forceJoinChannels);
     userState.delete(userId);
     await bot.sendMessage(chatId,
-      `✅ <b>Force Join Channel ${idx + 1} set ho gaya!</b>\n\nID: <code>${chId}</code>\nLink: ${link}\nLabel: ${label}`,
+      `✅ <b>Force Join Channel ${idx + 1} ID set ho gaya!</b>\n\n` +
+      `◈ Label  ▸ ${forceJoinChannels[idx].label}\n` +
+      `◈ ID     ▸ <code>${chId}</code>\n` +
+      `◈ Link   ▸ ${forceJoinChannels[idx].link}\n\n` +
+      `Ab users join verify ho sakenge.`,
       { parse_mode: "HTML" }
     );
     return;
