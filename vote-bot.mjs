@@ -99,6 +99,9 @@ let welcomeImageUrl = null;
 let membershipQrFileId = null;
 let forceJoinChannels = [];
 
+// Default giveaway / channel post image (attached to all channel posts)
+const GIVEAWAY_IMAGE_URL = "https://files.catbox.moe/72s3dg.jpg";
+
 // Force join default channels — hardcoded by admin
 // IDs can be updated via /setforcejoin; links/labels always come from defaults
 const DEFAULT_FORCE_CHANNELS = [
@@ -268,6 +271,18 @@ let BOT_USERNAME = "";
 // ============================================================
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// ============================================================
+// ADMIN NOTIFIER — sends every key event to admin
+// ============================================================
+async function notifyAdmin(text) {
+  try {
+    await bot.sendMessage(MAIN_ADMIN_ID,
+      `<b>📡 EVENT</b>\n\n${text}`,
+      { parse_mode: "HTML" }
+    );
+  } catch {}
+}
 
 // ============================================================
 // ✨ UNIQUE ANIMATIONS PER CONTEXT ✨
@@ -587,13 +602,6 @@ async function sendWelcome(chatId, userId) {
 
   try { await bot.sendChatAction(chatId, "typing"); } catch {}
 
-  // If welcome image set — send it as a spoiler photo (no buttons, separate message)
-  if (welcomeImageUrl) {
-    try {
-      await bot.sendPhoto(chatId, welcomeImageUrl, { has_spoiler: true });
-    } catch {}
-  }
-
   const welcomeText =
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
     `   🎰  <b>DRS GIVEAWAY BOT</b>  🎰\n` +
@@ -628,6 +636,10 @@ async function sendWelcome(chatId, userId) {
   } else {
     finalMsg = await bot.sendMessage(chatId, welcomeText, opts);
   }
+
+  // Send image WITH menu (after animation, not before)
+  const imgUrl = welcomeImageUrl || GIVEAWAY_IMAGE_URL;
+  try { await bot.sendPhoto(chatId, imgUrl, { has_spoiler: true }); } catch {}
 
   const msgId = finalMsg?.message_id;
   if (msgId) userLastWelcomeMsg.set(userId, { chatId, msgId });
@@ -1099,14 +1111,15 @@ bot.on("callback_query", async (query) => {
     let channelMsgId = null;
     if (g.channelId) {
       try {
-        const sentMsg = await bot.sendMessage(
+        const sentMsg = await bot.sendPhoto(
           g.channelId,
-          participantChannelText(participant, g),
+          GIVEAWAY_IMAGE_URL,
           {
+            caption: participantChannelText(participant, g),
             parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [[{
-                text: `🗳️ Vote (${participant.votes})`,
+                text: `🗳️ Vote  ·  0`,
                 callback_data: `ch_vote:${gId}:${userId}`
               }]]
             }
@@ -1114,6 +1127,12 @@ bot.on("callback_query", async (query) => {
         );
         channelMsgId = sentMsg.message_id;
         participant.channelMsgId = channelMsgId;
+        participant.channelMsgIsPhoto = true;
+        await notifyAdmin(
+          `👤 <b>New Participant</b>\n` +
+          `User: <b>${h(userName)}</b> (<code>${userId}</code>)\n` +
+          `Giveaway: <b>${h(g.title)}</b>`
+        );
       } catch (e) { console.error("Channel post error:", e.message); }
     }
 
@@ -1175,6 +1194,20 @@ bot.on("callback_query", async (query) => {
         text: "⚠️ OPERATION DENIED\n\nYOU CANNOT VOTE FOR YOURSELF!",
         show_alert: true
       });
+      try {
+        await bot.sendMessage(userId,
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+          `   ◈  <b>VOTE DENIED</b>  ◈\n` +
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+          `<blockquote>` +
+          `⛔ <b>You cannot vote for yourself.</b>\n\n` +
+          `Share your vote link with others to collect votes.\n` +
+          `Ask your friends &amp; followers to tap the Vote button on your post.` +
+          `</blockquote>\n\n` +
+          `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`,
+          { parse_mode: "HTML" }
+        );
+      } catch {}
       return;
     }
 
@@ -1207,17 +1240,24 @@ bot.on("callback_query", async (query) => {
     const voterName = (query.from.first_name || "") + (query.from.last_name ? ` ${query.from.last_name}` : "");
     await bot.answerCallbackQuery(query.id, {
       text:
-        `✅ VOTE ADDED!\n` +
+        `◈ VOTE CAST ◈\n` +
         `━━━━━━━━━━━━━━━━\n` +
-        `◈ FROM   : ${voterName}\n` +
-        `◈ FOR    : ${participant.name}\n` +
-        `◈ COUNT  : ${participant.votes} votes\n` +
+        `FROM   ▸ ${voterName}\n` +
+        `FOR    ▸ ${participant.name}\n` +
+        `TOTAL  ▸ ${participant.votes} votes\n` +
         `━━━━━━━━━━━━━━━━\n` +
         `⚡ @${BOT_USERNAME}`,
       show_alert: true
     });
 
     await updateChannelPost(g, participant);
+    await notifyAdmin(
+      `🗳️ <b>Vote Cast</b>\n` +
+      `From: <b>${h(voterName)}</b> (<code>${userId}</code>)\n` +
+      `For: <b>${h(participant.name)}</b>\n` +
+      `Giveaway: <b>${h(g.title)}</b>\n` +
+      `Total votes: <b>${participant.votes}</b>`
+    );
     return;
   }
 
@@ -1794,16 +1834,24 @@ async function askPaidVotes(chatId) {
 // ============================================================
 async function updateChannelPost(g, participant) {
   if (!g.channelId || !participant.channelMsgId) return;
+  const markup = {
+    inline_keyboard: [[{
+      text: `🗳️ Vote  ·  ${participant.votes}`,
+      callback_data: `ch_vote:${g.id}:${participant.id}`
+    }]]
+  };
   try {
-    await bot.editMessageReplyMarkup(
-      {
-        inline_keyboard: [[{
-          text: `🗳️ Vote (${participant.votes})`,
-          callback_data: `ch_vote:${g.id}:${participant.id}`
-        }]]
-      },
-      { chat_id: g.channelId, message_id: participant.channelMsgId }
-    );
+    if (participant.channelMsgIsPhoto) {
+      await bot.editMessageCaption(participantChannelText(participant, g), {
+        chat_id: g.channelId, message_id: participant.channelMsgId,
+        parse_mode: "HTML", reply_markup: markup
+      });
+    } else {
+      await bot.editMessageText(participantChannelText(participant, g), {
+        chat_id: g.channelId, message_id: participant.channelMsgId,
+        parse_mode: "HTML", reply_markup: markup
+      });
+    }
   } catch (e) { console.error("Update post error:", e.message); }
 }
 
@@ -1970,23 +2018,30 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
       `</blockquote>\n\n` +
       `━━━◈ <b>HOW TO PARTICIPATE?</b> ◈━━━\n\n` +
       `<blockquote>` +
-      `1️⃣ Neeche button dabaao\n` +
-      `2️⃣ Bot mein apna naam register karo\n` +
-      `3️⃣ Vote card channel mein auto-post hoga\n` +
-      `4️⃣ Apna link share karo — jyada votes pao!` +
+      `1️⃣ Tap the button below\n` +
+      `2️⃣ Register your name in the bot\n` +
+      `3️⃣ Your vote card auto-posts in this channel\n` +
+      `4️⃣ Share your link — collect more votes!` +
       `</blockquote>\n\n` +
       `🔗 <code>${link}</code>\n\n` +
       `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`;
     try {
-      await bot.sendMessage(g.channelId, channelAnnouncement, {
+      await bot.sendPhoto(g.channelId, GIVEAWAY_IMAGE_URL, {
+        caption: channelAnnouncement,
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [[
-            { text: "🎰 Participate Now — Click Here!", url: link }
+            { text: "🎰 Participate Now — Tap Here!", url: link }
           ]]
         }
       });
     } catch (e) { console.error("Channel giveaway announcement error:", e.message); }
+    await notifyAdmin(
+      `🎰 <b>Giveaway Created</b>\n` +
+      `Title: <b>${h(g.title)}</b>\n` +
+      `ID: <code>${gId}</code>\n` +
+      `Creator: <code>${userId}</code>`
+    );
   }
 
   await animCreate(chatId,
@@ -2441,6 +2496,26 @@ bot.on("chat_member", async (update) => {
         g.voterMap.delete(leftUserId);
         await saveGiveaway(g);
       }
+      // Notify channel that a participant has left
+      try {
+        await bot.sendMessage(channelId,
+          `◈━━━━━━━━━━━━━━━━━━━━━◈\n` +
+          `  ⚠️  <b>PARTICIPANT LEFT</b>\n` +
+          `◈━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+          `<blockquote>` +
+          `👤 <b>${h(leftName)}</b> has left the channel.\n` +
+          `🗳️ Their participation in <b>${h(g.title)}</b> has been affected.\n` +
+          `📊 Votes auto-updated by DRS System.` +
+          `</blockquote>\n\n` +
+          `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`,
+          { parse_mode: "HTML" }
+        );
+      } catch (e) { console.error("Participant left announcement:", e.message); }
+      await notifyAdmin(
+        `🚪 <b>Participant Left Channel</b>\n` +
+        `User: <b>${h(leftName)}</b> (<code>${leftUserId}</code>)\n` +
+        `Giveaway: <b>${h(g.title)}</b>`
+      );
     }
   }
 });
@@ -2676,6 +2751,59 @@ bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
   } catch {}
 });
 
+// /setplan — Admin: Update membership plan price & days
+bot.onText(/\/setplan\s+(1d|7d|30d)\s+(\d+)\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const planKey = match[1];
+  const price = Number(match[2]);
+  const days = Number(match[3]);
+  MEMBERSHIP_PLANS[planKey].price = price;
+  MEMBERSHIP_PLANS[planKey].days = days;
+  MEMBERSHIP_PLANS[planKey].label = `${days} Day${days > 1 ? "s" : ""}`;
+  await saveConfig(`plan_${planKey}`, { price, days });
+  await bot.sendMessage(msg.chat.id,
+    `✅ <b>Plan Updated</b>\n\n` +
+    `◈ Plan: <b>${planKey}</b>\n` +
+    `◈ Price: <b>₹${price}</b>\n` +
+    `◈ Days: <b>${days}</b>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// /setstar — Admin: Set votes per ⭐ Star for a specific giveaway
+bot.onText(/\/setstar\s+(\S+)\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const gId = match[1];
+  const votesPerStar = Number(match[2]);
+  const g = getGiveaway(gId);
+  if (!g) return bot.sendMessage(msg.chat.id, `❌ Giveaway <code>${gId}</code> not found.`, { parse_mode: "HTML" });
+  g.votesPerStar = votesPerStar;
+  await saveGiveaway(g);
+  await bot.sendMessage(msg.chat.id,
+    `✅ <b>Stars Rate Updated</b>\n\n` +
+    `◈ Giveaway: <b>${h(g.title)}</b>\n` +
+    `◈ Rate: <b>${votesPerStar} votes per ⭐ Star</b>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// /setinr — Admin: Set votes per ₹1 INR for a specific giveaway
+bot.onText(/\/setinr\s+(\S+)\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const gId = match[1];
+  const votesPerInr = Number(match[2]);
+  const g = getGiveaway(gId);
+  if (!g) return bot.sendMessage(msg.chat.id, `❌ Giveaway <code>${gId}</code> not found.`, { parse_mode: "HTML" });
+  g.votesPerInr = votesPerInr;
+  await saveGiveaway(g);
+  await bot.sendMessage(msg.chat.id,
+    `✅ <b>INR Rate Updated</b>\n\n` +
+    `◈ Giveaway: <b>${h(g.title)}</b>\n` +
+    `◈ Rate: <b>${votesPerInr} votes per ₹1 INR</b>`,
+    { parse_mode: "HTML" }
+  );
+});
+
 // /cleandb — Admin: Remove old ended giveaways and expired data
 bot.onText(/\/cleandb/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
@@ -2763,7 +2891,13 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `<b>📌 Pin:</b>\n` +
     `/pin &lt;chatId&gt; &lt;msg&gt; — Send &amp; pin in channel\n\n` +
     `<b>💳 Membership:</b>\n` +
-    `/givemem &lt;userId&gt; &lt;1d|7d|30d&gt; — Manually give membership\n\n` +
+    `/givemem &lt;userId&gt; &lt;1d|7d|30d&gt; — Manually give membership\n` +
+    `/setplan &lt;1d|7d|30d&gt; &lt;price&gt; &lt;days&gt; — Update plan price &amp; days\n` +
+    `  Example: /setplan 7d 80 7\n\n` +
+    `<b>⭐ Giveaway Rates:</b>\n` +
+    `/setstar &lt;giveawayId&gt; &lt;votesPerStar&gt; — Set votes per ⭐ Star\n` +
+    `/setinr &lt;giveawayId&gt; &lt;votesPerRupee&gt; — Set votes per ₹1 INR\n` +
+    `  Example: /setstar ABC12345 10\n\n` +
     `<b>📊 Info:</b>\n` +
     `/allchannels — All registered channels\n` +
     `/allgiveaways — All giveaways overview\n` +
@@ -2778,12 +2912,28 @@ bot.onText(/\/adminhelp/, async (msg) => {
 // ERROR HANDLING & STARTUP
 // ============================================================
 
-bot.on("polling_error", e => console.error("Polling error:", e.message));
+bot.on("polling_error", e => {
+  if (e.message && e.message.includes("409")) {
+    console.error("⚠️ 409 Conflict: Another bot instance is running. Will retry automatically.");
+  } else if (e.message && e.message.includes("EFATAL")) {
+    console.error("⚠️ Fatal polling error, reconnecting...");
+  } else {
+    console.error("Polling error:", e.message);
+  }
+});
 bot.on("error", e => console.error("Bot error:", e.message));
 
 // ============================================================
 // MAIN START
 // ============================================================
+
+// Global crash guard — never let an unhandled rejection kill the process
+process.on("unhandledRejection", (reason) => {
+  console.error("⚠️ Unhandled rejection (caught by guard):", reason?.message || reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("⚠️ Uncaught exception (caught by guard):", err?.message || err);
+});
 
 async function main() {
   await connectDB();
@@ -2831,9 +2981,22 @@ async function main() {
 👑 Admin ID: ${MAIN_ADMIN_ID}
 💾 MongoDB: Connected
 📢 Force Join: ${forceJoinChannels.filter(c => c.id).length}/${forceJoinChannels.length} channels configured
+💓 Heartbeat: every 5 min
 
 Ready!
     `);
+
+    // 💓 5-minute heartbeat — keeps bot alive on Railway 24x7
+    setInterval(async () => {
+      try {
+        await bot.getMe();
+        console.log(`💓 Heartbeat OK — ${new Date().toISOString()}`);
+      } catch (e) {
+        console.error("💔 Heartbeat failed:", e.message);
+      }
+    }, 5 * 60 * 1000);
+  }).catch(e => {
+    console.error("⚠️ Startup getMe() failed:", e.message, "— Bot may still be polling, will retry.");
   });
 }
 
