@@ -636,7 +636,7 @@ function backKeyboard(cb = "main_menu") {
 
 function mgmtKeyboard(gId, g, showVipControls = false) {
   const rows = [
-    [{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }],
+    [{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }, { text: "📊 Top Participants", callback_data: `topvoters:${gId}` }],
     [{ text: `${g.paidVotesActive ? "🔴 Stop Paid Votes" : "🟢 Start Paid Votes"}`, callback_data: `toggle_paid:${gId}` }],
     [{ text: `${g.participationOpen ? "🔴 Stop Participation" : "🟢 Open Participation"}`, callback_data: `toggle_part:${gId}` }],
   ];
@@ -1174,6 +1174,41 @@ bot.on("callback_query", async (query) => {
     return;
   }
 
+  // ─── Top Voters Result ───
+  if (data.startsWith("topvoters:")) {
+    const gId = data.split(":")[1];
+    const g = getGiveaway(gId);
+    if (!g) { await bot.answerCallbackQuery(query.id, { text: "Giveaway nahi mili!", show_alert: true }); return; }
+    if (g.creatorId !== userId && !isAdmin(userId)) {
+      await bot.answerCallbackQuery(query.id, { text: "Sirf giveaway creator dekh sakta hai!", show_alert: true });
+      return;
+    }
+    const parts = [...g.participants.values()].sort((a, b) => b.votes - a.votes);
+    const totalVotes = parts.reduce((s, p) => s + p.votes, 0);
+    const medals = ["🥇", "🥈", "🥉"];
+    const rows = parts.slice(0, 15).map((p, i) => {
+      const medal = i < 3 ? medals[i] : `${i + 1}.`;
+      const name = h(p.name).slice(0, 16);
+      const pad = "·".repeat(Math.max(2, 18 - name.length));
+      return `${medal}  <b>${name}</b>  ${pad}  <code>${p.votes}</code> 🗳️`;
+    });
+    const text =
+      `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  ◆  <b>TOP PARTICIPANTS</b>  ◆\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `📌 <b>${h(g.title)}</b>\n` +
+      `<i>👥 ${g.participants.size} participants  ·  🗳️ ${totalVotes} total votes</i>\n\n` +
+      `━━━◈━━━━━━━━━━━━━━━━━◈━━━\n\n` +
+      (rows.length ? rows.join("\n") : `<i>▸ Koi participant nahi hai abhi</i>`) +
+      `\n\n━━━◈━━━━━━━━━━━━━━━━━◈━━━\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
+    await bot.editMessageText(text, {
+      chat_id: chatId, message_id: msgId, parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[{ text: "◀️ Back", callback_data: `mgmt:${gId}` }]] }
+    }).catch(() => {});
+    return;
+  }
+
   // ─── Toggle Paid Votes ───
   if (data.startsWith("toggle_paid:")) {
     const gId = data.split(":")[1];
@@ -1287,6 +1322,38 @@ bot.on("callback_query", async (query) => {
       return;
     }
 
+    // ── Duplicate join guard ──
+    if (g.participants.has(userId)) {
+      const existing = g.participants.get(userId);
+      const chLink = existing.channelMsgId && g.channelId
+        ? `https://t.me/c/${String(g.channelId).replace("-100", "")}/${existing.channelMsgId}`
+        : null;
+      await bot.answerCallbackQuery(query.id, { text: "Aap pehle se is giveaway mein hain!", show_alert: true });
+      await bot.editMessageText(
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+        `  ◆  <b>ALREADY JOINED</b>  ◆\n` +
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+        `📌 <b>${h(g.title)}</b>\n\n` +
+        `<blockquote>` +
+        `◈ Votes Now  ▸  <b>${existing.votes}</b>\n` +
+        (chLink ? `◈ Vote Card  ▸  <a href="${chLink}">View in Channel</a>\n` : "") +
+        `◈ Status     ▸  🟢 Active` +
+        `</blockquote>\n\n` +
+        `◈ <i>Apna link share karo aur aur votes collect karo!</i>\n` +
+        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+        {
+          chat_id: chatId, message_id: msgId, parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }],
+              [{ text: "🔄 Get Links Again", callback_data: `my_links:${gId}` }]
+            ]
+          }
+        }
+      ).catch(() => {});
+      return;
+    }
+
     const userName = (query.from.first_name || "") + (query.from.last_name ? ` ${query.from.last_name}` : "");
     const userHandle = query.from.username ? `@${query.from.username}` : "@NoUser";
 
@@ -1379,22 +1446,42 @@ bot.on("callback_query", async (query) => {
     }
     if (userId === participantUserId) {
       await bot.answerCallbackQuery(query.id, {
-        text: "⚠️ OPERATION DENIED\n\nYOU CANNOT VOTE FOR YOURSELF!",
+        text: "⛔ DENIED — Aap khud ko vote nahi kar sakte!",
         show_alert: true
       });
+      // Big photo warning — same style as welcome screen
       try {
-        await bot.sendMessage(userId,
+        const denyPhoto = await bot.sendPhoto(userId, GIVEAWAY_IMAGE_URL, {
+          caption: `◈`,
+          parse_mode: "HTML",
+          has_spoiler: true
+        });
+        const dmid = denyPhoto.message_id;
+        await sleep(250);
+        await bot.editMessageCaption(`⛔ ─── ◆`, { chat_id: userId, message_id: dmid, parse_mode: "HTML" }).catch(() => {});
+        await sleep(220);
+        await bot.editMessageCaption(`◆  <b>VOTE DENIED</b>  ◆`, { chat_id: userId, message_id: dmid, parse_mode: "HTML" }).catch(() => {});
+        await sleep(350);
+        await bot.editMessageCaption(
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-          `   ◈  <b>VOTE DENIED</b>  ◈\n` +
+          `   ⛔  <b>VOTE DENIED</b>  ⛔\n` +
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
           `<blockquote>` +
-          `⛔ <b>You cannot vote for yourself.</b>\n\n` +
-          `Share your vote link with others to collect votes.\n` +
-          `Ask your friends &amp; followers to tap the Vote button on your post.` +
+          `<b>Aap khud ko vote nahi kar sakte.</b>\n\n` +
+          `Apna vote link share karo aur doston se\n` +
+          `kehna ki wo aapke post pe Vote button dabayen.\n\n` +
+          `◈ Votes ▸  <b>${g.participants.get(participantUserId)?.votes ?? 0}</b>` +
           `</blockquote>\n\n` +
           `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`,
-          { parse_mode: "HTML" }
-        );
+          {
+            chat_id: userId, message_id: dmid, parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "📋 Share My Vote Link", switch_inline_query: `https://t.me/${BOT_USERNAME}?start=${g.id}` }
+              ]]
+            }
+          }
+        ).catch(() => {});
       } catch {}
       return;
     }
@@ -2837,6 +2924,36 @@ bot.onText(/\/stats/, async (msg) => {
   );
 });
 
+bot.onText(/\/topvoters/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
+
+  const userGiveaways = [...giveaways.entries()].filter(([, g]) =>
+    g.creatorId === userId || isAdmin(userId)
+  );
+
+  if (!userGiveaways.length) {
+    return bot.sendMessage(chatId,
+      `<b>◆ Koi giveaway nahi mili.</b>\n\nPehle giveaway banao.`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  const buttons = userGiveaways.map(([gId, g]) => [{
+    text: `${g.active ? "🟢" : "🔴"} ${g.title.slice(0, 28)}  ·  ${g.participants.size} 👥`,
+    callback_data: `topvoters:${gId}`
+  }]);
+
+  await bot.sendMessage(chatId,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  ◆  <b>TOP PARTICIPANTS</b>  ◆\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>Giveaway select karo dekhhne ke liye ki\nkaun top pe hai vote count mein:</blockquote>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } }
+  );
+});
+
 bot.onText(/\/createpost/, async (msg) => {
   if (msg.chat.type !== "private") return;
   const userId = msg.from.id;
@@ -3579,6 +3696,7 @@ async function main() {
         { command: "setforcejoin",         description: "📢 Configure force join channel" },
         { command: "forcejoininfo",        description: "ℹ️ View force join config" },
         { command: "stats",                description: "📊 Bot statistics dashboard" },
+        { command: "topvoters",            description: "📊 Top participants in your giveaway" },
         { command: "cleandb",              description: "🧹 Clean junk/expired data" }
       ], { scope: { type: "chat", chat_id: MAIN_ADMIN_ID } });
 
