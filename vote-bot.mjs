@@ -913,9 +913,9 @@ bot.on("callback_query", async (query) => {
   const data = query.data;
   await bot.answerCallbackQuery(query.id).catch(() => {});
 
-  // If button was on the welcome photo message, delete it so we can reply with fresh text
+  // Only delete welcome photo in PRIVATE chats (not channel vote cards)
   const isPhoto = !!(query.message.photo?.length);
-  if (isPhoto) {
+  if (isPhoto && query.message.chat.type === "private") {
     try { await bot.deleteMessage(chatId, msgId); } catch {}
     msgId = null;
   }
