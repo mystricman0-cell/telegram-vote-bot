@@ -968,6 +968,31 @@ bot.on("callback_query", async (query) => {
     return;
   }
 
+  // ─── Broadcast target selection ───
+  if (data.startsWith("bc_target:")) {
+    const target = data.split(":")[1];
+    if (target === "cancel") {
+      userState.delete(userId);
+      try { await bot.deleteMessage(chatId, msgId); } catch {}
+      await bot.sendMessage(chatId, `❌ <b>Broadcast cancelled.</b>`, { parse_mode: "HTML" });
+      return;
+    }
+    const state = userState.get(userId);
+    if (!state || state.step !== "broadcast_pending") {
+      await bot.answerCallbackQuery(query.id, { text: "❌ Broadcast session expired. Dobara /broadcast karo.", show_alert: true });
+      return;
+    }
+    userState.delete(userId);
+    try { await bot.deleteMessage(chatId, msgId); } catch {}
+    const targetLabel = { users: "👥 Users", channels: "📢 Channels", groups: "🏘️ Groups", all: "🌐 All" }[target];
+    await bot.sendMessage(chatId,
+      `⏳ <b>Broadcasting to ${targetLabel}...</b>\n<i>Please wait...</i>`,
+      { parse_mode: "HTML" }
+    );
+    await doBroadcast(chatId, state.adminMsg, state.text, state.silent, target);
+    return;
+  }
+
   // ─── New Giveaway ───
   if (data === "new_giveaway") {
     if (!isVip(userId) && !isAdmin(userId)) {
@@ -2790,27 +2815,32 @@ bot.onText(/\/createpost/, async (msg) => {
 // ============================================================
 
 // ── Broadcast helper ──
-// Sends to all: registered channels + groups + bot users (DMs)
-// If admin replies to a message → copyMessage (preserves photo/quote/text exactly)
-// If text typed → sendPhoto with GIVEAWAY_IMAGE_URL + premium blockquote caption
-async function doBroadcast(adminChatId, adminMsg, textContent, silent) {
-  let sent = 0, failed = 0;
-  const allTargets = [...new Set([
-    ...[...registeredChannels.keys()],
-    ...[...botUsers.keys()]
-  ])];
+// target: "users" | "channels" | "groups" | "all"
+async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = "all") {
+  const channelIds = [...registeredChannels.entries()]
+    .filter(([, c]) => c.type === "channel")
+    .map(([id]) => id);
+  const groupIds = [...registeredChannels.entries()]
+    .filter(([, c]) => c.type === "group" || c.type === "supergroup")
+    .map(([id]) => id);
+  const userIds = [...botUsers.keys()];
+
+  let targets = [];
+  if (target === "users")    targets = userIds;
+  else if (target === "channels") targets = channelIds;
+  else if (target === "groups")   targets = groupIds;
+  else targets = [...new Set([...channelIds, ...groupIds, ...userIds])];
 
   const replyTo = adminMsg.reply_to_message;
+  let sent = 0, failed = 0;
 
-  for (const id of allTargets) {
+  for (const id of targets) {
     try {
       if (replyTo) {
-        // Forward-style: copy the exact message the admin replied to
         await bot.copyMessage(id, adminMsg.chat.id, replyTo.message_id, {
           disable_notification: silent
         });
       } else {
-        // Text broadcast: image + premium blockquote caption
         const caption =
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
           `  📢  <b>DRS BROADCAST</b>\n` +
@@ -2818,15 +2848,15 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent) {
           `<blockquote>${h(textContent)}</blockquote>\n\n` +
           `✦ ─── <b>@${BOT_USERNAME || "DRS_GiveawayBot"}</b> ─── ✦`;
         await bot.sendPhoto(id, GIVEAWAY_IMAGE_URL, {
-          caption,
-          parse_mode: "HTML",
-          disable_notification: silent
+          caption, parse_mode: "HTML", disable_notification: silent
         });
       }
       sent++;
     } catch { failed++; }
+    await sleep(50);
   }
 
+  const targetLabel = { users: "👥 Users", channels: "📢 Channels", groups: "👥 Groups", all: "🌐 All" }[target];
   const mode = replyTo ? "Message-Copy" : "Image+Text";
   const notif = silent ? "🔕 Silent" : "🔔 LOUD";
   await bot.sendMessage(adminChatId,
@@ -2834,8 +2864,9 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent) {
     `  ${silent ? "📢" : "🔔"}  <b>BROADCAST DONE</b>\n` +
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
     `<blockquote>` +
+    `◈ Target   ▸  ${targetLabel}\n` +
     `◈ Mode     ▸  ${notif} ${mode}\n` +
-    `◈ Targets  ▸  ${allTargets.length} (channels + users)\n` +
+    `◈ Total    ▸  ${targets.length}\n` +
     `◈ Sent     ▸  ✅ ${sent}\n` +
     `◈ Failed   ▸  ❌ ${failed}` +
     `</blockquote>`,
@@ -2843,43 +2874,75 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent) {
   );
 }
 
-// /broadcast — Silent broadcast
-// Usage: Reply to any message + /broadcast  OR  /broadcast <your text here>
+// ── Show broadcast target selection menu ──
+async function showBroadcastMenu(chatId, userId, adminMsg, text, silent) {
+  userState.set(userId, { step: "broadcast_pending", adminMsg, text, silent });
+  const notif = silent ? "🔕 Silent" : "🔔 LOUD";
+  const mode = adminMsg.reply_to_message ? "📋 Message-Copy" : "🖼️ Image+Text";
+  await bot.sendMessage(chatId,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  📢  <b>BROADCAST — ${notif}</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `Mode: ${mode}\n` +
+    `${text ? `Message: <i>${h(text.slice(0, 60))}${text.length > 60 ? "..." : ""}</i>` : `Copied message selected ✅`}` +
+    `</blockquote>\n\n` +
+    `<b>Kahan bhejni hai broadcast?</b>`,
+    {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "👥 Users only", callback_data: "bc_target:users" },
+            { text: "📢 Channels only", callback_data: "bc_target:channels" }
+          ],
+          [
+            { text: "🏘️ Groups only", callback_data: "bc_target:groups" },
+            { text: "🌐 All", callback_data: "bc_target:all" }
+          ],
+          [{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]
+        ]
+      }
+    }
+  );
+}
+
+// /broadcast — Silent broadcast with target selection
 bot.onText(/\/broadcast(?:\s+([\s\S]+))?/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const text = match[1]?.trim();
   if (!text && !msg.reply_to_message) {
     return bot.sendMessage(msg.chat.id,
-      `<b>📢 /broadcast Usage:</b>\n\n` +
+      `<b>📢 /broadcast — Usage:</b>\n\n` +
       `<blockquote>` +
       `Option 1: Reply to ANY message (photo/text/video) + type <code>/broadcast</code>\n` +
-      `→ That exact message gets copied to all channels &amp; users\n\n` +
+      `→ Woh exact message copy hoga — Users / Channels / Groups / All mein\n\n` +
       `Option 2: <code>/broadcast Your text here</code>\n` +
-      `→ Sends image + your text in premium style to all` +
+      `→ Image + text premium style mein bheja jaata hai` +
       `</blockquote>`,
       { parse_mode: "HTML" }
     );
   }
-  await doBroadcast(msg.chat.id, msg, text || "", true);
+  await showBroadcastMenu(msg.chat.id, msg.from.id, msg, text || "", true);
 });
 
-// /loud — LOUD broadcast (with notification sound)
+// /loud — LOUD broadcast with target selection
 bot.onText(/\/loud(?:\s+([\s\S]+))?/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const text = match[1]?.trim();
   if (!text && !msg.reply_to_message) {
     return bot.sendMessage(msg.chat.id,
-      `<b>🔔 /loud Usage:</b>\n\n` +
+      `<b>🔔 /loud — Usage:</b>\n\n` +
       `<blockquote>` +
       `Option 1: Reply to ANY message (photo/text/video) + type <code>/loud</code>\n` +
-      `→ That exact message gets copied LOUDLY to all channels &amp; users\n\n` +
+      `→ Woh exact message LOUDLY copy hoga — Users / Channels / Groups / All mein\n\n` +
       `Option 2: <code>/loud Your text here</code>\n` +
-      `→ Sends image + your text in premium style with notification sound` +
+      `→ Image + text with notification sound` +
       `</blockquote>`,
       { parse_mode: "HTML" }
     );
   }
-  await doBroadcast(msg.chat.id, msg, text || "", false);
+  await showBroadcastMenu(msg.chat.id, msg.from.id, msg, text || "", false);
 });
 
 bot.onText(/\/pin\s+(-?\d+)\s+([\s\S]+)/, async (msg, match) => {
@@ -3358,10 +3421,11 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `</blockquote>\n\n` +
     `<b>📢 BROADCAST</b>\n` +
     `<blockquote>` +
-    `/broadcast — Reply to msg → copy to all (silent)\n` +
-    `/broadcast &lt;text&gt; — Image+text to all (silent)\n` +
-    `/loud — Same as broadcast but with sound\n` +
-    `/loud &lt;text&gt; — Image+text to all (LOUD)` +
+    `/broadcast — Target choose karo: Users / Channels / Groups / All (silent)\n` +
+    `/broadcast &lt;text&gt; — Image+text bhejo target choose karke (silent)\n` +
+    `/loud — Same as broadcast but LOUD (with sound)\n` +
+    `/loud &lt;text&gt; — Image+text LOUDLY, target choose karke\n\n` +
+    `💡 Reply to msg + /broadcast → woh exact message copy hoga selected target mein` +
     `</blockquote>\n\n` +
     `<b>📩 DIRECT SEND & PIN</b>\n` +
     `<blockquote>` +
@@ -3453,8 +3517,8 @@ async function main() {
         { command: "support",              description: "💬 Contact Support" },
         { command: "createpost",           description: "📢 Create a channel post" },
         { command: "adminhelp",            description: "👑 Admin command list" },
-        { command: "broadcast",            description: "📢 Silent broadcast to all channels" },
-        { command: "loud",                 description: "🔊 LOUD broadcast to all channels" },
+        { command: "broadcast",            description: "📢 Silent broadcast — Users/Channels/Groups/All" },
+        { command: "loud",                 description: "🔊 LOUD broadcast — Users/Channels/Groups/All" },
         { command: "send",                 description: "📩 Send message to specific chat" },
         { command: "sendloud",             description: "🔊 LOUD send to specific chat" },
         { command: "pin",                  description: "📌 Send & pin in channel" },
