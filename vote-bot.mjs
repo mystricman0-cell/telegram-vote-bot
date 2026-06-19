@@ -337,6 +337,27 @@ async function animWelcome(chatId) {
   return msg;
 }
 
+// 🎰 Welcome animation played on a photo caption (spoiler image stays, caption animates)
+async function animWelcomePhoto(chatId, msgId) {
+  const frames = [
+    `·  ·  ·`,
+    `◈  ·  ·  ◈`,
+    `◈ · <b>DRS</b> · ◈`,
+    `⚡ <b>DRS GIVEAWAY</b> ⚡`,
+    `🎰 <b>DRS GIVEAWAY BOT</b> 🎰`,
+  ];
+  const delays = [130, 160, 200, 250];
+  for (let i = 0; i < frames.length; i++) {
+    try {
+      await bot.editMessageCaption(frames[i], {
+        chat_id: chatId, message_id: msgId, parse_mode: "HTML"
+      });
+    } catch {}
+    if (i < frames.length - 1) await sleep(delays[i] || 150);
+  }
+  await sleep(300);
+}
+
 // 🔄 Loading animation — minimal spinner
 async function animLoading(chatId, msgId) {
   const frames = ["⏳", "🔄", "⚙️ <i>Loading...</i>", "✦ <i>Please wait...</i>"];
@@ -659,18 +680,21 @@ async function sendWelcome(chatId, userId) {
     `✦ ────── <b>DRS NETWORK</b> ────── ✦\n` +
     `💬 Support: @DRS_Support_DRS`;
 
-  // Run animation on a temporary text message, then delete it
-  const animMsg = await animWelcome(chatId);
-  if (animMsg) {
-    try { await bot.deleteMessage(chatId, animMsg.message_id); } catch {}
-  }
-
-  // Send ONE photo message: image on top, caption = welcome text, menu buttons attached
+  // Send photo first with spoiler + first animation frame as caption
   const imgUrl = welcomeImageUrl || GIVEAWAY_IMAGE_URL;
   let finalMsg;
   try {
     finalMsg = await bot.sendPhoto(chatId, imgUrl, {
-      caption: welcomeText,
+      caption: `·  ·  ·`,
+      parse_mode: "HTML",
+      has_spoiler: true
+    });
+    // Animate the caption on the photo (image stays as spoiler, caption animates)
+    await animWelcomePhoto(chatId, finalMsg.message_id);
+    // Set final welcome caption + menu buttons
+    await bot.editMessageCaption(welcomeText, {
+      chat_id: chatId,
+      message_id: finalMsg.message_id,
       parse_mode: "HTML",
       reply_markup: mainMenuKeyboard()
     });
