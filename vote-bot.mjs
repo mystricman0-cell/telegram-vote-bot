@@ -645,7 +645,7 @@ async function sendWelcome(chatId, userId) {
     `✦ ━━━━━━━━━━━━━━━━━━━━━ ✦\n` +
     `   🎰  <b>DRS GIVEAWAY BOT</b>  🎰\n` +
     `✦ ━━━━━━━━━━━━━━━━━━━━━ ✦\n\n` +
-    `<blockquote expandable>` +
+    `<blockquote>` +
     `▸ Create powerful giveaways instantly\n` +
     `▸ Live voting with real-time leaderboard\n` +
     `▸ Auto vote-removal on channel leave\n` +
@@ -659,26 +659,28 @@ async function sendWelcome(chatId, userId) {
     `✦ ────── <b>DRS NETWORK</b> ────── ✦\n` +
     `💬 Support: @DRS_Support_DRS`;
 
-  // Always send welcome as TEXT message so callbacks can editMessageText on it
-  const opts = { parse_mode: "HTML", reply_markup: mainMenuKeyboard() };
+  // Run animation on a temporary text message, then delete it
   const animMsg = await animWelcome(chatId);
-  let finalMsg;
   if (animMsg) {
-    try {
-      await bot.editMessageText(welcomeText, {
-        chat_id: chatId, message_id: animMsg.message_id, ...opts
-      });
-      finalMsg = animMsg;
-    } catch {
-      finalMsg = await bot.sendMessage(chatId, welcomeText, opts);
-    }
-  } else {
-    finalMsg = await bot.sendMessage(chatId, welcomeText, opts);
+    try { await bot.deleteMessage(chatId, animMsg.message_id); } catch {}
   }
 
-  // Send image WITH menu (after animation, not before)
+  // Send ONE photo message: image on top, caption = welcome text, menu buttons attached
   const imgUrl = welcomeImageUrl || GIVEAWAY_IMAGE_URL;
-  try { await bot.sendPhoto(chatId, imgUrl, { has_spoiler: true }); } catch {}
+  let finalMsg;
+  try {
+    finalMsg = await bot.sendPhoto(chatId, imgUrl, {
+      caption: welcomeText,
+      parse_mode: "HTML",
+      reply_markup: mainMenuKeyboard()
+    });
+  } catch {
+    // Fallback to text-only if photo fails
+    finalMsg = await bot.sendMessage(chatId, welcomeText, {
+      parse_mode: "HTML",
+      reply_markup: mainMenuKeyboard()
+    });
+  }
 
   const msgId = finalMsg?.message_id;
   if (msgId) userLastWelcomeMsg.set(userId, { chatId, msgId });
