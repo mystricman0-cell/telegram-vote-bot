@@ -32,4 +32,3 @@ outputType = "console"
 [userenv]
 
 [userenv.shared]
-MONGODB_URI = "mongodb+srv://darklordsaura:H7wUo2r3i49sOeoe@cluster0.xad2czd.mongodb.net/?appName=Cluster0"
