@@ -37,6 +37,7 @@ const giveawaySchema = new mongoose.Schema({
   qrFileId: String,
   votesPerInr: { type: Number, default: 10 },
   votesPerStar: { type: Number, default: 5 },
+  extraForceJoin: { type: mongoose.Schema.Types.Mixed, default: null },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -602,17 +603,27 @@ function backKeyboard(cb = "main_menu") {
   return { inline_keyboard: [[{ text: "◀️ Back", callback_data: cb }]] };
 }
 
-function mgmtKeyboard(gId, g) {
-  return {
-    inline_keyboard: [
-      [{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }],
-      [{ text: `${g.paidVotesActive ? "🔴 Stop Paid Votes" : "🟢 Start Paid Votes"}`, callback_data: `toggle_paid:${gId}` }],
-      [{ text: `${g.participationOpen ? "🔴 Stop Participation" : "🟢 Open Participation"}`, callback_data: `toggle_part:${gId}` }],
-      [{ text: "🏁 End Giveaway", callback_data: `end_giveaway:${gId}` }],
-      [{ text: "🗑️ Clear Channel Posts", callback_data: `clear_posts:${gId}` }],
-      [{ text: "◀️ Back", callback_data: "my_giveaways" }]
-    ]
-  };
+function mgmtKeyboard(gId, g, showVipControls = false) {
+  const rows = [
+    [{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }],
+    [{ text: `${g.paidVotesActive ? "🔴 Stop Paid Votes" : "🟢 Start Paid Votes"}`, callback_data: `toggle_paid:${gId}` }],
+    [{ text: `${g.participationOpen ? "🔴 Stop Participation" : "🟢 Open Participation"}`, callback_data: `toggle_part:${gId}` }],
+  ];
+  if (showVipControls) {
+    rows.push([{
+      text: g.extraForceJoin
+        ? `🔗 Force Join: ${g.extraForceJoin.channelUsername ? "@" + g.extraForceJoin.channelUsername : "Set ✅"} — Change`
+        : "🔗 Set Force Join Channel (VIP)",
+      callback_data: `set_gj:${gId}`
+    }]);
+    if (g.extraForceJoin) {
+      rows.push([{ text: "❌ Remove Force Join", callback_data: `clear_gj:${gId}` }]);
+    }
+  }
+  rows.push([{ text: "🏁 End Giveaway", callback_data: `end_giveaway:${gId}` }]);
+  rows.push([{ text: "🗑️ Clear Channel Posts", callback_data: `clear_posts:${gId}` }]);
+  rows.push([{ text: "◀️ Back", callback_data: "my_giveaways" }]);
+  return { inline_keyboard: rows };
 }
 
 // ============================================================
@@ -728,10 +739,45 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
       const member = await isMember(g.channelId, userId);
       if (!member) {
         return bot.sendMessage(chatId,
-          `<b>❌ Channel Member Nahi Ho!</b>\n\n` +
-          `<b>${h(g.title)}</b> mein participate karne ke liye pehle channel join karo:\n` +
-          (g.channelUsername ? `👉 @${h(g.channelUsername)}` : `Channel ID: <code>${g.channelId}</code>`),
-          { parse_mode: "HTML" }
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+          `  🔒  <b>CHANNEL REQUIRED</b>\n` +
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+          `<blockquote>` +
+          `<b>${h(g.title)}</b> mein participate karne ke liye pehle channel join karo:\n\n` +
+          `👉 ${g.channelUsername ? `@${h(g.channelUsername)}` : `Channel ID: <code>${g.channelId}</code>`}\n\n` +
+          `Join karne ke baad dobara link tap karo.` +
+          `</blockquote>`,
+          {
+            parse_mode: "HTML",
+            reply_markup: g.channelUsername ? {
+              inline_keyboard: [[{ text: "📢 Join Channel", url: `https://t.me/${g.channelUsername}` }]]
+            } : undefined
+          }
+        );
+      }
+    }
+
+    // ── VIP extra force join check (only enforced while creator's membership is active) ──
+    if (g.extraForceJoin && (isVip(g.creatorId) || isAdmin(g.creatorId))) {
+      const fj = g.extraForceJoin;
+      let fjMember = false;
+      try { fjMember = await isMember(fj.channelId, userId); } catch {}
+      if (!fjMember) {
+        return bot.sendMessage(chatId,
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+          `  🔗  <b>JOIN REQUIRED</b>\n` +
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+          `<blockquote>` +
+          `Is giveaway mein participate karne ke liye pehle ye channel join karo:\n\n` +
+          `👉 ${fj.channelUsername ? `@${h(fj.channelUsername)}` : `Channel ID: <code>${fj.channelId}</code>`}\n\n` +
+          `Join karne ke baad dobara link tap karo.` +
+          `</blockquote>`,
+          {
+            parse_mode: "HTML",
+            reply_markup: fj.channelUsername ? {
+              inline_keyboard: [[{ text: "📢 Join Channel", url: `https://t.me/${fj.channelUsername}` }]]
+            } : undefined
+          }
         );
       }
     }
@@ -881,6 +927,13 @@ bot.on("callback_query", async (query) => {
 
   // ─── New Giveaway ───
   if (data === "new_giveaway") {
+    if (!isVip(userId) && !isAdmin(userId)) {
+      await bot.answerCallbackQuery(query.id, {
+        text: "👑 VIP Membership chahiye giveaway banane ke liye! /membership",
+        show_alert: true
+      });
+      return;
+    }
     userState.set(userId, { step: "title", msgId });
     await animLoading(chatId, msgId);
     await bot.editMessageText(
@@ -989,8 +1042,46 @@ bot.on("callback_query", async (query) => {
       `</blockquote>\n\n` +
       `🔗 <a href="${link}">▸ Participation Link</a>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: mgmtKeyboard(gId, g) }
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: mgmtKeyboard(gId, g, (isVip(userId) || isAdmin(userId)) && g.creatorId === userId) }
     ).catch(() => {});
+    return;
+  }
+
+  // ─── VIP: Set per-giveaway force join ───
+  if (data.startsWith("set_gj:")) {
+    const gId = data.split(":")[1];
+    const g = getGiveaway(gId);
+    if (!g || g.creatorId !== userId) return;
+    if (!isVip(userId) && !isAdmin(userId)) {
+      await bot.answerCallbackQuery(query.id, { text: "👑 VIP Membership chahiye!", show_alert: true });
+      return;
+    }
+    userState.set(userId, { step: "set_giveaway_fj", gId, msgId });
+    await bot.sendMessage(chatId,
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  🔗  <b>SET FORCE JOIN</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>` +
+      `Is giveaway mein participate karne se pehle, user ko ek specific channel join karna hoga.\n\n` +
+      `📝 Channel ka username ya ID bhejo:\n` +
+      `▸ <code>@YourChannel</code>\n` +
+      `▸ <code>-1001234567890</code>` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML", reply_markup: backKeyboard(`mgmt:${gId}`) }
+    );
+    return;
+  }
+
+  // ─── VIP: Clear per-giveaway force join ───
+  if (data.startsWith("clear_gj:")) {
+    const gId = data.split(":")[1];
+    const g = getGiveaway(gId);
+    if (!g || g.creatorId !== userId) return;
+    g.extraForceJoin = null;
+    await saveGiveaway(g);
+    await bot.answerCallbackQuery(query.id, { text: "✅ Force join channel remove ho gaya!" });
+    await bot.editMessageReplyMarkup(mgmtKeyboard(gId, g, true), { chat_id: chatId, message_id: msgId }).catch(() => {});
     return;
   }
 
@@ -2225,6 +2316,47 @@ bot.on("message", async (msg) => {
         { parse_mode: "HTML" }
       );
     } catch {}
+    return;
+  }
+
+  // ─── VIP: Per-giveaway force join channel setup ───
+  if (state.step === "set_giveaway_fj") {
+    const gId = state.gId;
+    const g = getGiveaway(gId);
+    if (!g) { userState.delete(userId); return; }
+    try {
+      const chatInfo = await bot.getChat(text.trim());
+      g.extraForceJoin = {
+        channelId: String(chatInfo.id),
+        channelUsername: chatInfo.username || null,
+        channelTitle: chatInfo.title || text.trim()
+      };
+      await saveGiveaway(g);
+      userState.delete(userId);
+      await bot.sendMessage(chatId,
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+        `  ✅  <b>FORCE JOIN SET!</b>\n` +
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+        `<blockquote>` +
+        `🔗 Channel: <b>${h(chatInfo.title || text)}</b>\n` +
+        `${chatInfo.username ? `👤 @${h(chatInfo.username)}\n` : ""}` +
+        `📋 ID: <code>${chatInfo.id}</code>\n\n` +
+        `Ab ye giveaway mein participate karne se pehle user ko ye channel join karna hoga — jab tak aapki membership active hai.` +
+        `</blockquote>\n\n` +
+        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+        { parse_mode: "HTML", reply_markup: backKeyboard(`mgmt:${gId}`) }
+      );
+    } catch {
+      await bot.sendMessage(chatId,
+        `❌ <b>Channel nahi mila!</b>\n\n` +
+        `<blockquote>` +
+        `Dhyan raho:\n` +
+        `▸ Bot ko us channel mein admin hona chahiye\n` +
+        `▸ Format: <code>@username</code> ya <code>-1001234567890</code>` +
+        `</blockquote>`,
+        { parse_mode: "HTML" }
+      );
+    }
     return;
   }
 
