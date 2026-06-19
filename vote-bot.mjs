@@ -98,6 +98,7 @@ const BotUserModel = mongoose.model("BotUser", botUserSchema);
 
 const giveaways = new Map();
 const registeredChannels = new Map();
+const remindersSent = new Map(); // key: `${gId}:${label}`, tracks sent reminders
 const userState = new Map();
 const vipUsers = new Map();
 const pendingPayments = new Map();
@@ -3812,9 +3813,76 @@ Ready!
         console.error("💔 Heartbeat failed:", e.message);
       }
     }, 5 * 60 * 1000);
+
+    // ⏳ Auto-Reminder — check every 2 minutes
+    setInterval(checkAndSendReminders, 2 * 60 * 1000);
   }).catch(e => {
     console.error("⚠️ Startup getMe() failed:", e.message, "— Bot may still be polling, will retry.");
   });
+}
+
+// ============================================================
+// AUTO-REMINDER: sends channel warning before giveaway ends
+// ============================================================
+
+const REMINDER_THRESHOLDS = [
+  { label: "3h",  ms: 3 * 60 * 60 * 1000, timeStr: "3 Ghante" },
+  { label: "1h",  ms: 1 * 60 * 60 * 1000, timeStr: "1 Ghanta" },
+  { label: "30m", ms:      30 * 60 * 1000, timeStr: "30 Minute" },
+];
+
+async function checkAndSendReminders() {
+  const now = Date.now();
+  for (const [gId, g] of giveaways) {
+    if (!g.active || !g.endTime || !g.channelId) continue;
+    const endMs = new Date(g.endTime).getTime();
+    if (endMs <= now) continue;
+    const timeLeft = endMs - now;
+    const totalVotes = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
+    const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
+
+    for (const { label, ms, timeStr } of REMINDER_THRESHOLDS) {
+      if (timeLeft <= ms) {
+        const key = `${gId}:${label}`;
+        if (remindersSent.has(key)) continue;
+        remindersSent.set(key, true);
+
+        const hoursLeft  = Math.floor(timeLeft / (60 * 60 * 1000));
+        const minsLeft   = Math.floor((timeLeft % (60 * 60 * 1000)) / (60 * 1000));
+        const exactLeft  = hoursLeft > 0
+          ? `${hoursLeft}h ${minsLeft}m`
+          : `${minsLeft} min`;
+
+        const reminderMsg =
+          `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+          `  ⏳  <b>GIVEAWAY ENDING SOON</b>\n` +
+          `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+          `📌 <b>${h(g.title)}</b>\n\n` +
+          `<blockquote>` +
+          `◈ Time Left    ▸  <b>${exactLeft} bachi hai!</b>\n` +
+          `◈ Participants ▸  <b>${g.participants.size}</b>\n` +
+          `◈ Total Votes  ▸  <b>${totalVotes}</b>` +
+          `</blockquote>\n\n` +
+          `◈ <i>Abhi participate karo — time khatam ho raha hai!</i>\n` +
+          `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`;
+
+        try {
+          await bot.sendMessage(g.channelId, reminderMsg, {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[
+                { text: `⚡ Participate Now — ${timeStr} bachi!`, url: link }
+              ]]
+            }
+          });
+          console.log(`⏳ Reminder [${label}] sent for giveaway ${gId}`);
+        } catch (e) {
+          console.error(`Reminder send error [${gId}:${label}]:`, e.message);
+        }
+        break; // only one reminder per check cycle per giveaway
+      }
+    }
+  }
 }
 
 main();
