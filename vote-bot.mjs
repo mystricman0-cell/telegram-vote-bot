@@ -76,12 +76,20 @@ const botConfigSchema = new mongoose.Schema({
   value: mongoose.Schema.Types.Mixed
 });
 
+const botUserSchema = new mongoose.Schema({
+  userId: { type: Number, required: true, unique: true },
+  firstName: String,
+  username: String,
+  lastSeen: { type: Date, default: Date.now }
+});
+
 const GiveawayModel = mongoose.model("Giveaway", giveawaySchema);
 const ChannelModel = mongoose.model("Channel", channelSchema);
 const VipModel = mongoose.model("Vip", vipSchema);
 const PendingPaymentModel = mongoose.model("PendingPayment", pendingPaymentSchema);
 const PendingMembershipModel = mongoose.model("PendingMembership", pendingMembershipSchema);
 const BotConfigModel = mongoose.model("BotConfig", botConfigSchema);
+const BotUserModel = mongoose.model("BotUser", botUserSchema);
 
 // ============================================================
 // IN-MEMORY STATE (fast access, synced to Mongo)
@@ -93,6 +101,7 @@ const userState = new Map();
 const vipUsers = new Map();
 const pendingPayments = new Map();
 const pendingMembershipPayments = new Map();
+const botUsers = new Map();
 let paymentCounter = 1;
 let membershipPayCounter = 1;
 let welcomeImageUrl = null;
@@ -206,7 +215,13 @@ async function loadStateFromDB() {
   }));
   await saveConfig("forceJoinChannels", forceJoinChannels);
 
-  console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users`);
+  // Load bot users (for broadcast)
+  const allBotUsers = await BotUserModel.find({});
+  for (const u of allBotUsers) {
+    botUsers.set(u.userId, { firstName: u.firstName, username: u.username });
+  }
+
+  console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users`);
 }
 
 async function saveGiveaway(g) {
@@ -244,6 +259,19 @@ async function saveConfig(key, value) {
   try {
     await BotConfigModel.findOneAndUpdate({ key }, { key, value }, { upsert: true });
   } catch (e) { console.error("saveConfig error:", e.message); }
+}
+
+async function trackUser(from) {
+  if (!from || from.is_bot) return;
+  const uid = from.id;
+  botUsers.set(uid, { firstName: from.first_name || "", username: from.username || "" });
+  try {
+    await BotUserModel.findOneAndUpdate(
+      { userId: uid },
+      { userId: uid, firstName: from.first_name || "", username: from.username || "", lastSeen: new Date() },
+      { upsert: true }
+    );
+  } catch (e) { console.error("trackUser error:", e.message); }
 }
 
 // ============================================================
@@ -603,21 +631,21 @@ async function sendWelcome(chatId, userId) {
   try { await bot.sendChatAction(chatId, "typing"); } catch {}
 
   const welcomeText =
-    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `✦ ━━━━━━━━━━━━━━━━━━━━━ ✦\n` +
     `   🎰  <b>DRS GIVEAWAY BOT</b>  🎰\n` +
-    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-    `<blockquote>` +
+    `✦ ━━━━━━━━━━━━━━━━━━━━━ ✦\n\n` +
+    `<blockquote expandable>` +
     `▸ Create powerful giveaways instantly\n` +
     `▸ Live voting with real-time leaderboard\n` +
     `▸ Auto vote-removal on channel leave\n` +
     `▸ INR 🇮🇳 &amp; Telegram ⭐ Stars payments` +
     `</blockquote>\n\n` +
-    `━━━◈ <b>QUICK ACTIONS</b> ◈━━━\n\n` +
-    `🎰 <b>New Giveaway</b>  ·  Create a contest\n` +
+    `━━━◇ <b>QUICK ACTIONS</b> ◇━━━\n\n` +
+    `🎰 <b>New Giveaway</b>   ·  Create a contest\n` +
     `📂 <b>My Giveaways</b>  ·  Manage events\n` +
-    `👑 <b>VIP</b>           ·  Unlock premium\n` +
+    `👑 <b>VIP</b>              ·  Unlock premium\n` +
     `➕ <b>Add Channel</b>   ·  Link your channel\n\n` +
-    `✦ ─────── <b>DRS NETWORK</b> ─────── ✦\n` +
+    `✦ ────── <b>DRS NETWORK</b> ────── ✦\n` +
     `💬 Support: @DRS_Support_DRS`;
 
   // Always send welcome as TEXT message so callbacks can editMessageText on it
@@ -656,6 +684,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const param = match[1]?.trim();
 
   userState.delete(userId);
+  trackUser(msg.from);
 
   // ── Force Join Check ──
   // Show force join if any channels are configured with links (VIP bypasses)
@@ -2587,26 +2616,97 @@ bot.onText(/\/createpost/, async (msg) => {
 // MAIN ADMIN COMMANDS
 // ============================================================
 
-bot.onText(/\/broadcast\s+([\s\S]+)/, async (msg, match) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
-  const message = match[1];
+// ── Broadcast helper ──
+// Sends to all: registered channels + groups + bot users (DMs)
+// If admin replies to a message → copyMessage (preserves photo/quote/text exactly)
+// If text typed → sendPhoto with GIVEAWAY_IMAGE_URL + premium blockquote caption
+async function doBroadcast(adminChatId, adminMsg, textContent, silent) {
   let sent = 0, failed = 0;
-  for (const [id] of registeredChannels) {
-    try { await bot.sendMessage(id, `<b>📢 DRS Broadcast</b>\n\n${h(message)}`, { parse_mode: "HTML", disable_notification: true }); sent++; }
-    catch { failed++; }
+  const allTargets = [...new Set([
+    ...[...registeredChannels.keys()],
+    ...[...botUsers.keys()]
+  ])];
+
+  const replyTo = adminMsg.reply_to_message;
+
+  for (const id of allTargets) {
+    try {
+      if (replyTo) {
+        // Forward-style: copy the exact message the admin replied to
+        await bot.copyMessage(id, adminMsg.chat.id, replyTo.message_id, {
+          disable_notification: silent
+        });
+      } else {
+        // Text broadcast: image + premium blockquote caption
+        const caption =
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+          `  📢  <b>DRS BROADCAST</b>\n` +
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+          `<blockquote>${h(textContent)}</blockquote>\n\n` +
+          `✦ ─── <b>@${BOT_USERNAME || "DRS_GiveawayBot"}</b> ─── ✦`;
+        await bot.sendPhoto(id, GIVEAWAY_IMAGE_URL, {
+          caption,
+          parse_mode: "HTML",
+          disable_notification: silent
+        });
+      }
+      sent++;
+    } catch { failed++; }
   }
-  await bot.sendMessage(msg.chat.id, `✅ Broadcast done! (Silent)\n✅ Sent: ${sent}\n❌ Failed: ${failed}`);
+
+  const mode = replyTo ? "Message-Copy" : "Image+Text";
+  const notif = silent ? "🔕 Silent" : "🔔 LOUD";
+  await bot.sendMessage(adminChatId,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  ${silent ? "📢" : "🔔"}  <b>BROADCAST DONE</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `◈ Mode     ▸  ${notif} ${mode}\n` +
+    `◈ Targets  ▸  ${allTargets.length} (channels + users)\n` +
+    `◈ Sent     ▸  ✅ ${sent}\n` +
+    `◈ Failed   ▸  ❌ ${failed}` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+}
+
+// /broadcast — Silent broadcast
+// Usage: Reply to any message + /broadcast  OR  /broadcast <your text here>
+bot.onText(/\/broadcast(?:\s+([\s\S]+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const text = match[1]?.trim();
+  if (!text && !msg.reply_to_message) {
+    return bot.sendMessage(msg.chat.id,
+      `<b>📢 /broadcast Usage:</b>\n\n` +
+      `<blockquote>` +
+      `Option 1: Reply to ANY message (photo/text/video) + type <code>/broadcast</code>\n` +
+      `→ That exact message gets copied to all channels &amp; users\n\n` +
+      `Option 2: <code>/broadcast Your text here</code>\n` +
+      `→ Sends image + your text in premium style to all` +
+      `</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  }
+  await doBroadcast(msg.chat.id, msg, text || "", true);
 });
 
-bot.onText(/\/loud\s+([\s\S]+)/, async (msg, match) => {
+// /loud — LOUD broadcast (with notification sound)
+bot.onText(/\/loud(?:\s+([\s\S]+))?/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
-  const message = match[1];
-  let sent = 0, failed = 0;
-  for (const [id] of registeredChannels) {
-    try { await bot.sendMessage(id, `<b>📢 DRS Broadcast</b>\n\n${h(message)}`, { parse_mode: "HTML", disable_notification: false }); sent++; }
-    catch { failed++; }
+  const text = match[1]?.trim();
+  if (!text && !msg.reply_to_message) {
+    return bot.sendMessage(msg.chat.id,
+      `<b>🔔 /loud Usage:</b>\n\n` +
+      `<blockquote>` +
+      `Option 1: Reply to ANY message (photo/text/video) + type <code>/loud</code>\n` +
+      `→ That exact message gets copied LOUDLY to all channels &amp; users\n\n` +
+      `Option 2: <code>/loud Your text here</code>\n` +
+      `→ Sends image + your text in premium style with notification sound` +
+      `</blockquote>`,
+      { parse_mode: "HTML" }
+    );
   }
-  await bot.sendMessage(msg.chat.id, `✅ LOUD Broadcast done!\n✅ Sent: ${sent}\n❌ Failed: ${failed}`);
+  await doBroadcast(msg.chat.id, msg, text || "", false);
 });
 
 bot.onText(/\/pin\s+(-?\d+)\s+([\s\S]+)/, async (msg, match) => {
@@ -2883,8 +2983,10 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/setforcejoin 2 — Configure force join channel 2\n` +
     `/forcejoininfo — View force join config\n\n` +
     `<b>📢 Broadcast:</b>\n` +
-    `/broadcast &lt;msg&gt; — Silent broadcast all channels\n` +
-    `/loud &lt;msg&gt; — LOUD broadcast (with sound)\n\n` +
+    `/broadcast — Reply to any msg → copy to all channels+users (silent)\n` +
+    `/broadcast &lt;text&gt; — Image+text broadcast to all (silent)\n` +
+    `/loud — Reply to any msg → copy to all channels+users (LOUD)\n` +
+    `/loud &lt;text&gt; — Image+text broadcast to all (LOUD)\n\n` +
     `<b>📩 Direct Send:</b>\n` +
     `/send &lt;chatId&gt; &lt;msg&gt; — Send to specific chat\n` +
     `/sendloud &lt;chatId&gt; &lt;msg&gt; — LOUD send\n\n` +
