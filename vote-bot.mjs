@@ -2408,6 +2408,41 @@ bot.on("message", async (msg) => {
   const text = msg.text?.trim() || "";
   const state = userState.get(userId);
 
+  // ─── Create Post — unified handler (any msg type, exact formatting) ───
+  if (state?.step === "cp_compose") {
+    const chId = state.channelId;
+    const chTitle = state.channelTitle || chId;
+    userState.delete(userId);
+    let sent = false;
+    let msgType = "Text";
+    if (msg.photo) msgType = "Photo";
+    else if (msg.video) msgType = "Video";
+    else if (msg.document) msgType = "Document";
+    else if (msg.audio) msgType = "Audio";
+    else if (msg.sticker) msgType = "Sticker";
+    try {
+      await bot._request("copyMessage", {
+        chat_id: chId,
+        from_chat_id: chatId,
+        message_id: msg.message_id
+      });
+      sent = true;
+    } catch (e) { console.error("Create post copyMessage error:", e.message); }
+    await bot.sendMessage(chatId,
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  ◆  <b>POST ${sent ? "SENT" : "FAILED"}</b>  ◆\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>` +
+      `◈ Channel  ▸  <b>${h(chTitle)}</b>\n` +
+      `◈ Type     ▸  ${msgType}\n` +
+      `◈ Status   ▸  ${sent ? "🟢 Published" : "🔴 Failed (bot may lack post permission)"}` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "◀️ Main Menu", callback_data: "main_menu" }]] } }
+    );
+    return;
+  }
+
   // ─── Photo handler ───
   if (msg.photo) {
     const fileId = msg.photo[msg.photo.length - 1].file_id;
@@ -2421,32 +2456,6 @@ bot.on("message", async (msg) => {
     }
 
     if (!state) return;
-
-    // ─── Create Post — Photo ───
-    if (state.step === "cp_compose") {
-      const chId = state.channelId;
-      const chTitle = state.channelTitle || chId;
-      const caption = msg.caption?.trim() || "";
-      userState.delete(userId);
-      let sent = false;
-      try {
-        await bot.sendPhoto(chId, fileId, caption ? { caption, parse_mode: "HTML" } : {});
-        sent = true;
-      } catch {}
-      await bot.sendMessage(chatId,
-        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-        `  ◆  <b>POST ${sent ? "SENT" : "FAILED"}</b>  ◆\n` +
-        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-        `<blockquote>` +
-        `◈ Channel  ▸  <b>${h(chTitle)}</b>\n` +
-        `◈ Type     ▸  Photo${caption ? " + Caption" : ""}\n` +
-        `◈ Status   ▸  ${sent ? "🟢 Published" : "🔴 Failed"}` +
-        `</blockquote>\n\n` +
-        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "◀️ Main Menu", callback_data: "main_menu" }]] } }
-      );
-      return;
-    }
 
     if (state.step === "qr_upload") {
       state.qrFileId = fileId;
@@ -2713,35 +2722,6 @@ bot.on("message", async (msg) => {
     } catch {
       await bot.sendMessage(chatId, `❌ Chat nahi mila. Bot ko admin banao phir try karo.`, { parse_mode: "HTML" });
     }
-    return;
-  }
-
-  if (state.step === "cp_compose") {
-    const chId = state.channelId;
-    const chTitle = state.channelTitle || chId;
-    userState.delete(userId);
-    let sent = false;
-    try {
-      await bot.sendMessage(chId, text, { parse_mode: "HTML" });
-      sent = true;
-    } catch {
-      try {
-        await bot.sendMessage(chId, text);
-        sent = true;
-      } catch {}
-    }
-    await bot.sendMessage(chatId,
-      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-      `  ◆  <b>POST ${sent ? "SENT" : "FAILED"}</b>  ◆\n` +
-      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-      `<blockquote>` +
-      `◈ Channel  ▸  <b>${h(chTitle)}</b>\n` +
-      `◈ Type     ▸  Text\n` +
-      `◈ Status   ▸  ${sent ? "🟢 Published" : "🔴 Failed"}` +
-      `</blockquote>\n\n` +
-      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "◀️ Main Menu", callback_data: "main_menu" }]] } }
-    );
     return;
   }
 
