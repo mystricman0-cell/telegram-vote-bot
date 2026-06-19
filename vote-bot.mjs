@@ -360,6 +360,7 @@ async function animWelcomePhoto(chatId, msgId) {
 
 // 🔄 Loading animation — minimal spinner
 async function animLoading(chatId, msgId) {
+  if (!msgId) { try { await bot.sendChatAction(chatId, "typing"); } catch {} return; }
   const frames = ["⏳", "🔄", "⚙️ <i>Loading...</i>", "✦ <i>Please wait...</i>"];
   const delays = [100, 130, 160];
   for (let i = 0; i < frames.length; i++) {
@@ -367,6 +368,15 @@ async function animLoading(chatId, msgId) {
     if (i < frames.length - 1) await sleep(delays[i]);
   }
   await sleep(150);
+}
+
+// 🔀 Edit existing message OR send fresh — used when source was a photo (msgId=null)
+async function replyToCallback(chatId, msgId, text, opts = {}) {
+  if (msgId) {
+    await bot.editMessageText(text, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts }).catch(() => {});
+  } else {
+    await bot.sendMessage(chatId, text, { parse_mode: "HTML", ...opts }).catch(() => {});
+  }
 }
 
 // 🎯 Action animation — for button responses (new message)
@@ -898,10 +908,17 @@ bot.on("my_chat_member", async (update) => {
 
 bot.on("callback_query", async (query) => {
   const chatId = query.message.chat.id;
-  const msgId = query.message.message_id;
+  let msgId = query.message.message_id;
   const userId = query.from.id;
   const data = query.data;
   await bot.answerCallbackQuery(query.id).catch(() => {});
+
+  // If button was on the welcome photo message, delete it so we can reply with fresh text
+  const isPhoto = !!(query.message.photo?.length);
+  if (isPhoto) {
+    try { await bot.deleteMessage(chatId, msgId); } catch {}
+    msgId = null;
+  }
 
   // ─── Force join re-check (Verify button) ───
   if (data === "check_force_join") {
@@ -962,7 +979,7 @@ bot.on("callback_query", async (query) => {
     }
     userState.set(userId, { step: "title", msgId });
     await animLoading(chatId, msgId);
-    await bot.editMessageText(
+    await replyToCallback(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `   🎰  <b>CREATE GIVEAWAY</b>  🎰\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
@@ -975,8 +992,8 @@ bot.on("callback_query", async (query) => {
       `▸ Monthly Star Award` +
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: cancelKeyboard() }
-    ).catch(() => {});
+      { reply_markup: cancelKeyboard() }
+    );
     return;
   }
 
@@ -1006,7 +1023,7 @@ bot.on("callback_query", async (query) => {
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
     await animLoading(chatId, msgId);
-    await bot.editMessageText(caption, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: kb }).catch(() => {});
+    await replyToCallback(chatId, msgId, caption, { reply_markup: kb });
     return;
   }
 
@@ -1527,7 +1544,7 @@ bot.on("callback_query", async (query) => {
   // ─── How to Use ───
   if (data === "how_to_use") {
     await animLoading(chatId, msgId);
-    await bot.editMessageText(
+    await replyToCallback(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `   ❓  <b>GUIDE &amp; HELP</b>\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
@@ -1551,8 +1568,8 @@ bot.on("callback_query", async (query) => {
       `━━━◈━━━━━━━━━━━━━━━━◈━━━\n` +
       `💡 <i>Channel ID ke liye: @getidsbot use karo</i>\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: backKeyboard() }
-    ).catch(() => {});
+      { reply_markup: backKeyboard() }
+    );
     return;
   }
 
@@ -1561,13 +1578,13 @@ bot.on("callback_query", async (query) => {
     const type = data === "add_channel" ? "channel" : "group";
     userState.set(userId, { step: "reg_chat", type });
     await animLoading(chatId, msgId);
-    await bot.editMessageText(
+    await replyToCallback(chatId, msgId,
       `<b>➕ ${type === "channel" ? "Channel" : "Group"} Add Karo</b>\n\n` +
       `${type === "channel" ? "Channel" : "Group"} ID bhejo:\n<i>Example: -1001234567890</i>\n\n` +
       `<b>Note:</b> Pehle bot ko ${type === "channel" ? "channel" : "group"} ka admin banao.\n` +
       `Ya simply bot ko add karo — automatically register ho jaata hai.`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: backKeyboard() }
-    ).catch(() => {});
+      { reply_markup: backKeyboard() }
+    );
     return;
   }
 
@@ -1609,9 +1626,7 @@ bot.on("callback_query", async (query) => {
           ]
         };
 
-    await bot.editMessageText(featuresText, {
-      chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: kb
-    }).catch(() => {});
+    await replyToCallback(chatId, msgId, featuresText, { reply_markup: kb });
     return;
   }
 
@@ -1759,17 +1774,17 @@ bot.on("callback_query", async (query) => {
     await animLoading(chatId, msgId);
     const myChannels = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
     if (!myChannels.length) {
-      await bot.editMessageText(
+      await replyToCallback(chatId, msgId,
         `<b>📢 Create Post</b>\n\n❌ Koi registered channel nahi.\nPehle channel mein bot ko admin banao.`,
-        { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: backKeyboard() }
-      ).catch(() => {});
+        { reply_markup: backKeyboard() }
+      );
       return;
     }
     userState.set(userId, { step: "create_post" });
-    await bot.editMessageText(
+    await replyToCallback(chatId, msgId,
       `<b>📢 Create Post</b>\n\nWoh message bhejo jo channel mein post karna hai:`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: cancelKeyboard() }
-    ).catch(() => {});
+      { reply_markup: cancelKeyboard() }
+    );
     return;
   }
 
