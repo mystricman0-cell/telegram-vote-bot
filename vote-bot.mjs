@@ -626,6 +626,21 @@ function mainMenuKeyboard() {
   };
 }
 
+function cpComposePrompt(title, username, chId) {
+  const link = username ? `@${username}` : `<code>${chId}</code>`;
+  return (
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  ◆  <b>CREATE POST</b>  ◆\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>` +
+    `◈ Channel  ▸  <b>${title}</b>\n` +
+    `◈ Target   ▸  ${link}\n\n` +
+    `Ab apna message type karo ya photo bhejo —\n` +
+    `woh seedha channel mein post ho jayega.</blockquote>\n\n` +
+    `✦ ─── <b>DRS NETWORK</b> ─── ✦`
+  );
+}
+
 function cancelKeyboard() {
   return { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "cancel_flow" }]] };
 }
@@ -1887,16 +1902,52 @@ bot.on("callback_query", async (query) => {
     const myChannels = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
     if (!myChannels.length) {
       await replyToCallback(chatId, msgId,
-        `<b>📢 Create Post</b>\n\n❌ Koi registered channel nahi.\nPehle channel mein bot ko admin banao.`,
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+        `  ◆  <b>CREATE POST</b>  ◆\n` +
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+        `<blockquote>◈ Koi registered channel nahi mila.\n\n` +
+        `Bot ko pehle apne channel mein <b>Admin</b> banao —\n` +
+        `tab channel automatically register ho jayega.</blockquote>\n\n` +
+        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
         { reply_markup: backKeyboard() }
       );
       return;
     }
-    userState.set(userId, { step: "create_post" });
+    if (myChannels.length === 1) {
+      const [[chId, ch]] = myChannels;
+      userState.set(userId, { step: "cp_compose", channelId: chId, channelTitle: ch.title, channelUsername: ch.username || null });
+      await replyToCallback(chatId, msgId, cpComposePrompt(ch.title, ch.username, chId), { reply_markup: cancelKeyboard() });
+      return;
+    }
+    // Multiple channels — show selection
+    const chButtons = myChannels.map(([chId, ch]) => [{
+      text: `${ch.type === "channel" ? "📢" : "🏘️"}  ${ch.title.slice(0, 28)}`,
+      callback_data: `cp_ch:${chId}`
+    }]);
+    chButtons.push([{ text: "❌ Cancel", callback_data: "cancel_flow" }]);
     await replyToCallback(chatId, msgId,
-      `<b>📢 Create Post</b>\n\nWoh message bhejo jo channel mein post karna hai:`,
-      { reply_markup: cancelKeyboard() }
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  ◆  <b>CREATE POST</b>  ◆\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>Kaunse channel mein post karna hai?\nNeeche select karo:</blockquote>`,
+      { reply_markup: { inline_keyboard: chButtons } }
     );
+    return;
+  }
+
+  // ─── Create Post — Channel Selected ───
+  if (data.startsWith("cp_ch:")) {
+    const chId = data.split(":")[1];
+    const ch = registeredChannels.get(chId);
+    if (!ch) return;
+    if (ch.addedBy !== userId && !isAdmin(userId)) {
+      await bot.answerCallbackQuery(query.id, { text: "Access denied!", show_alert: true });
+      return;
+    }
+    userState.set(userId, { step: "cp_compose", channelId: chId, channelTitle: ch.title, channelUsername: ch.username || null });
+    await bot.editMessageText(cpComposePrompt(ch.title, ch.username, chId), {
+      chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: cancelKeyboard()
+    }).catch(() => {});
     return;
   }
 
@@ -2371,6 +2422,32 @@ bot.on("message", async (msg) => {
 
     if (!state) return;
 
+    // ─── Create Post — Photo ───
+    if (state.step === "cp_compose") {
+      const chId = state.channelId;
+      const chTitle = state.channelTitle || chId;
+      const caption = msg.caption?.trim() || "";
+      userState.delete(userId);
+      let sent = false;
+      try {
+        await bot.sendPhoto(chId, fileId, caption ? { caption, parse_mode: "HTML" } : {});
+        sent = true;
+      } catch {}
+      await bot.sendMessage(chatId,
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+        `  ◆  <b>POST ${sent ? "SENT" : "FAILED"}</b>  ◆\n` +
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+        `<blockquote>` +
+        `◈ Channel  ▸  <b>${h(chTitle)}</b>\n` +
+        `◈ Type     ▸  Photo${caption ? " + Caption" : ""}\n` +
+        `◈ Status   ▸  ${sent ? "🟢 Published" : "🔴 Failed"}` +
+        `</blockquote>\n\n` +
+        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "◀️ Main Menu", callback_data: "main_menu" }]] } }
+      );
+      return;
+    }
+
     if (state.step === "qr_upload") {
       state.qrFileId = fileId;
       state.step = "inr_rate";
@@ -2639,17 +2716,31 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  if (state.step === "create_post") {
-    const myChans = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
-    let sent = 0, failed = 0;
-    for (const [chId] of myChans) {
-      try { await bot.sendMessage(chId, `📢 <b>Post from DRS Bot</b>\n\n${h(text)}`, { parse_mode: "HTML" }); sent++; }
-      catch { failed++; }
-    }
+  if (state.step === "cp_compose") {
+    const chId = state.channelId;
+    const chTitle = state.channelTitle || chId;
     userState.delete(userId);
+    let sent = false;
+    try {
+      await bot.sendMessage(chId, text, { parse_mode: "HTML" });
+      sent = true;
+    } catch {
+      try {
+        await bot.sendMessage(chId, text);
+        sent = true;
+      } catch {}
+    }
     await bot.sendMessage(chatId,
-      `<b>✅ Post Sent!</b>\n✅ Sent: ${sent}\n❌ Failed: ${failed}`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  ◆  <b>POST ${sent ? "SENT" : "FAILED"}</b>  ◆\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>` +
+      `◈ Channel  ▸  <b>${h(chTitle)}</b>\n` +
+      `◈ Type     ▸  Text\n` +
+      `◈ Status   ▸  ${sent ? "🟢 Published" : "🔴 Failed"}` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "◀️ Main Menu", callback_data: "main_menu" }]] } }
     );
     return;
   }
@@ -2961,15 +3052,33 @@ bot.onText(/\/createpost/, async (msg) => {
   const myChannels = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
   if (!myChannels.length) {
     return bot.sendMessage(chatId,
-      `<b>📢 Create Post</b>\n\n❌ Koi registered channel nahi.\nPehle channel mein bot ko admin banao.`,
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  ◆  <b>CREATE POST</b>  ◆\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>◈ Koi registered channel nahi mila.\n\n` +
+      `Bot ko pehle apne channel mein <b>Admin</b> banao —\n` +
+      `tab channel automatically register ho jayega.</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { parse_mode: "HTML" }
     );
   }
-  userState.set(userId, { step: "create_post" });
+  if (myChannels.length === 1) {
+    const [[chId, ch]] = myChannels;
+    userState.set(userId, { step: "cp_compose", channelId: chId, channelTitle: ch.title, channelUsername: ch.username || null });
+    return bot.sendMessage(chatId, cpComposePrompt(ch.title, ch.username, chId), { parse_mode: "HTML", reply_markup: cancelKeyboard() });
+  }
+  // Multiple channels — show selection
+  const chButtons = myChannels.map(([chId, ch]) => [{
+    text: `${ch.type === "channel" ? "📢" : "🏘️"}  ${ch.title.slice(0, 28)}`,
+    callback_data: `cp_ch:${chId}`
+  }]);
+  chButtons.push([{ text: "❌ Cancel", callback_data: "cancel_flow" }]);
   await bot.sendMessage(chatId,
-    `<b>📢 Create Post</b>\n\nWoh message bhejo jo channel mein post karna hai.\n\n` +
-    `<i>Registered channels: ${myChannels.map(([, c]) => c.title).join(", ")}</i>`,
-    { parse_mode: "HTML", reply_markup: cancelKeyboard() }
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  ◆  <b>CREATE POST</b>  ◆\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>Kaunse channel mein post karna hai?\nNeeche select karo:</blockquote>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: chButtons } }
   );
 });
 
