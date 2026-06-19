@@ -395,9 +395,9 @@ async function animAction(chatId, finalText, opts = {}) {
   return msg;
 }
 
-// ✅ Success animation — celebratory flash
+// Success animation — clean flash
 async function animSuccess(chatId, msgId, finalText, opts = {}) {
-  const frames = ["🎊", "🎊 ─ ✅ ─ 🎊", "🥳 <b>Confirmed!</b>", "✨ <i>Generating your card...</i>"];
+  const frames = ["◈", "◈ ─── ◈", "◆ <b>Done.</b>", "✦ <i>Generating your card...</i>"];
   const delays = [120, 150, 180];
   for (let i = 0; i < frames.length; i++) {
     try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }); } catch {}
@@ -520,7 +520,7 @@ function membershipBadge(uid) {
   const m = getMembership(uid);
   if (!m) return "❌ Inactive";
   const expStr = m.expiry ? new Date(m.expiry).toLocaleDateString("en-IN") : "∞";
-  return `✅ Active (${m.plan || "VIP"} — expires ${expStr})`;
+  return `◈ Active (${m.plan || "VIP"} — expires ${expStr})`;
 }
 
 async function isMember(chatId, userId) {
@@ -822,7 +822,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
 
     if (existing) {
       return bot.sendMessage(chatId,
-        `<b>🎉 Aap pehle se Participant Hain!</b>\n\n` +
+        `<b>◆ Aap pehle se Participant Hain</b>\n\n` +
         `📌 <b>${h(g.title)}</b>\n` +
         `🗳️ Current Votes: <b>${existing.votes}</b>\n\n` +
         (existing.channelMsgId && g.channelId
@@ -883,10 +883,10 @@ bot.on("my_chat_member", async (update) => {
 
     try {
       await bot.sendMessage(from.id,
-        `👑 <b>DRS GIVEAWAY BOT</b> 💎\n` +
+        `◆ <b>DRS GIVEAWAY BOT</b> ◆\n` +
         `<i>· Fair · Fast · Automated ·</i>\n\n` +
         `◆ ─────────────────── ◆\n\n` +
-        `<blockquote>✅ Bot is now Admin in:\n<b>${h(chat.title)}</b></blockquote>\n\n` +
+        `<blockquote>◈ Bot is now Admin in:\n<b>${h(chat.title)}</b></blockquote>\n\n` +
         `<blockquote>◈ /start → Create &amp; manage giveaways\n◈ /createpost → Post to this channel\n◈ /membership → Unlock premium</blockquote>\n\n` +
         `✦ ─────── <b>DRS NETWORK</b> ─────── ✦`,
         {
@@ -1333,7 +1333,7 @@ bot.on("callback_query", async (query) => {
 
     await animSuccess(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-      `  🎊  <b>YOU'RE IN!</b>  🎊\n` +
+      `  ◆  <b>YOU'RE IN</b>  ◆\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `📌 <b>${h(g.title)}</b>\n\n` +
       `<blockquote>` +
@@ -1343,7 +1343,7 @@ bot.on("callback_query", async (query) => {
       `⚡ Status    ▸  🟢 Active` +
       `</blockquote>\n\n` +
       `━━━◈━━━━━━━━━━━━━━━━◈━━━\n` +
-      `💡 <i>Share your link to collect more votes!</i>\n` +
+      `◈ <i>Share your link to collect more votes!</i>\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       {
         reply_markup: {
@@ -2027,12 +2027,14 @@ async function updateChannelPost(g, participant) {
     }]]
   };
   try {
-    if (participant.channelMsgIsPhoto) {
+    // Always try editMessageCaption first (vote cards are photos)
+    // If that fails (e.g., plain text message), fall back to editMessageText
+    try {
       await bot.editMessageCaption(participantChannelText(participant, g), {
         chat_id: g.channelId, message_id: participant.channelMsgId,
         parse_mode: "HTML", reply_markup: markup
       });
-    } else {
+    } catch {
       await bot.editMessageText(participantChannelText(participant, g), {
         chat_id: g.channelId, message_id: participant.channelMsgId,
         parse_mode: "HTML", reply_markup: markup
@@ -2062,11 +2064,10 @@ async function announceWinners(g, gId, creatorId) {
 
   const channelCard =
     `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
-    `  🏆  <b>GIVEAWAY ENDED!</b>  🏆\n` +
+    `  ◆  <b>GIVEAWAY ENDED</b>  ◆\n` +
     `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-    `🎊  🎉  🥳  🎊  🎉  🥳  🎊\n\n` +
     `📌 <b>${h(g.title)}</b>\n\n` +
-    `━━━◈  🏆 WINNERS 🏆  ◈━━━\n\n` +
+    `━━━◈  🏆 WINNERS  ◈━━━\n\n` +
     `${podiumText}\n\n` +
     `━━━◈━━━━━━━━━━━━━━━━━◈━━━\n` +
     `<blockquote>` +
@@ -2074,7 +2075,7 @@ async function announceWinners(g, gId, creatorId) {
     `🗳️ Total Votes   ▸  <b>${totalVotes}</b>\n` +
     `📅 Ended At      ▸  ${now}` +
     `</blockquote>\n\n` +
-    `🎊 <i>Sabko participation ke liye shukriya!</i>\n` +
+    `✦ <i>Sabko participation ke liye shukriya.</i>\n` +
     `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`;
 
   const creatorCard =
@@ -2103,16 +2104,16 @@ async function announceWinners(g, gId, creatorId) {
     if (winner.id === creatorId) continue;
     const winnerDM =
       `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
-      `  🎊  <b>CONGRATULATIONS!</b>  🎊\n` +
+      `  ◆  <b>CONGRATULATIONS</b>  ◆\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-      `🥳 <b>Aap ${rankNames[i]} Place Jeet Gaye!</b>\n\n` +
+      `◈ <b>Aap ${rankNames[i]} Place Jeet Gaye!</b>\n\n` +
       `📌 <b>${h(g.title)}</b>\n\n` +
       `<blockquote>` +
       `🏆 Rank    ▸  <b>${rankNames[i]}</b>\n` +
       `🗳️ Votes   ▸  <b>${winner.votes}</b>\n` +
       `👥 Players ▸  ${g.participants.size} total` +
       `</blockquote>\n\n` +
-      `🎉 <i>DRS Network ki taraf se dil se badhai!</i>\n` +
+      `✦ <i>DRS Network ki taraf se dil se badhai.</i>\n` +
       `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`;
     try { await bot.sendMessage(winner.id, winnerDM, { parse_mode: "HTML" }); } catch {}
   }
@@ -2232,13 +2233,13 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
 
   await animCreate(chatId,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-    `  🎉  <b>GIVEAWAY CREATED!</b>\n` +
+    `  ◆  <b>GIVEAWAY CREATED</b>\n` +
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
     `<blockquote>` +
     `📌 Title   ▸  <b>${h(g.title)}</b>\n` +
     `🆔 ID      ▸  <code>${gId}</code>\n` +
     `⚡ Status  ▸  🟢 ACTIVE\n` +
-    `💰 Paid    ▸  ${g.paidVotesActive ? "✅ Enabled" : "❌ Disabled"}\n` +
+    `💰 Paid    ▸  ${g.paidVotesActive ? "◈ Enabled" : "◆ Disabled"}\n` +
     (g.endTime ? `⏳ Ends    ▸  ${g.endTime.toLocaleString("en-IN")}` : `⏳ Ends    ▸  Manual`) +
     `</blockquote>\n\n` +
     `━━━◈ <b>SHARE LINK</b> ◈━━━\n` +
@@ -2787,6 +2788,51 @@ bot.onText(/\/support/, async (msg) => {
     `📩 Support: @DRS_Support_DRS\n` +
     `⚡ Powered by: <b>DRS NETWORK</b>\n\n` +
     `<i>Please describe your issue clearly when contacting support.</i>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+bot.onText(/\/stats/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  if (!isAdmin(userId)) {
+    return bot.sendMessage(msg.chat.id, `<b>◆ Admin only command.</b>`, { parse_mode: "HTML" });
+  }
+  const chatId = msg.chat.id;
+  const now = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: false }).replace(",", "");
+
+  const totalUsers    = botUsers.size;
+  const channels      = [...registeredChannels.values()].filter(c => c.type === "channel");
+  const groups        = [...registeredChannels.values()].filter(c => c.type === "group" || c.type === "supergroup");
+  const allGiveaways  = [...giveaways.values()];
+  const activeG       = allGiveaways.filter(g => g.active);
+  const endedG        = allGiveaways.filter(g => !g.active);
+  const totalParts    = allGiveaways.reduce((s, g) => s + g.participants.size, 0);
+  const totalVotes    = allGiveaways.reduce((s, g) =>
+    s + [...g.participants.values()].reduce((sv, p) => sv + p.votes, 0), 0);
+  const vipCount      = [...vipUsers.values()].filter(v => v.vip && (!v.expiry || new Date() < v.expiry)).length;
+
+  await bot.sendMessage(chatId,
+    `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  ◆  <b>BOT STATISTICS</b>  ◆\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>` +
+    `👥 Total Users      ▸  <b>${totalUsers}</b>\n` +
+    `📢 Channels         ▸  <b>${channels.length}</b>\n` +
+    `🏘️ Groups            ▸  <b>${groups.length}</b>\n` +
+    `💎 VIP Members      ▸  <b>${vipCount}</b>` +
+    `</blockquote>\n\n` +
+    `━━━◈ <b>GIVEAWAYS</b> ◈━━━\n\n` +
+    `<blockquote>` +
+    `◈ Active Giveaways  ▸  <b>${activeG.length}</b>\n` +
+    `◈ Ended Giveaways   ▸  <b>${endedG.length}</b>\n` +
+    `◈ Total Giveaways   ▸  <b>${allGiveaways.length}</b>\n` +
+    `◈ Total Participants▸  <b>${totalParts}</b>\n` +
+    `◈ Total Votes Cast  ▸  <b>${totalVotes}</b>` +
+    `</blockquote>\n\n` +
+    `━━━◈━━━━━━━━━━━━━━━━━◈━━━\n` +
+    `<i>📅 ${now} IST</i>\n` +
+    `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
     { parse_mode: "HTML" }
   );
 });
@@ -3450,6 +3496,7 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `</blockquote>\n\n` +
     `<b>📊 INFO & MAINTENANCE</b>\n` +
     `<blockquote>` +
+    `/stats — Bot ka full dashboard (users, channels, votes)\n` +
     `/allchannels — Registered channels\n` +
     `/cleandb — Clean expired data from DB\n` +
     `/adminhelp — Show this panel` +
@@ -3531,6 +3578,7 @@ async function main() {
         { command: "imageinfo",            description: "ℹ️ Check image status" },
         { command: "setforcejoin",         description: "📢 Configure force join channel" },
         { command: "forcejoininfo",        description: "ℹ️ View force join config" },
+        { command: "stats",                description: "📊 Bot statistics dashboard" },
         { command: "cleandb",              description: "🧹 Clean junk/expired data" }
       ], { scope: { type: "chat", chat_id: MAIN_ADMIN_ID } });
 
