@@ -2963,7 +2963,11 @@ bot.onText(/\/forcejoininfo/, async (msg) => {
   await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
 });
 
-// /givemem — Admin manually give membership
+// ============================================================
+// MEMBERSHIP ADMIN COMMANDS
+// ============================================================
+
+// /givemem — Admin: Give membership to a user
 bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const targetId = Number(match[1]);
@@ -2974,13 +2978,156 @@ bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
   const vipData = { vip: true, plan: plan.label, expiry, days: plan.days };
   vipUsers.set(targetId, vipData);
   await saveVip(targetId, vipData);
-  await bot.sendMessage(msg.chat.id, `✅ User <code>${targetId}</code> ko <b>${plan.label} Membership</b> diya!\nExpiry: ${expiry.toLocaleDateString("en-IN")}`, { parse_mode: "HTML" });
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  ✅  <b>MEMBERSHIP GRANTED</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `◈ User ID  ▸  <code>${targetId}</code>\n` +
+    `◈ Plan     ▸  <b>${plan.label}</b>\n` +
+    `◈ Expiry   ▸  ${expiry.toLocaleDateString("en-IN")}\n` +
+    `◈ Access   ▸  Giveaway + Channel Post + Force Join` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
   try {
     await bot.sendMessage(targetId,
-      `<b>🎊 Membership Activated!</b>\n\n⭐ Plan: <b>${plan.label}</b>\n📅 Expires: <b>${expiry.toLocaleDateString("en-IN")}</b>\n\nPremium features ab available hain!`,
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+      `  🎊  <b>MEMBERSHIP ACTIVATED!</b>\n` +
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+      `<blockquote>` +
+      `◈ Plan    ▸  <b>${plan.label}</b>\n` +
+      `◈ Expiry  ▸  <b>${expiry.toLocaleDateString("en-IN")}</b>\n\n` +
+      `━━━◈ <b>YOUR FEATURES</b> ◈━━━\n\n` +
+      `🎰 Create giveaways\n` +
+      `📢 Post giveaway image in your channel\n` +
+      `🔗 Set per-giveaway Force Join\n` +
+      `📊 Full giveaway management panel\n\n` +
+      `Use /myplan to check your status anytime.` +
+      `</blockquote>`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🎰 Go to Bot", callback_data: "main_menu" }]] } }
+    );
+  } catch {}
+});
+
+// /removemem — Admin: Remove/revoke membership from a user
+bot.onText(/\/removemem\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const existing = vipUsers.get(targetId);
+  if (!existing?.vip) {
+    return bot.sendMessage(msg.chat.id, `❌ User <code>${targetId}</code> ka koi active membership nahi hai.`, { parse_mode: "HTML" });
+  }
+  vipUsers.set(targetId, { ...existing, vip: false });
+  await saveVip(targetId, { ...existing, vip: false });
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  🚫  <b>MEMBERSHIP REVOKED</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>◈ User ID  ▸  <code>${targetId}</code>\n◈ Status   ▸  ❌ Inactive</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+  try {
+    await bot.sendMessage(targetId,
+      `⚠️ <b>Membership Revoked</b>\n\n` +
+      `<blockquote>Aapki DRS Bot membership admin ne revoke kar di hai.\nPremium features band ho gaye hain.</blockquote>`,
       { parse_mode: "HTML" }
     );
   } catch {}
+});
+
+// /extendmem — Admin: Extend existing membership
+bot.onText(/\/extendmem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const planKey = match[2];
+  const plan = MEMBERSHIP_PLANS[planKey];
+  const existing = vipUsers.get(targetId);
+  const base = existing?.vip && existing.expiry && new Date(existing.expiry) > new Date()
+    ? new Date(existing.expiry)
+    : new Date();
+  const expiry = new Date(base);
+  expiry.setDate(expiry.getDate() + plan.days);
+  const vipData = { vip: true, plan: plan.label, expiry, days: plan.days };
+  vipUsers.set(targetId, vipData);
+  await saveVip(targetId, vipData);
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  ⏰  <b>MEMBERSHIP EXTENDED</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `◈ User ID    ▸  <code>${targetId}</code>\n` +
+    `◈ Added      ▸  +${plan.days} days\n` +
+    `◈ New Expiry ▸  <b>${expiry.toLocaleDateString("en-IN")}</b>` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+  try {
+    await bot.sendMessage(targetId,
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+      `  ⏰  <b>MEMBERSHIP EXTENDED!</b>\n` +
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+      `<blockquote>◈ Added     ▸  +${plan.days} days\n◈ New Expiry ▸  <b>${expiry.toLocaleDateString("en-IN")}</b></blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  } catch {}
+});
+
+// /listmem — Admin: List all active VIP members
+bot.onText(/\/listmem/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const active = [...vipUsers.entries()].filter(([, v]) => {
+    if (!v.vip) return false;
+    if (v.expiry && new Date() > new Date(v.expiry)) return false;
+    return true;
+  });
+  if (!active.length) {
+    return bot.sendMessage(msg.chat.id,
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n  📋  <b>ACTIVE MEMBERS</b>\n◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n<blockquote>Koi active member nahi hai abhi.</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  }
+  const now = new Date();
+  let text =
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  📋  <b>ACTIVE MEMBERS</b> (${active.length})\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n`;
+  for (const [uid, v] of active) {
+    const expiry = v.expiry ? new Date(v.expiry) : null;
+    const daysLeft = expiry ? Math.ceil((expiry - now) / (1000 * 60 * 60 * 24)) : "∞";
+    text += `<blockquote>👤 <code>${uid}</code>\n◈ Plan     ▸ ${v.plan || "VIP"}\n◈ Expires  ▸ ${expiry ? expiry.toLocaleDateString("en-IN") : "∞"}\n◈ Days Left ▸ ${daysLeft} days</blockquote>\n\n`;
+  }
+  await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
+});
+
+// /meminfo — Admin: Check a specific user's membership
+bot.onText(/\/meminfo\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const v = vipUsers.get(targetId);
+  const m = getMembership(targetId);
+  if (!v) {
+    return bot.sendMessage(msg.chat.id, `❌ User <code>${targetId}</code> ka koi membership record nahi.`, { parse_mode: "HTML" });
+  }
+  const expiry = v.expiry ? new Date(v.expiry) : null;
+  const now = new Date();
+  const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - now) / (1000 * 60 * 60 * 24))) : "∞";
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  🔍  <b>MEMBER INFO</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `◈ User ID   ▸  <code>${targetId}</code>\n` +
+    `◈ Status    ▸  ${m ? "✅ ACTIVE" : "❌ EXPIRED / INACTIVE"}\n` +
+    `◈ Plan      ▸  ${v.plan || "VIP"}\n` +
+    `◈ Expiry    ▸  ${expiry ? expiry.toLocaleDateString("en-IN") : "∞"}\n` +
+    `◈ Days Left ▸  ${m ? daysLeft + " days" : "0"}` +
+    `</blockquote>\n\n` +
+    `<b>Quick Actions:</b>\n` +
+    `/extendmem ${targetId} 7d — Extend 7 days\n` +
+    `/removemem ${targetId} — Revoke membership`,
+    { parse_mode: "HTML" }
+  );
 });
 
 // /setplan — Admin: Update membership plan price & days
@@ -3101,45 +3248,121 @@ bot.onText(/\/cleandb/, async (msg) => {
   );
 });
 
+// /myplan — VIP User: Check own membership status
+bot.onText(/\/myplan/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  const m = getMembership(userId);
+  if (!m) {
+    return bot.sendMessage(msg.chat.id,
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+      `  📋  <b>MY MEMBERSHIP</b>\n` +
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+      `<blockquote>` +
+      `◈ Status  ▸  ❌ <b>No Active Membership</b>\n\n` +
+      `Membership lene ke liye /membership command use karo ya admin se contact karo.` +
+      `</blockquote>`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Get Membership", callback_data: "vip_membership" }]] } }
+    );
+  }
+  const expiry = m.expiry ? new Date(m.expiry) : null;
+  const now = new Date();
+  const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - now) / (1000 * 60 * 60 * 24))) : "∞";
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  👑  <b>MY MEMBERSHIP</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `◈ Status    ▸  ✅ <b>ACTIVE</b>\n` +
+    `◈ Plan      ▸  ${m.plan || "VIP"}\n` +
+    `◈ Expires   ▸  ${expiry ? expiry.toLocaleDateString("en-IN") : "∞"}\n` +
+    `◈ Days Left ▸  <b>${daysLeft} days</b>` +
+    `</blockquote>\n\n` +
+    `━━━◈ <b>YOUR ACCESS</b> ◈━━━\n\n` +
+    `<blockquote>` +
+    `🎰 Create giveaways\n` +
+    `📢 Post giveaway image in your channel\n` +
+    `🔗 Set per-giveaway Force Join channel\n` +
+    `📊 Full giveaway management panel\n` +
+    `🏆 Live leaderboard & voting controls` +
+    `</blockquote>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🎰 My Giveaways", callback_data: "my_giveaways" }]] } }
+  );
+});
+
 bot.onText(/\/adminhelp/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
-  await bot.sendMessage(msg.chat.id,
-    `<b>👑 DRS Bot — Admin Commands</b>\n\n` +
-    `<b>🖼️ Images:</b>\n` +
-    `/setwelcomeimageurl — Set welcome image via URL (spoiler mode)\n` +
-    `/clearwelcomeimage — Remove welcome banner\n` +
-    `/setmembershipqr — Upload membership payment QR photo\n` +
-    `/imageinfo — Check current image status\n\n` +
-    `<b>📢 Force Join:</b>\n` +
-    `/setforcejoin 1 — Configure force join channel 1\n` +
-    `/setforcejoin 2 — Configure force join channel 2\n` +
-    `/forcejoininfo — View force join config\n\n` +
-    `<b>📢 Broadcast:</b>\n` +
-    `/broadcast — Reply to any msg → copy to all channels+users (silent)\n` +
-    `/broadcast &lt;text&gt; — Image+text broadcast to all (silent)\n` +
-    `/loud — Reply to any msg → copy to all channels+users (LOUD)\n` +
-    `/loud &lt;text&gt; — Image+text broadcast to all (LOUD)\n\n` +
-    `<b>📩 Direct Send:</b>\n` +
+
+  const part1 =
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  👑  <b>DRS BOT — ADMIN PANEL</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<b>💳 MEMBERSHIP MANAGEMENT</b>\n` +
+    `<blockquote>` +
+    `/givemem &lt;userId&gt; &lt;1d|7d|30d&gt;\n  → User ko membership do\n\n` +
+    `/removemem &lt;userId&gt;\n  → Membership revoke karo\n\n` +
+    `/extendmem &lt;userId&gt; &lt;1d|7d|30d&gt;\n  → Membership extend karo (existing se aage)\n\n` +
+    `/listmem\n  → Saare active members dekho\n\n` +
+    `/meminfo &lt;userId&gt;\n  → Kisi bhi user ka membership status\n\n` +
+    `/setplan &lt;1d|7d|30d&gt; &lt;price&gt; &lt;days&gt;\n  → Plan ka price/duration update karo\n  Example: /setplan 7d 80 7` +
+    `</blockquote>`;
+
+  const part2 =
+    `<b>🎰 GIVEAWAY CONTROLS</b>\n` +
+    `<blockquote>` +
+    `/allgiveaways — Saare giveaways dekho\n\n` +
+    `/setstar &lt;gId&gt; &lt;n&gt; — Votes per ⭐ Star set karo\n` +
+    `/setinr &lt;gId&gt; &lt;n&gt; — Votes per ₹1 INR set karo\n` +
+    `  Example: /setstar ABC12345 10` +
+    `</blockquote>\n\n` +
+    `<b>📢 BROADCAST</b>\n` +
+    `<blockquote>` +
+    `/broadcast — Reply to msg → copy to all (silent)\n` +
+    `/broadcast &lt;text&gt; — Image+text to all (silent)\n` +
+    `/loud — Same as broadcast but with sound\n` +
+    `/loud &lt;text&gt; — Image+text to all (LOUD)` +
+    `</blockquote>\n\n` +
+    `<b>📩 DIRECT SEND & PIN</b>\n` +
+    `<blockquote>` +
     `/send &lt;chatId&gt; &lt;msg&gt; — Send to specific chat\n` +
-    `/sendloud &lt;chatId&gt; &lt;msg&gt; — LOUD send\n\n` +
-    `<b>📌 Pin:</b>\n` +
-    `/pin &lt;chatId&gt; &lt;msg&gt; — Send &amp; pin in channel\n\n` +
-    `<b>💳 Membership:</b>\n` +
-    `/givemem &lt;userId&gt; &lt;1d|7d|30d&gt; — Manually give membership\n` +
-    `/setplan &lt;1d|7d|30d&gt; &lt;price&gt; &lt;days&gt; — Update plan price &amp; days\n` +
-    `  Example: /setplan 7d 80 7\n\n` +
-    `<b>⭐ Giveaway Rates:</b>\n` +
-    `/setstar &lt;giveawayId&gt; &lt;votesPerStar&gt; — Set votes per ⭐ Star\n` +
-    `/setinr &lt;giveawayId&gt; &lt;votesPerRupee&gt; — Set votes per ₹1 INR\n` +
-    `  Example: /setstar ABC12345 10\n\n` +
-    `<b>📊 Info:</b>\n` +
-    `/allchannels — All registered channels\n` +
-    `/allgiveaways — All giveaways overview\n` +
-    `/adminhelp — This help menu\n\n` +
-    `<b>🧹 Maintenance:</b>\n` +
-    `/cleandb — Clean junk/expired data from database`,
-    { parse_mode: "HTML" }
-  );
+    `/sendloud &lt;chatId&gt; &lt;msg&gt; — LOUD send\n` +
+    `/pin &lt;chatId&gt; &lt;msg&gt; — Send &amp; pin` +
+    `</blockquote>`;
+
+  const part3 =
+    `<b>🖼️ IMAGES & CONFIG</b>\n` +
+    `<blockquote>` +
+    `/setwelcomeimageurl — Set welcome image (spoiler)\n` +
+    `/clearwelcomeimage — Remove welcome image\n` +
+    `/setmembershipqr — Upload payment QR photo\n` +
+    `/imageinfo — Check image status` +
+    `</blockquote>\n\n` +
+    `<b>📢 FORCE JOIN</b>\n` +
+    `<blockquote>` +
+    `/setforcejoin 1 — Set force join channel 1\n` +
+    `/setforcejoin 2 — Set force join channel 2\n` +
+    `/forcejoininfo — View current force join config` +
+    `</blockquote>\n\n` +
+    `<b>📊 INFO & MAINTENANCE</b>\n` +
+    `<blockquote>` +
+    `/allchannels — Registered channels\n` +
+    `/cleandb — Clean expired data from DB\n` +
+    `/adminhelp — Show this panel` +
+    `</blockquote>\n\n` +
+    `━━━◈ <b>VIP USER COMMANDS</b> ◈━━━\n` +
+    `<blockquote>` +
+    `/myplan — User apna membership status check kare\n` +
+    `/membership — Membership info + plans\n\n` +
+    `<b>VIP Features (Membership Active hone par):</b>\n` +
+    `▸ Giveaway creation\n` +
+    `▸ Channel pe giveaway image post\n` +
+    `▸ Per-giveaway Force Join set\n` +
+    `▸ Full management panel` +
+    `</blockquote>`;
+
+  await bot.sendMessage(msg.chat.id, part1, { parse_mode: "HTML" });
+  await bot.sendMessage(msg.chat.id, part2, { parse_mode: "HTML" });
+  await bot.sendMessage(msg.chat.id, part3, { parse_mode: "HTML" });
 });
 
 // ============================================================
