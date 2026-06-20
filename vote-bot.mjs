@@ -619,7 +619,7 @@ function isAdmin(uid) { return uid === MAIN_ADMIN_ID; }
 function getMembership(uid) {
   const d = vipUsers.get(uid);
   if (!d?.vip) return null;
-  if (d.expiry && new Date() > d.expiry) { d.vip = false; return null; }
+  if (d.expiry && new Date() > new Date(d.expiry)) return null; // check only — never mutate in-memory state
   return d;
 }
 
@@ -4476,11 +4476,11 @@ bot.onText(/\/cleandb/, async (msg) => {
     }
   }
 
-  // Remove expired VIP users
+  // Mark expired VIP users as inactive (do NOT delete — preserves history and allows renewal)
   for (const [uid, v] of vipUsers) {
-    if (v.expiry && new Date(v.expiry) < new Date()) {
-      vipUsers.delete(uid);
-      await VipModel.deleteOne({ userId: uid });
+    if (v.vip && v.expiry && new Date(v.expiry) < new Date()) {
+      v.vip = false;
+      await VipModel.findOneAndUpdate({ userId: uid }, { vip: false });
       removedVip++;
     }
   }
@@ -4757,6 +4757,19 @@ Ready!
 
     // ⏳ Auto-Reminder — check every 2 minutes
     setInterval(checkAndSendReminders, 2 * 60 * 1000);
+
+    // 👑 VIP Expiry Checker — runs every 30 minutes, marks expired memberships in DB
+    setInterval(async () => {
+      const now = new Date();
+      for (const [uid, v] of vipUsers) {
+        if (v.vip && v.expiry && new Date(v.expiry) < now) {
+          v.vip = false; // update in-memory
+          try {
+            await VipModel.findOneAndUpdate({ userId: uid }, { vip: false });
+          } catch {}
+        }
+      }
+    }, 30 * 60 * 1000);
   }).catch(e => {
     console.error("⚠️ Startup getMe() failed:", e.message, "— Bot may still be polling, will retry.");
   });
