@@ -240,7 +240,21 @@ async function loadStateFromDB() {
   if (qrConfig) membershipQrFileId = qrConfig.value;
 
   const plansConfig = await BotConfigModel.findOne({ key: "membershipPlans" });
-  if (plansConfig) membershipPlans = plansConfig.value;
+  if (plansConfig?.value) {
+    // Merge MongoDB prices into defaults — never lose label/days from code defaults
+    const defaults = {
+      "1d":  { label: "1 Day",   days: 1,  price: 10  },
+      "7d":  { label: "7 Days",  days: 7,  price: 50  },
+      "30d": { label: "30 Days", days: 30, price: 350 }
+    };
+    for (const key of ["1d", "7d", "30d"]) {
+      if (plansConfig.value[key]) {
+        membershipPlans[key] = { ...defaults[key], ...plansConfig.value[key], label: defaults[key].label, days: defaults[key].days };
+      }
+    }
+    // Resave corrected plans so future restarts also get full data
+    await saveConfig("membershipPlans", membershipPlans);
+  }
 
   const freeLimitConfig = await BotConfigModel.findOne({ key: "freeGiveawayLimit" });
   if (freeLimitConfig?.value != null) freeGiveawayLimit = Number(freeLimitConfig.value);
@@ -646,7 +660,7 @@ function safeFormatDateTime(d) {
 function timeRemaining(expiry) {
   if (!expiry) return "";
   const ms = new Date(expiry).getTime() - Date.now();
-  if (ms <= 0) return "⛔ Expired";
+  if (isNaN(ms) || ms <= 0) return "⛔ Expired";
   const days = Math.floor(ms / 86400000);
   const hours = Math.floor((ms % 86400000) / 3600000);
   const mins = Math.floor((ms % 3600000) / 60000);
