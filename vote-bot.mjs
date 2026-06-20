@@ -1098,10 +1098,28 @@ bot.on("callback_query", async (query) => {
   // ─── New Giveaway ───
   if (data === "new_giveaway") {
     if (!isVip(userId) && !isAdmin(userId)) {
-      await bot.answerCallbackQuery(query.id, {
-        text: "👑 VIP Membership required to create giveaways. Use /membership to upgrade!",
-        show_alert: true
-      });
+      await bot.sendMessage(chatId,
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+        `   👑  <b>VIP REQUIRED</b>\n` +
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+        `<blockquote>` +
+        `Giveaway create karne ke liye <b>VIP Membership</b> chahiye!\n\n` +
+        `▸ Unlimited giveaways banao\n` +
+        `▸ Live voting &amp; leaderboard\n` +
+        `▸ Paid votes system\n` +
+        `▸ Auto winner announcement` +
+        `</blockquote>\n\n` +
+        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [{ text: "👑 Get VIP Membership", callback_data: "vip_membership" }],
+              [{ text: "◀️ Back to Menu", callback_data: "main_menu" }]
+            ]
+          }
+        }
+      );
       return;
     }
     userState.set(userId, { step: "title", msgId });
@@ -2360,19 +2378,26 @@ async function updateChannelPost(g, participant) {
     }]]
   };
   try {
-    // Always try editMessageCaption first (vote cards are photos)
-    // If that fails (e.g., plain text message), fall back to editMessageText
     try {
       await bot.editMessageCaption(participantChannelText(participant, g), {
         chat_id: g.channelId, message_id: participant.channelMsgId,
         parse_mode: "HTML", reply_markup: markup
       });
-    } catch {
+      return;
+    } catch (captionErr) {
+      if (captionErr?.message?.includes("message is not modified")) return;
+    }
+    try {
       await bot.editMessageText(participantChannelText(participant, g), {
         chat_id: g.channelId, message_id: participant.channelMsgId,
         parse_mode: "HTML", reply_markup: markup
       });
-    }
+      return;
+    } catch {}
+    // Final fallback — at least update the vote button
+    await bot.editMessageReplyMarkup(markup, {
+      chat_id: g.channelId, message_id: participant.channelMsgId
+    });
   } catch (e) { console.error("Update post error:", e.message); }
 }
 
@@ -2671,6 +2696,36 @@ bot.on("message", async (msg) => {
     return;
   }
 
+  // ─── Support message (any message type) ───
+  if (state?.step === "awaiting_support_message") {
+    userState.delete(userId);
+    const pu = botUsers.get(userId) || {};
+    const puName = h(msg.from.first_name || pu.firstName || "Unknown");
+    const puHandle = msg.from.username ? `@${msg.from.username}` : (pu.username ? `@${pu.username}` : `ID: ${userId}`);
+    const infoMsg =
+      `📩 <b>Support Request</b>\n\n` +
+      `<blockquote>` +
+      `◈ Name    ▸  <b>${puName}</b>\n` +
+      `◈ Handle  ▸  ${puHandle}\n` +
+      `◈ User ID ▸  <code>${userId}</code>` +
+      `</blockquote>`;
+    try {
+      await bot.sendMessage(MAIN_ADMIN_ID, infoMsg, { parse_mode: "HTML" });
+      await bot._request("forwardMessage", {
+        chat_id: MAIN_ADMIN_ID,
+        from_chat_id: chatId,
+        message_id: msg.message_id
+      });
+    } catch (e) { console.error("Support forward error:", e.message); }
+    await bot.sendMessage(chatId,
+      `✅ <b>Message Sent!</b>\n\n` +
+      `<blockquote>Aapka message admin ko bhej diya gaya hai.\nJald hi <b>@drssupport</b> se response milega. 🙏</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+    );
+    return;
+  }
+
   // ─── Create Post — unified handler (any msg type, exact formatting) ───
   if (state?.step === "cp_compose") {
     const chId = state.channelId;
@@ -2835,7 +2890,38 @@ bot.on("message", async (msg) => {
   }
 
   if (!text || text.startsWith("/")) return;
-  if (!state) return;
+
+  if (!state) {
+    const pu = botUsers.get(userId) || {};
+    const puName = h(msg.from.first_name || pu.firstName || "Unknown");
+    const puHandle = msg.from.username ? `@${msg.from.username}` : `ID: ${userId}`;
+    try {
+      await bot.sendMessage(MAIN_ADMIN_ID,
+        `💬 <b>User Message (No Context)</b>\n\n` +
+        `<blockquote>◈ Name    ▸  <b>${puName}</b>\n◈ Handle  ▸  ${puHandle}\n◈ User ID ▸  <code>${userId}</code></blockquote>`,
+        { parse_mode: "HTML" }
+      );
+      await bot._request("forwardMessage", {
+        chat_id: MAIN_ADMIN_ID,
+        from_chat_id: chatId,
+        message_id: msg.message_id
+      });
+    } catch {}
+    await bot.sendMessage(chatId,
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  📩  <b>DRS BOT SUPPORT</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>` +
+      `Aapka message admin ko bhej diya gaya! 📨\n\n` +
+      `Direct support ke liye:\n` +
+      `📩 <b>@drssupport</b>\n\n` +
+      `⚡ Powered by <b>DRS NETWORK</b>` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+    );
+    return;
+  }
 
   // ─── Admin approving vote count ───
   if (userId === MAIN_ADMIN_ID && state.step === "approve_votes") {
@@ -4203,6 +4289,30 @@ bot.onText(/\/myplan/, async (msg) => {
     `🏆 Live leaderboard & voting controls` +
     `</blockquote>`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🎁 My Giveaways", callback_data: "my_giveaways" }]] } }
+  );
+});
+
+// /support — Contact support
+bot.onText(/\/support/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  trackUser(msg.from);
+  userState.set(userId, { step: "awaiting_support_message" });
+  await bot.sendMessage(msg.chat.id,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  📩  <b>DRS BOT SUPPORT</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>` +
+    `📝 Apna issue clearly describe karein.\n\n` +
+    `Aap bhej sakte ho:\n` +
+    `▸ Text message\n` +
+    `▸ Screenshot / Photo\n` +
+    `▸ Video ya Document\n\n` +
+    `Admin se seedha contact:\n` +
+    `📩 <b>@drssupport</b>` +
+    `</blockquote>\n\n` +
+    `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+    { parse_mode: "HTML", reply_markup: cancelKeyboard() }
   );
 });
 
