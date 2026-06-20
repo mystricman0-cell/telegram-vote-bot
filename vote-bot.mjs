@@ -856,30 +856,35 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   if (param) {
     const g = getGiveaway(param);
     if (!g) {
-      return bot.sendMessage(chatId, "❌ Giveaway nahi mila. Link check karo.", { parse_mode: "HTML" });
+      return bot.sendMessage(chatId, "❌ Giveaway not found. Please check your link.", { parse_mode: "HTML" });
     }
     if (!g.participationOpen) {
       return bot.sendMessage(chatId,
-        `<b>❌ Participation Band Hai</b>\n\n<b>${h(g.title)}</b> giveaway mein abhi koi participate nahi kar sakta.`,
+        `<b>❌ Participation Closed</b>\n\n<b>${h(g.title)}</b> is not accepting new participants at this time.`,
         { parse_mode: "HTML" }
       );
     }
     if (g.channelId) {
       const member = await isMember(g.channelId, userId);
       if (!member) {
+        // Try to get a join link — public channels use @username, private use invite link
+        let channelUrl = g.channelUsername ? `https://t.me/${g.channelUsername}` : null;
+        if (!channelUrl) {
+          try { channelUrl = await bot.exportChatInviteLink(g.channelId); } catch {}
+        }
         return bot.sendMessage(chatId,
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
           `  🔒  <b>CHANNEL REQUIRED</b>\n` +
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
           `<blockquote>` +
-          `<b>${h(g.title)}</b> mein participate karne ke liye pehle channel join karo:\n\n` +
-          `👉 ${g.channelUsername ? `@${h(g.channelUsername)}` : `Channel ID: <code>${g.channelId}</code>`}\n\n` +
-          `Join karne ke baad dobara link tap karo.` +
+          `To participate in <b>${h(g.title)}</b>, you must first join the channel.\n\n` +
+          (channelUrl ? `👉 Tap the button below to join.\n\n` : ``) +
+          `After joining, tap your link again to continue.` +
           `</blockquote>`,
           {
             parse_mode: "HTML",
-            reply_markup: g.channelUsername ? {
-              inline_keyboard: [[{ text: "📢 Join Channel", url: `https://t.me/${g.channelUsername}` }]]
+            reply_markup: channelUrl ? {
+              inline_keyboard: [[{ text: "📢 Join Channel", url: channelUrl }]]
             } : undefined
           }
         );
@@ -892,19 +897,23 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
       let fjMember = false;
       try { fjMember = await isMember(fj.channelId, userId); } catch {}
       if (!fjMember) {
+        let fjUrl = fj.channelUsername ? `https://t.me/${fj.channelUsername}` : null;
+        if (!fjUrl) {
+          try { fjUrl = await bot.exportChatInviteLink(fj.channelId); } catch {}
+        }
         return bot.sendMessage(chatId,
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
           `  🔗  <b>JOIN REQUIRED</b>\n` +
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
           `<blockquote>` +
-          `Is giveaway mein participate karne ke liye pehle ye channel join karo:\n\n` +
-          `👉 ${fj.channelUsername ? `@${h(fj.channelUsername)}` : `Channel ID: <code>${fj.channelId}</code>`}\n\n` +
-          `Join karne ke baad dobara link tap karo.` +
+          `To participate in this giveaway, you must first join the required channel.\n\n` +
+          (fjUrl ? `👉 Tap the button below to join.\n\n` : ``) +
+          `After joining, tap your link again to continue.` +
           `</blockquote>`,
           {
             parse_mode: "HTML",
-            reply_markup: fj.channelUsername ? {
-              inline_keyboard: [[{ text: "📢 Join Channel", url: `https://t.me/${fj.channelUsername}` }]]
+            reply_markup: fjUrl ? {
+              inline_keyboard: [[{ text: "📢 Join Channel", url: fjUrl }]]
             } : undefined
           }
         );
@@ -915,13 +924,13 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
 
     if (existing) {
       return bot.sendMessage(chatId,
-        `<b>◆ Aap pehle se Participant Hain</b>\n\n` +
+        `<b>◆ Already a Participant</b>\n\n` +
         `📌 <b>${h(g.title)}</b>\n` +
         `🗳️ Current Votes: <b>${existing.votes}</b>\n\n` +
         (existing.channelMsgId && g.channelId
           ? `<a href="https://t.me/c/${String(g.channelId).replace("-100", "")}/${existing.channelMsgId}">📋 My Vote Post</a>\n`
           : "") +
-        `🔗 Participation Link: https://t.me/${BOT_USERNAME}?start=${g.id}`,
+        `🔗 Vote Link: https://t.me/${BOT_USERNAME}?start=${g.id}`,
         {
           parse_mode: "HTML",
           reply_markup: {
@@ -1026,9 +1035,9 @@ bot.on("callback_query", async (query) => {
         `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
         `  📢  <b>JOIN REQUIRED</b>  📢\n` +
         `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-        `<blockquote>⚠️ Kuch channels abhi join nahi kiye:\n\n` +
+        `<blockquote>⚠️ You haven't joined all required channels yet:\n\n` +
         `${displayList}\n\n` +
-        `❌ Channels join karo phir ✅ Verify button dabaao.</blockquote>\n\n` +
+        `❌ Join the channels above, then tap ✅ Verify &amp; Continue.</blockquote>\n\n` +
         `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
         { chat_id: chatId, message_id: msgId, parse_mode: "HTML", reply_markup: forceJoinKeyboard(allChannels) }
       ).catch(() => {});
@@ -1161,7 +1170,7 @@ bot.on("callback_query", async (query) => {
       await animAction(chatId,
         `${icon} <b>${label}</b>\n\n` +
         `◆ ─────────────────── ◆\n\n` +
-        `<blockquote>Is category mein abhi koi giveaway nahi hai.\nNaya banao ya kisi giveaway mein join ho!</blockquote>`,
+        `<blockquote>No giveaways in this category yet.\nCreate one or join an active giveaway!</blockquote>`,
         { reply_markup: backKeyboard("my_giveaways") }
       );
       return;
@@ -1223,8 +1232,8 @@ bot.on("callback_query", async (query) => {
       `  🔗  <b>SET FORCE JOIN</b>\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `<blockquote>` +
-      `Is giveaway mein participate karne se pehle, user ko ek specific channel join karna hoga.\n\n` +
-      `📝 Channel ka username ya ID bhejo:\n` +
+      `Users must join a specific channel before participating in this giveaway.\n\n` +
+      `📝 Send the channel username or ID:\n` +
       `▸ <code>@YourChannel</code>\n` +
       `▸ <code>-1001234567890</code>` +
       `</blockquote>\n\n` +
@@ -1292,7 +1301,7 @@ bot.on("callback_query", async (query) => {
       `📌 <b>${h(g.title)}</b>\n` +
       `<i>👥 ${g.participants.size} participants  ·  🗳️ ${totalVotes} total votes</i>\n\n` +
       `━━━◈━━━━━━━━━━━━━━━━━◈━━━\n\n` +
-      (rows.length ? rows.join("\n") : `<i>▸ Koi participant nahi hai abhi</i>`) +
+      (rows.length ? rows.join("\n") : `<i>▸ No participants yet — share the link to get started!</i>`) +
       `\n\n━━━◈━━━━━━━━━━━━━━━━━◈━━━\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
     await bot.editMessageText(text, {
@@ -1421,7 +1430,7 @@ bot.on("callback_query", async (query) => {
       const chLink = existing.channelMsgId && g.channelId
         ? `https://t.me/c/${String(g.channelId).replace("-100", "")}/${existing.channelMsgId}`
         : null;
-      await bot.answerCallbackQuery(query.id, { text: "Aap pehle se is giveaway mein hain!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "You are already a participant in this giveaway!", show_alert: true });
       await bot.editMessageText(
         `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
         `  ◆  <b>ALREADY JOINED</b>  ◆\n` +
@@ -1432,7 +1441,7 @@ bot.on("callback_query", async (query) => {
         (chLink ? `◈ Vote Card  ▸  <a href="${chLink}">View in Channel</a>\n` : "") +
         `◈ Status     ▸  🟢 Active` +
         `</blockquote>\n\n` +
-        `◈ <i>Apna link share karo aur aur votes collect karo!</i>\n` +
+        `◈ <i>Share your link to collect more votes!</i>\n` +
         `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
         {
           chat_id: chatId, message_id: msgId, parse_mode: "HTML",
@@ -1491,30 +1500,33 @@ bot.on("callback_query", async (query) => {
       ? `https://t.me/c/${String(g.channelId).replace("-100", "")}/${channelMsgId}`
       : null;
 
+    // Build channel open URL — public: @username, private: t.me/c/ID
+    const chOpenUrl = g.channelId
+      ? (g.channelUsername ? `https://t.me/${g.channelUsername}` : `https://t.me/c/${String(g.channelId).replace("-100", "")}`)
+      : null;
+
+    // Build keyboard — channel open button always shows if channel is set
+    const joinKb = [];
+    if (chOpenUrl) joinKb.push([{ text: "📢 Open Channel", url: chOpenUrl }]);
+    joinKb.push([{ text: "📋 Copy Vote Link", switch_inline_query: link }]);
+    joinKb.push([{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}` }]);
+    joinKb.push([{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }]);
+    joinKb.push([{ text: "🔄 Get Links Again", callback_data: `my_links:${gId}` }]);
+
     await animSuccess(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `  ◆  <b>YOU'RE IN</b>  ◆\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `📌 <b>${h(g.title)}</b>\n\n` +
       `<blockquote>` +
-      (g.channelId ? `🔗 Channel   ▸  <a href="${g.channelUsername ? `https://t.me/${g.channelUsername}` : `https://t.me/c/${String(g.channelId).replace("-100","")}`}">Open Channel</a>\n` : "") +
       (chLink ? `🃏 Vote Card ▸  <a href="${chLink}">View My Card</a>\n` : "") +
-      `🗳️ Votes     ▸  <b>0</b> (grow by sharing!)\n` +
+      `🗳️ Votes     ▸  <b>0</b> <i>(grow by sharing!)</i>\n` +
       `⚡ Status    ▸  🟢 Active` +
       `</blockquote>\n\n` +
       `━━━◈━━━━━━━━━━━━━━━━◈━━━\n` +
       `◈ <i>Share your link to collect more votes!</i>\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [{ text: "📋 Copy Vote Link", switch_inline_query: link }],
-            [{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}` }],
-            [{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }],
-            [{ text: "🔄 Get Links Again", callback_data: `my_links:${gId}` }]
-          ]
-        }
-      }
+      { reply_markup: { inline_keyboard: joinKb } }
     );
     return;
   }
@@ -1527,19 +1539,19 @@ bot.on("callback_query", async (query) => {
     const g = getGiveaway(gId);
 
     if (!g || !g.active) {
-      await bot.answerCallbackQuery(query.id, { text: "Voting active nahi hai!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "⛔ Voting is not active for this giveaway!", show_alert: true });
       return;
     }
     if (g.channelId) {
       const member = await isMember(g.channelId, userId);
       if (!member) {
-        await bot.answerCallbackQuery(query.id, { text: "⚠️ Pehle channel join karo, phir vote do!", show_alert: true });
+        await bot.answerCallbackQuery(query.id, { text: "⚠️ You must join the channel before voting!", show_alert: true });
         return;
       }
     }
     if (userId === participantUserId) {
       await bot.answerCallbackQuery(query.id, {
-        text: "⛔ DENIED — Aap khud ko vote nahi kar sakte!",
+        text: "⛔ DENIED — You cannot vote for yourself!",
         show_alert: true
       });
       // Big photo warning — same style as welcome screen
@@ -1560,9 +1572,9 @@ bot.on("callback_query", async (query) => {
           `   ⛔  <b>VOTE DENIED</b>  ⛔\n` +
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
           `<blockquote>` +
-          `<b>Aap khud ko vote nahi kar sakte.</b>\n\n` +
-          `Apna vote link share karo aur doston se\n` +
-          `kehna ki wo aapke post pe Vote button dabayen.\n\n` +
+          `<b>You cannot vote for yourself.</b>\n\n` +
+          `Share your vote link with friends and ask\n` +
+          `them to tap the Vote button on your post.\n\n` +
           `◈ Votes ▸  <b>${g.participants.get(participantUserId)?.votes ?? 0}</b>` +
           `</blockquote>\n\n` +
           `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`,
@@ -1581,14 +1593,14 @@ bot.on("callback_query", async (query) => {
 
     const participant = g.participants.get(participantUserId);
     if (!participant) {
-      await bot.answerCallbackQuery(query.id, { text: "Participant nahi mila!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Participant not found!", show_alert: true });
       return;
     }
 
     const existingVote = g.voterMap?.get(userId);
     if (existingVote) {
       if (existingVote === participantUserId) {
-        await bot.answerCallbackQuery(query.id, { text: "Aap pehle se inhe vote kar chuke hain!", show_alert: true });
+        await bot.answerCallbackQuery(query.id, { text: "You have already voted for this participant!", show_alert: true });
         return;
       }
       const oldP = g.participants.get(existingVote);
@@ -1667,7 +1679,7 @@ bot.on("callback_query", async (query) => {
     const gId = data.split(":")[1];
     const g = getGiveaway(gId);
     if (!g?.qrFileId) {
-      await bot.answerCallbackQuery(query.id, { text: "INR payment setup nahi hai!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ INR payment is not set up for this giveaway!", show_alert: true });
       return;
     }
     userState.set(userId, { step: "awaiting_inr_screenshot", giveawayId: gId });
@@ -1695,7 +1707,7 @@ bot.on("callback_query", async (query) => {
     if (!g) return;
     const participant = g.participants.get(userId);
     if (!participant) {
-      await bot.answerCallbackQuery(query.id, { text: "Pehle giveaway join karo!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ You must join the giveaway first!", show_alert: true });
       return;
     }
     try {
@@ -1784,10 +1796,10 @@ bot.on("callback_query", async (query) => {
     userState.set(userId, { step: "reg_chat", type });
     await animLoading(chatId, msgId);
     await replyToCallback(chatId, msgId,
-      `<b>➕ ${type === "channel" ? "Channel" : "Group"} Add Karo</b>\n\n` +
-      `${type === "channel" ? "Channel" : "Group"} ID bhejo:\n<i>Example: -1001234567890</i>\n\n` +
-      `<b>Note:</b> Pehle bot ko ${type === "channel" ? "channel" : "group"} ka admin banao.\n` +
-      `Ya simply bot ko add karo — automatically register ho jaata hai.`,
+      `<b>➕ Add ${type === "channel" ? "Channel" : "Group"}</b>\n\n` +
+      `Send the ${type === "channel" ? "channel" : "group"} ID:\n<i>Example: -1001234567890</i>\n\n` +
+      `<b>Note:</b> First make the bot an admin in the ${type === "channel" ? "channel" : "group"}.\n` +
+      `Or simply add the bot — it registers automatically.`,
       { reply_markup: backKeyboard() }
     );
     return;
@@ -1835,7 +1847,7 @@ bot.on("callback_query", async (query) => {
 
     if (!membershipQrFileId) {
       await bot.answerCallbackQuery(query.id, {
-        text: "❌ Payment QR abhi set nahi hai. Admin se contact karo.",
+        text: "❌ Payment QR is not configured yet. Please contact admin.",
         show_alert: true
       });
       return;
@@ -1872,7 +1884,7 @@ bot.on("callback_query", async (query) => {
       });
     } catch (e) {
       console.error("Membership QR send error:", e.message);
-      await bot.sendMessage(chatId, "❌ QR bhejne mein error. Admin se contact karo.", { parse_mode: "HTML" });
+      await bot.sendMessage(chatId, "❌ Failed to send QR code. Please contact admin.", { parse_mode: "HTML" });
     }
     return;
   }
@@ -1915,12 +1927,12 @@ bot.on("callback_query", async (query) => {
     const payId = data.split(":")[1];
     const pending = pendingMembershipPayments.get(payId);
     if (!pending) {
-      await bot.answerCallbackQuery(query.id, { text: "Payment nahi mila ya already processed.", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Payment not found or already processed.", show_alert: true });
       return;
     }
     const plan = getMembershipPlan(pending.planKey);
     if (!plan) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ Plan config nahi mila. Admin check karo.", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Plan configuration not found. Contact admin.", show_alert: true });
       return;
     }
     pendingMembershipPayments.delete(payId);
@@ -1983,7 +1995,7 @@ bot.on("callback_query", async (query) => {
     );
     try {
       await bot.sendMessage(pending.userId,
-        `<b>❌ Membership Payment Rejected</b>\n\nPayment ID: <code>${payId}</code>\n\nPayment verify nahi ho saka. Dobara try karo ya @drssupport se contact karo.`,
+        `<b>❌ Membership Payment Rejected</b>\n\nPayment ID: <code>${payId}</code>\n\nYour payment could not be verified. Please try again or contact @drssupport.`,
         { parse_mode: "HTML" }
       );
     } catch {}
@@ -2009,7 +2021,7 @@ bot.on("callback_query", async (query) => {
     if (!VALID_PERMS[perm]) return;
     const v = vipUsers.get(targetId);
     if (!v) {
-      await bot.answerCallbackQuery(query.id, { text: "User ka VIP record nahi mila.", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ VIP record not found for this user.", show_alert: true });
       return;
     }
     const current = getUserPerm(targetId, perm);
@@ -2088,9 +2100,9 @@ bot.on("callback_query", async (query) => {
         `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
         `  ◆  <b>CREATE POST</b>  ◆\n` +
         `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-        `<blockquote>◈ Koi registered channel nahi mila.\n\n` +
-        `Bot ko pehle apne channel mein <b>Admin</b> banao —\n` +
-        `tab channel automatically register ho jayega.</blockquote>\n\n` +
+        `<blockquote>◈ No registered channels found.\n\n` +
+        `Add the bot as <b>Admin</b> to your channel first —\n` +
+        `it will be automatically registered.</blockquote>\n\n` +
         `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
         { reply_markup: backKeyboard() }
       );
@@ -2254,7 +2266,7 @@ bot.on("callback_query", async (query) => {
       await bot.sendMessage(chatId,
         `📸 <b>UPLOAD PAYMENT QR CODE</b>\n\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
-        `<blockquote>Apna UPI/Google Pay QR code ki photo bhejo.\nUsers isi pe payment karenge.</blockquote>`,
+        `<blockquote>Send a photo of your UPI/Google Pay QR code.\nUsers will make payments to this QR.</blockquote>`,
         { parse_mode: "HTML", reply_markup: backKeyboard("cancel_flow") }
       );
     } else {
@@ -2276,7 +2288,7 @@ bot.on("callback_query", async (query) => {
     const payId = data.split(":")[1];
     const payment = pendingPayments.get(payId);
     if (!payment) {
-      return bot.answerCallbackQuery(query.id, { text: "Payment nahi mila!", show_alert: true });
+      return bot.answerCallbackQuery(query.id, { text: "❌ Payment record not found!", show_alert: true });
     }
     userState.set(userId, { step: "approve_votes", paymentId: payId });
     await bot.answerCallbackQuery(query.id);
@@ -2302,7 +2314,7 @@ bot.on("callback_query", async (query) => {
     ).catch(() => {});
     try {
       await bot.sendMessage(payment.userId,
-        `<b>❌ Payment Rejected</b>\n\nAapki payment verify nahi ho saki.\nPayment ID: <code>${payId}</code>\n\nDubara try karo ya support se contact karo.`,
+        `<b>❌ Payment Rejected</b>\n\nYour payment could not be verified.\nPayment ID: <code>${payId}</code>\n\nPlease try again or contact support.`,
         { parse_mode: "HTML" }
       );
     } catch {}
@@ -2438,7 +2450,7 @@ async function announceWinners(g, gId, creatorId) {
       `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `  ◆  <b>CONGRATULATIONS</b>  ◆\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-      `◈ <b>Aap ${rankNames[i]} Place Jeet Gaye!</b>\n\n` +
+      `◈ <b>You Won ${rankNames[i]} Place!</b>\n\n` +
       `📌 <b>${h(g.title)}</b>\n\n` +
       `<blockquote>` +
       `🏆 Rank    ▸  <b>${rankNames[i]}</b>\n` +
@@ -2486,10 +2498,10 @@ async function askCustomPhotoOrFinish(userId, chatId, qrFileId) {
       `  🖼️  <b>CUSTOM GIVEAWAY PHOTO</b>\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `<blockquote>` +
-      `◈ Aap apna <b>custom photo</b> upload kar sakte ho jo channel pe giveaway announcement ke saath post hoga.\n\n` +
-      `◈ Skip karo to default DRS image use hogi.` +
+      `◈ Upload a <b>custom photo</b> that will be posted with your giveaway announcement on the channel.\n\n` +
+      `◈ Skip to use the default DRS image.` +
       `</blockquote>\n\n` +
-      `📸 <b>Photo bhejo</b> ya skip karo:`,
+      `📸 <b>Send your photo</b> or skip:`,
       {
         parse_mode: "HTML",
         reply_markup: {
@@ -2572,9 +2584,9 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
       `━━━◈  <b>HOW TO JOIN?</b>  ◈━━━\n\n` +
       `<blockquote>` +
       `▸ <b>1</b>  Tap the button below\n` +
-      `▸ <b>2</b>  Register karo — vote card channel pe post hoga\n` +
-      `▸ <b>3</b>  Apna link share karo — zyada votes = better rank\n` +
-      `▸ <b>4</b>  Sabse zyada votes wala <b>WINS</b>! 🏆` +
+      `▸ <b>2</b>  Register — your vote card will be posted in the channel\n` +
+      `▸ <b>3</b>  Share your link — more votes = better rank\n` +
+      `▸ <b>4</b>  Most votes <b>WINS</b>! 🏆` +
       `</blockquote>\n\n` +
       `✦ ─────  <b>@${BOT_USERNAME}</b>  ───── ✦`;
     const photoSrc = g.customPhotoId || GIVEAWAY_IMAGE_URL;
@@ -2836,7 +2848,7 @@ bot.on("message", async (msg) => {
     const payment = pendingPayments.get(payId);
     if (!payment) {
       userState.delete(MAIN_ADMIN_ID);
-      return bot.sendMessage(MAIN_ADMIN_ID, "❌ Payment nahi mila!");
+      return bot.sendMessage(MAIN_ADMIN_ID, "❌ Payment record not found!");
     }
     userState.delete(MAIN_ADMIN_ID);
     pendingPayments.delete(payId);
@@ -2856,11 +2868,11 @@ bot.on("message", async (msg) => {
     await saveGiveaway(g);
     await updateChannelPost(g, participant);
 
-    await bot.sendMessage(MAIN_ADMIN_ID, `✅ ${votes} votes add kiye user ${payment.userId} ko!`);
+    await bot.sendMessage(MAIN_ADMIN_ID, `✅ ${votes} votes added for user ${payment.userId}!`);
     try {
       await bot.sendMessage(payment.userId,
         `<b>✅ Payment Approved!</b>\n\n` +
-        `<b>${votes} votes</b> aapke account mein add ho gaye!\n` +
+        `<b>${votes} votes</b> have been added to your account!\n` +
         `<b>${h(g.title)}</b>\n\n` +
         `Current Votes: <b>${participant.votes}</b>`,
         { parse_mode: "HTML" }
@@ -2891,18 +2903,18 @@ bot.on("message", async (msg) => {
         `🔗 Channel: <b>${h(chatInfo.title || text)}</b>\n` +
         `${chatInfo.username ? `👤 @${h(chatInfo.username)}\n` : ""}` +
         `📋 ID: <code>${chatInfo.id}</code>\n\n` +
-        `Ab ye giveaway mein participate karne se pehle user ko ye channel join karna hoga — jab tak aapki membership active hai.` +
+        `Users must join this channel before participating in the giveaway — enforced while your membership is active.` +
         `</blockquote>\n\n` +
         `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
         { parse_mode: "HTML", reply_markup: backKeyboard(`mgmt:${gId}`) }
       );
     } catch {
       await bot.sendMessage(chatId,
-        `❌ <b>Channel nahi mila!</b>\n\n` +
+        `❌ <b>Channel Not Found!</b>\n\n` +
         `<blockquote>` +
-        `Dhyan raho:\n` +
-        `▸ Bot ko us channel mein admin hona chahiye\n` +
-        `▸ Format: <code>@username</code> ya <code>-1001234567890</code>` +
+        `Please note:\n` +
+        `▸ The bot must be an admin in that channel\n` +
+        `▸ Format: <code>@username</code> or <code>-1001234567890</code>` +
         `</blockquote>`,
         { parse_mode: "HTML" }
       );
@@ -3030,7 +3042,7 @@ bot.on("message", async (msg) => {
         { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
       );
     } catch {
-      await bot.sendMessage(chatId, `❌ Chat nahi mila. Bot ko admin banao phir try karo.`, { parse_mode: "HTML" });
+      await bot.sendMessage(chatId, `❌ Chat not found. Make sure the bot is an admin in the channel, then try again.`, { parse_mode: "HTML" });
     }
     return;
   }
@@ -3169,13 +3181,15 @@ bot.on("chat_member", async (update) => {
 
         try {
           await bot.sendMessage(channelId,
-            `♻️ <b>Vote Auto-Removed</b>\n\n` +
+            `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+            `  ♻️  <b>VOTE AUTO-REMOVED</b>  ♻️\n` +
+            `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
             `<blockquote>` +
-            `👤 <b>${h(leftName)}</b> channel chod gaya.\n` +
-            `🏅 Participant: <b>${h(p.name)}</b>\n` +
-            `🗳️ Updated Votes: <b>${p.votes}</b>` +
+            `👤 <b>${h(leftName)}</b> has left the channel.\n` +
+            `🏅 Affected Participant: <b>${h(p.name)}</b>\n` +
+            `🗳️ Updated Vote Count: <b>${p.votes}</b>` +
             `</blockquote>\n\n` +
-            `<i>✦ DRS Auto-Sync System</i>`,
+            `<i>✦ DRS Auto-Sync System — Vote integrity maintained.</i>`,
             { parse_mode: "HTML" }
           );
         } catch (e) { console.error("Leave channel announcement:", e.message); }
@@ -3186,11 +3200,12 @@ bot.on("chat_member", async (update) => {
             `  ⚠️  <b>VOTE DEDUCTION ALERT</b>\n` +
             `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
             `<blockquote>` +
-            `👤 User: <b>${h(leftName)}</b> ne channel chod diya.\n\n` +
-            `Aapka 1 vote auto-remove ho gaya.\n` +
-            `🗳️ New Vote Count: <b>${p.votes}</b>` +
+            `A voter (<b>${h(leftName)}</b>) has left the channel.\n\n` +
+            `▸ 1 vote has been auto-removed from your count.\n` +
+            `🗳️ New Vote Total: <b>${p.votes}</b>` +
             `</blockquote>\n\n` +
-            `✦ ─── <b>DRS Network</b> ─── ✦`,
+            `<i>Share your link to regain votes!</i>\n` +
+            `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
             { parse_mode: "HTML" }
           );
         } catch {}
@@ -3324,7 +3339,7 @@ bot.onText(/\/topvoters/, async (msg) => {
 
   if (!userGiveaways.length) {
     return bot.sendMessage(chatId,
-      `<b>◆ Koi giveaway nahi mili.</b>\n\nPehle giveaway banao.`,
+      `<b>◆ No giveaways found.</b>\n\nCreate a giveaway first.`,
       { parse_mode: "HTML" }
     );
   }
@@ -3353,9 +3368,9 @@ bot.onText(/\/createpost/, async (msg) => {
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `  ◆  <b>CREATE POST</b>  ◆\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-      `<blockquote>◈ Koi registered channel nahi mila.\n\n` +
-      `Bot ko pehle apne channel mein <b>Admin</b> banao —\n` +
-      `tab channel automatically register ho jayega.</blockquote>\n\n` +
+      `<blockquote>◈ No registered channels found.\n\n` +
+      `Add the bot as <b>Admin</b> to your channel first —\n` +
+      `it will be automatically registered.</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { parse_mode: "HTML" }
     );
@@ -3549,7 +3564,7 @@ bot.onText(/\/sendloud\s+(-?\d+)\s+([\s\S]+)/, async (msg, match) => {
 
 bot.onText(/\/allchannels/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
-  if (!registeredChannels.size) return bot.sendMessage(msg.chat.id, "Koi registered channel nahi.");
+  if (!registeredChannels.size) return bot.sendMessage(msg.chat.id, "No registered channels found.");
   let text = "<b>📋 Registered Channels:</b>\n\n";
   for (const [id, c] of registeredChannels) {
     text += `• <b>${h(c.title)}</b> (<code>${id}</code>) — ${c.type}\n`;
@@ -3690,7 +3705,7 @@ bot.onText(/\/removemem\s+(\d+)/, async (msg, match) => {
   const targetId = Number(match[1]);
   const existing = vipUsers.get(targetId);
   if (!existing?.vip) {
-    return bot.sendMessage(msg.chat.id, `❌ User <code>${targetId}</code> ka koi active membership nahi hai.`, { parse_mode: "HTML" });
+    return bot.sendMessage(msg.chat.id, `❌ User <code>${targetId}</code> has no active membership.`, { parse_mode: "HTML" });
   }
   vipUsers.set(targetId, { ...existing, vip: false });
   await saveVip(targetId, { ...existing, vip: false });
@@ -3757,7 +3772,7 @@ bot.onText(/\/listmem/, async (msg) => {
   });
   if (!active.length) {
     return bot.sendMessage(msg.chat.id,
-      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n  📋  <b>ACTIVE MEMBERS</b>\n◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n<blockquote>Koi active member nahi hai abhi.</blockquote>`,
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n  📋  <b>ACTIVE MEMBERS</b>\n◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n<blockquote>No active members at the moment.</blockquote>`,
       { parse_mode: "HTML" }
     );
   }
@@ -3863,13 +3878,13 @@ bot.onText(/\/deductmem\s+(\d+)\s+(\d+)(\s+silent)?/, async (msg, match) => {
 
   const existing = vipUsers.get(targetId);
   if (!existing?.vip || !existing.expiry) {
-    return bot.sendMessage(msg.chat.id, `❌ User <code>${targetId}</code> ka koi active membership nahi hai.`, { parse_mode: "HTML" });
+    return bot.sendMessage(msg.chat.id, `❌ User <code>${targetId}</code> has no active membership.`, { parse_mode: "HTML" });
   }
 
   const currentExpiry = new Date(existing.expiry);
   const now = new Date();
   if (currentExpiry <= now) {
-    return bot.sendMessage(msg.chat.id, `❌ User <code>${targetId}</code> ki membership already expired hai.`, { parse_mode: "HTML" });
+    return bot.sendMessage(msg.chat.id, `❌ User <code>${targetId}</code>'s membership has already expired.`, { parse_mode: "HTML" });
   }
 
   const newExpiry = new Date(currentExpiry);
@@ -3989,7 +4004,7 @@ bot.onText(/\/setperms\s+(\d+)\s+(\w+)\s+(on|off)/i, async (msg, match) => {
   const v = vipUsers.get(targetId);
   if (!v) {
     return bot.sendMessage(msg.chat.id,
-      `❌ User <code>${targetId}</code> ka koi VIP record nahi. Pehle /givemem se membership do.`,
+      `❌ User <code>${targetId}</code> has no VIP record. Use /givemem to grant membership first.`,
       { parse_mode: "HTML" }
     );
   }
@@ -4161,7 +4176,7 @@ bot.onText(/\/myplan/, async (msg) => {
       `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
       `<blockquote>` +
       `◈ Status  ▸  ❌ <b>No Active Membership</b>\n\n` +
-      `Membership lene ke liye /membership command use karo ya admin se contact karo.` +
+      `Use /membership to get a plan, or contact admin.` +
       `</blockquote>`,
       { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Get Membership", callback_data: "vip_membership" }]] } }
     );
