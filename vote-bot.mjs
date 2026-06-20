@@ -38,6 +38,7 @@ const giveawaySchema = new mongoose.Schema({
   votesPerInr: { type: Number, default: 10 },
   votesPerStar: { type: Number, default: 5 },
   extraForceJoin: { type: mongoose.Schema.Types.Mixed, default: null },
+  customPhotoId: { type: String, default: null },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -1935,6 +1936,95 @@ bot.on("callback_query", async (query) => {
     return;
   }
 
+  // ─── Skip custom photo → finish giveaway creation ───
+  if (data === "skip_custom_photo") {
+    const st = userState.get(userId);
+    if (st?.step === "giveaway_custom_photo") {
+      await bot.answerCallbackQuery(query.id, { text: "Default image use hogi." });
+      await finishGiveawayCreation(userId, chatId, st.qrFileId);
+    }
+    return;
+  }
+
+  // ─── Toggle membership permission (button UI) ───
+  if (data.startsWith("toggle_perm:")) {
+    if (!isAdmin(userId)) return;
+    const parts = data.split(":");
+    const targetId = Number(parts[1]);
+    const perm = parts[2];
+    if (!VALID_PERMS[perm]) return;
+    const v = vipUsers.get(targetId);
+    if (!v) {
+      await bot.answerCallbackQuery(query.id, { text: "User ka VIP record nahi mila.", show_alert: true });
+      return;
+    }
+    const current = getUserPerm(targetId, perm);
+    const newVal = !current;
+    const newPerms = { ...(v.perms || {}), [perm]: newVal };
+    const updated = { ...v, perms: newPerms };
+    vipUsers.set(targetId, updated);
+    await saveVip(targetId, updated);
+    await bot.answerCallbackQuery(query.id, { text: `${VALID_PERMS[perm]}: ${newVal ? "✅ ON" : "❌ OFF"}` });
+
+    // Rebuild the permissions keyboard and update message
+    const bu = botUsers.get(targetId);
+    const buName = bu?.firstName ? h(bu.firstName) : `User ${targetId}`;
+    const buHandle = bu?.username ? `@${bu.username}` : `ID: ${targetId}`;
+    const permKeys = Object.keys(VALID_PERMS);
+    const permButtons = permKeys.map(key => {
+      const allowed = getUserPerm(targetId, key);
+      return [{ text: `${allowed ? "✅" : "❌"} ${VALID_PERMS[key]}`, callback_data: `toggle_perm:${targetId}:${key}` }];
+    });
+    permButtons.push([{ text: "🔄 Reset All (Enable All)", callback_data: `reset_perms:${targetId}` }]);
+    permButtons.push([{ text: "◀️ Done", callback_data: "main_menu" }]);
+    const caption =
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+      `  🔐  <b>PERMISSIONS</b>\n` +
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+      `👤 <b>${buName}</b> (${buHandle})\n` +
+      `◈ User ID ▸  <code>${targetId}</code>\n` +
+      `◈ Plan    ▸  ${v.plan || "VIP"}\n\n` +
+      `<i>Tap a button to toggle that permission:</i>`;
+    await bot.editMessageText(caption, {
+      chat_id: chatId, message_id: msgId, parse_mode: "HTML",
+      reply_markup: { inline_keyboard: permButtons }
+    }).catch(() => {});
+    return;
+  }
+
+  // ─── Reset all permissions for user ───
+  if (data.startsWith("reset_perms:")) {
+    if (!isAdmin(userId)) return;
+    const targetId = Number(data.split(":")[1]);
+    const v = vipUsers.get(targetId);
+    if (!v) return;
+    const updated = { ...v, perms: {} };
+    vipUsers.set(targetId, updated);
+    await saveVip(targetId, updated);
+    await bot.answerCallbackQuery(query.id, { text: "✅ All permissions reset (all enabled)." });
+
+    const bu = botUsers.get(targetId);
+    const buName = bu?.firstName ? h(bu.firstName) : `User ${targetId}`;
+    const buHandle = bu?.username ? `@${bu.username}` : `ID: ${targetId}`;
+    const permKeys = Object.keys(VALID_PERMS);
+    const permButtons = permKeys.map(key => ([{ text: `✅ ${VALID_PERMS[key]}`, callback_data: `toggle_perm:${targetId}:${key}` }]));
+    permButtons.push([{ text: "🔄 Reset All (Enable All)", callback_data: `reset_perms:${targetId}` }]);
+    permButtons.push([{ text: "◀️ Done", callback_data: "main_menu" }]);
+    const caption =
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+      `  🔐  <b>PERMISSIONS</b>\n` +
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+      `👤 <b>${buName}</b> (${buHandle})\n` +
+      `◈ User ID ▸  <code>${targetId}</code>\n` +
+      `◈ Plan    ▸  ${v.plan || "VIP"}\n\n` +
+      `<i>✅ All permissions reset to enabled.</i>`;
+    await bot.editMessageText(caption, {
+      chat_id: chatId, message_id: msgId, parse_mode: "HTML",
+      reply_markup: { inline_keyboard: permButtons }
+    }).catch(() => {});
+    return;
+  }
+
   // ─── Create Post ───
   if (data === "create_post") {
     await animLoading(chatId, msgId);
@@ -2095,7 +2185,7 @@ bot.on("callback_query", async (query) => {
         }
       );
     } else {
-      await finishGiveawayCreation(userId, chatId, null);
+      await askCustomPhotoOrFinish(userId, chatId, null);
     }
     return;
   }
@@ -2328,6 +2418,39 @@ function participantChannelText(participant, g) {
 }
 
 // ============================================================
+// HELPER: askCustomPhotoOrFinish — ask VIP user for custom photo before finishing
+// ============================================================
+async function askCustomPhotoOrFinish(userId, chatId, qrFileId) {
+  const state = userState.get(userId);
+  if (!state) return;
+  if (getUserPerm(userId, "customPhoto") && (isVip(userId) || isAdmin(userId))) {
+    state.step = "giveaway_custom_photo";
+    state.qrFileId = qrFileId || state.qrFileId || null;
+    userState.set(userId, state);
+    await bot.sendMessage(chatId,
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  🖼️  <b>CUSTOM GIVEAWAY PHOTO</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>` +
+      `◈ Aap apna <b>custom photo</b> upload kar sakte ho jo channel pe giveaway announcement ke saath post hoga.\n\n` +
+      `◈ Skip karo to default DRS image use hogi.` +
+      `</blockquote>\n\n` +
+      `📸 <b>Photo bhejo</b> ya skip karo:`,
+      {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [[
+            { text: "⏭️ Skip — Default Image Use Karo", callback_data: "skip_custom_photo" }
+          ]]
+        }
+      }
+    );
+  } else {
+    await finishGiveawayCreation(userId, chatId, qrFileId);
+  }
+}
+
+// ============================================================
 // HELPER: finishGiveawayCreation
 // ============================================================
 async function finishGiveawayCreation(userId, chatId, qrFileId) {
@@ -2352,6 +2475,7 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
     qrFileId: qrFileId || state.qrFileId || null,
     votesPerInr: state.votesPerInr || 10,
     votesPerStar: state.votesPerStar || 5,
+    customPhotoId: state.customPhotoId || null,
     createdAt: new Date()
   };
 
@@ -2380,36 +2504,40 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
   if (g.channelId) {
     const endStr = g.endTime
       ? new Date(g.endTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })
-      : "Manual (Creator control)";
+      : "Admin ke haath mein";
     const channelAnnouncement =
-      `✦━━━━━━━━━━━━━━━━━━━━━━━━✦\n` +
-      `  🎰  <b>NEW GIVEAWAY STARTED!</b>  🎰\n` +
-      `✦━━━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-      `📌 <b>${h(g.title)}</b>\n\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `◆   <b>GIVEAWAY NOW LIVE</b>   ◆\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `📌  <b>${h(g.title)}</b>\n\n` +
+      `◈─────────────────────────◈\n` +
+      `◈ Status    ▸  🟢 <b>ACTIVE</b>\n` +
+      `◈ Voting    ▸  ${g.paidVotesActive ? "🆓 Free  +  💰 Paid" : "🆓 Free Only"}\n` +
+      `◈ Ends At   ▸  <b>${h(endStr)}</b>\n` +
+      `◈─────────────────────────◈\n\n` +
+      `━━━◈  <b>HOW TO JOIN?</b>  ◈━━━\n\n` +
       `<blockquote>` +
-      `◈ Status      ▸  🟢 ACTIVE\n` +
-      `◈ Voting      ▸  ${g.paidVotesActive ? "🆓 Free + 💰 Paid" : "🆓 Free Only"}\n` +
-      `◈ Ends        ▸  ${h(endStr)}` +
+      `▸ <b>1</b>  Tap the button below\n` +
+      `▸ <b>2</b>  Register karo — vote card channel pe post hoga\n` +
+      `▸ <b>3</b>  Apna link share karo — zyada votes = better rank\n` +
+      `▸ <b>4</b>  Sabse zyada votes wala <b>WINS</b>! 🏆` +
       `</blockquote>\n\n` +
-      `━━━◈ <b>HOW TO PARTICIPATE?</b> ◈━━━\n\n` +
-      `<blockquote>` +
-      `1️⃣ Tap the button below\n` +
-      `2️⃣ Register your name in the bot\n` +
-      `3️⃣ Your vote card auto-posts in this channel\n` +
-      `4️⃣ Share your link — collect more votes!` +
-      `</blockquote>\n\n` +
-      `🔗 <code>${link}</code>\n\n` +
-      `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`;
+      `✦ ─────  <b>@${BOT_USERNAME}</b>  ───── ✦`;
+    const photoSrc = g.customPhotoId || GIVEAWAY_IMAGE_URL;
     try {
-      await bot.sendPhoto(g.channelId, GIVEAWAY_IMAGE_URL, {
-        caption: channelAnnouncement,
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [[
-            { text: "🎰 Participate Now — Tap Here!", url: link }
-          ]]
-        }
-      });
+      if (g.customPhotoId) {
+        await bot.sendPhoto(g.channelId, g.customPhotoId, {
+          caption: channelAnnouncement,
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: [[{ text: "⚡ JOIN GIVEAWAY — TAP NOW!", url: link }]] }
+        });
+      } else {
+        await bot.sendPhoto(g.channelId, GIVEAWAY_IMAGE_URL, {
+          caption: channelAnnouncement,
+          parse_mode: "HTML",
+          reply_markup: { inline_keyboard: [[{ text: "⚡ JOIN GIVEAWAY — TAP NOW!", url: link }]] }
+        });
+      }
     } catch (e) { console.error("Channel giveaway announcement error:", e.message); }
     await notifyAdmin(
       `🎰 <b>Giveaway Created</b>\n` +
@@ -2457,6 +2585,25 @@ bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text?.trim() || "";
   const state = userState.get(userId);
+
+  // ─── Giveaway custom photo upload ───
+  if (state?.step === "giveaway_custom_photo") {
+    if (msg.photo) {
+      const fileId = msg.photo[msg.photo.length - 1].file_id;
+      state.customPhotoId = fileId;
+      userState.set(userId, state);
+      await bot.sendMessage(chatId,
+        `✅ <b>Custom photo set!</b>\nYeh aapki photo giveaway announcement pe channel mein lagegi.`,
+        { parse_mode: "HTML" }
+      );
+      await finishGiveawayCreation(userId, chatId, state.qrFileId);
+    } else if (text === "/skip") {
+      await finishGiveawayCreation(userId, chatId, state.qrFileId);
+    } else {
+      await bot.sendMessage(chatId, `📸 <b>Sirf photo bhejo</b> ya neeche wala Skip button dabaao.`, { parse_mode: "HTML" });
+    }
+    return;
+  }
 
   // ─── Create Post — unified handler (any msg type, exact formatting) ───
   if (state?.step === "cp_compose") {
@@ -2744,8 +2891,8 @@ bot.on("message", async (msg) => {
         { parse_mode: "HTML", reply_markup: backKeyboard("cancel_flow") }
       );
     } else {
-      await bot.sendMessage(chatId, "✅ <b>Rates recorded! Finalizing your giveaway...</b>", { parse_mode: "HTML" });
-      await finishGiveawayCreation(userId, chatId, state.qrFileId);
+      await bot.sendMessage(chatId, "✅ <b>Rates recorded!</b>", { parse_mode: "HTML" });
+      await askCustomPhotoOrFinish(userId, chatId, state.qrFileId);
     }
     return;
   }
@@ -2758,8 +2905,8 @@ bot.on("message", async (msg) => {
     }
     state.votesPerStar = rate;
     userState.set(userId, state);
-    await bot.sendMessage(chatId, "✅ <b>Rates recorded! Finalizing your giveaway...</b>", { parse_mode: "HTML" });
-    await finishGiveawayCreation(userId, chatId, state.qrFileId);
+    await bot.sendMessage(chatId, "✅ <b>Rates recorded!</b>", { parse_mode: "HTML" });
+    await askCustomPhotoOrFinish(userId, chatId, state.qrFileId);
     return;
   }
 
@@ -3610,6 +3757,7 @@ const VALID_PERMS = {
   buyVotes:       "Buy Paid Votes (INR/Stars)",
   createPost:     "Create Channel Posts",
   forceJoin:      "Set Force Join",
+  customPhoto:    "Custom Giveaway Photo on Channel",
 };
 
 function getUserPerm(uid, perm) {
@@ -3617,6 +3765,35 @@ function getUserPerm(uid, perm) {
   if (!v?.perms) return true; // default: all allowed
   return v.perms[perm] !== false;
 }
+
+// /perms — Admin: Interactive button-based permission management
+bot.onText(/\/perms\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const v = vipUsers.get(targetId);
+  const bu = botUsers.get(targetId);
+  const buName = bu?.firstName ? h(bu.firstName) : `User ${targetId}`;
+  const buHandle = bu?.username ? `@${bu.username}` : `ID: ${targetId}`;
+
+  const permKeys = Object.keys(VALID_PERMS);
+  const permButtons = permKeys.map(key => {
+    const allowed = getUserPerm(targetId, key);
+    return [{ text: `${allowed ? "✅" : "❌"} ${VALID_PERMS[key]}`, callback_data: `toggle_perm:${targetId}:${key}` }];
+  });
+  permButtons.push([{ text: "🔄 Reset All (Enable All)", callback_data: `reset_perms:${targetId}` }]);
+  permButtons.push([{ text: "◀️ Done", callback_data: "main_menu" }]);
+
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  🔐  <b>PERMISSIONS</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `👤 <b>${buName}</b> (${buHandle})\n` +
+    `◈ User ID ▸  <code>${targetId}</code>\n` +
+    `◈ Plan    ▸  ${v?.plan || (v ? "VIP" : "❌ No Membership")}\n\n` +
+    `<i>Tap karo kisi bhi permission ko toggle karne ke liye:</i>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: permButtons } }
+  );
+});
 
 // /setperms — Admin: Set a permission for a user
 // Usage: /setperms <userId> <perm> <on|off>
@@ -3851,9 +4028,22 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/givemem &lt;userId&gt; &lt;1d|7d|30d&gt;\n  → User ko membership do\n\n` +
     `/removemem &lt;userId&gt;\n  → Membership revoke karo\n\n` +
     `/extendmem &lt;userId&gt; &lt;1d|7d|30d&gt;\n  → Membership extend karo (existing se aage)\n\n` +
-    `/listmem\n  → Saare active members dekho\n\n` +
+    `/listmem\n  → Saare active members dekho (naam + permissions)\n\n` +
     `/meminfo &lt;userId&gt;\n  → Kisi bhi user ka membership status\n\n` +
     `/setplan &lt;1d|7d|30d&gt; &lt;price&gt; &lt;days&gt;\n  → Plan ka price/duration update karo\n  Example: /setplan 7d 80 7` +
+    `</blockquote>\n\n` +
+    `<b>🔐 PERMISSIONS (Button UI)</b>\n` +
+    `<blockquote>` +
+    `/perms &lt;userId&gt;\n  → Interactive button toggle — tap to on/off any permission\n  Example: /perms 123456789\n\n` +
+    `/viewperms &lt;userId&gt;\n  → User ki saari permissions ek jagah dekho\n\n` +
+    `/setperms &lt;userId&gt; &lt;perm&gt; &lt;on|off&gt;\n  → Ek permission set karo (text command)\n\n` +
+    `<b>Available Permissions:</b>\n` +
+    `  • createGiveaway — Giveaway banana\n` +
+    `  • voteFree — Free vote daalna\n` +
+    `  • buyVotes — INR/Stars se votes kharidna\n` +
+    `  • createPost — Channel post banana\n` +
+    `  • forceJoin — Force Join set karna\n` +
+    `  • customPhoto — Custom giveaway photo upload karna` +
     `</blockquote>`;
 
   const part2 =
@@ -3951,17 +4141,11 @@ async function main() {
 
     try {
       await bot.setMyCommands([
-        { command: "start",      description: "🎰 Open DRS Giveaway Bot" },
-        { command: "membership", description: "👑 Get Premium Membership" },
-        { command: "support",    description: "💬 Contact Support" },
-        { command: "createpost", description: "📢 Create a channel post" }
-      ]);
-
-      await bot.setMyCommands([
         { command: "start",                description: "🎰 Open DRS Giveaway Bot" },
         { command: "membership",           description: "👑 Get Premium Membership" },
-        { command: "support",              description: "💬 Contact Support" },
+        { command: "myplan",               description: "📋 Check my membership status" },
         { command: "createpost",           description: "📢 Create a channel post" },
+        { command: "support",              description: "💬 Contact Support — @drssupport" },
         { command: "adminhelp",            description: "👑 Admin command list" },
         { command: "broadcast",            description: "📢 Silent broadcast — Users/Channels/Groups/All" },
         { command: "loud",                 description: "🔊 LOUD broadcast — Users/Channels/Groups/All" },
