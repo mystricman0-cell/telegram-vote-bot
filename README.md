@@ -1,12 +1,40 @@
+<div align="center">
+
 # 🏆 DRS Giveaway Bot — v3.0
 
-> **A full-featured, production-ready Telegram bot for managing live giveaways, voting contests, and channel growth — built for the DRS Network.**
+**A full-featured, production-ready Telegram bot for managing live giveaways, voting contests, and channel growth.**
+
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/mystricman0-cell/telegram-vote-bot)
+&nbsp;&nbsp;
+[![Run on Replit](https://replit.com/badge/github/mystricman0-cell/telegram-vote-bot)](https://replit.com/new/github/mystricman0-cell/telegram-vote-bot)
 
 ---
 
+### 🤖 Demo — Try the Live Bot
+
+<a href="https://t.me/Drsvotebot">
+  <img src="https://img.shields.io/badge/Telegram-@Drsvotebot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white" alt="Open Bot on Telegram"/>
+</a>
+
+> Click the badge above → opens [@Drsvotebot](https://t.me/Drsvotebot) directly on Telegram
+
+---
+
+### 👑 Owner & Author
+
+| | |
+|---|---|
+| **GitHub** | [@mystricman0-cell](https://github.com/mystricman0-cell) |
+| **Network** | DRS Network |
+| **Bot** | [@Drsvotebot](https://t.me/Drsvotebot) |
+
+---
+
+</div>
+
 ## ✦ Overview
 
-DRS Giveaway Bot is a premium Telegram bot that lets channel owners run **live voting giveaways** with real-time leaderboards, paid voting (INR/UPI + Telegram Stars), force-join gates, VIP memberships, and a beautiful animated UI — all backed by MongoDB for persistent data.
+DRS Giveaway Bot lets channel owners run **live voting giveaways** with real-time leaderboards, paid voting (INR/UPI + Telegram Stars), force-join gates, VIP memberships, and a beautiful animated UI — all backed by MongoDB for persistent data.
 
 ---
 
@@ -46,8 +74,8 @@ DRS Giveaway Bot is a premium Telegram bot that lets channel owners run **live v
 ### 👑 VIP Membership
 - **3 plans** — 1 Day, 7 Days, 30 Days (prices configurable by admin)
 - Purchase via **INR/UPI** (QR code) or **Telegram Stars**
-- Admin can manually grant/revoke memberships via commands
-- Membership shows **exact start date + expiry date** automatically
+- Admin can manually grant/revoke/extend memberships via commands
+- Membership shows **exact start datetime + expiry datetime + time remaining** — live, in IST
 - **VIP Features:**
   - Custom thumbnail on vote post image
   - Auto vote-deduction on channel leave 🧿
@@ -77,6 +105,7 @@ DRS Giveaway Bot is a premium Telegram bot that lets channel owners run **live v
 - `/broadcast` — send message to all users / channels / groups / everyone
 - `/givemem` — manually grant VIP to any user
 - `/revokemem` — revoke VIP from a user
+- `/extendmem` — extend existing VIP by more days
 - `/setplan` — change membership pricing
 - `/setmembershipqr` — upload QR code for INR payments
 - `/setglobal` — configure global force-join channel
@@ -96,24 +125,38 @@ DRS Giveaway Bot is a premium Telegram bot that lets channel owners run **live v
 
 ---
 
-## 🚀 Setup
+## 🚀 Deploy
 
-### 1. Required Secrets
+### Option 1 — Railway (Recommended)
 
-| Secret | Description |
-|---|---|
-| `TELEGRAM_BOT_TOKEN` | Your bot token from [@BotFather](https://t.me/BotFather) |
-| `ADMIN_ID` | Your numeric Telegram user ID |
-| `MONGODB_URI` | MongoDB Atlas connection string |
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/new/template?template=https://github.com/mystricman0-cell/telegram-vote-bot)
 
-### 2. Install & Run
+1. Click **Deploy on Railway**
+2. Set environment variables: `TELEGRAM_BOT_TOKEN`, `ADMIN_ID`, `MONGODB_URI`
+3. Done — Railway handles hosting automatically
+
+### Option 2 — Replit
+
+[![Run on Replit](https://replit.com/badge/github/mystricman0-cell/telegram-vote-bot)](https://replit.com/new/github/mystricman0-cell/telegram-vote-bot)
+
+1. Click **Run on Replit**
+2. Go to **Secrets** tab and add `TELEGRAM_BOT_TOKEN`, `ADMIN_ID`, `MONGODB_URI`
+3. Hit **Run**
+
+### Option 3 — Manual / VPS
 
 ```bash
+git clone https://github.com/mystricman0-cell/telegram-vote-bot.git
+cd telegram-vote-bot
 npm install
-npm start
+TELEGRAM_BOT_TOKEN=xxx ADMIN_ID=xxx MONGODB_URI=xxx npm start
 ```
 
-### 3. First-Time Configuration
+---
+
+## ⚙️ First-Time Configuration
+
+After deploying, send these commands to your bot:
 
 ```
 /setmembershipqr     — Upload your UPI QR code image
@@ -122,7 +165,7 @@ npm start
 /setplan 30d 150     — Set 30-day plan price to ₹150
 ```
 
-Then add the bot as **Admin** to your channel — it registers automatically.
+Then add the bot as **Admin** to your Telegram channel — it registers automatically.
 
 ---
 
@@ -147,22 +190,23 @@ Then add the bot as **Admin** to your channel — it registers automatically.
 | `/membership` | View / purchase VIP membership |
 
 ### Admin Commands
-| Command | Description |
-|---|---|
-| `/stats` | Bot usage statistics |
-| `/broadcast` | Mass message to users / channels / groups |
-| `/givemem <id> <1d\|7d\|30d>` | Grant VIP membership to a user |
-| `/revokemem <id>` | Revoke VIP membership |
-| `/setplan <plan> <price>` | Update membership pricing |
-| `/setmembershipqr` | Upload UPI payment QR code |
-| `/setglobal <channel_id>` | Set global force-join channel |
-| `/removeglobal` | Remove global force-join |
-| `/setforcejoin <channel_id>` | Configure force-join system |
-| `/setwelcomeimageurl <url>` | Set welcome spoiler image URL |
-| `/cleandb` | Remove giveaway data older than 30 days |
-| `/vip30` | Grant yourself instant 30-day VIP |
-| `/listusers` | List all bot users |
-| `/listchannels` | List registered channels and groups |
+| Command | Usage | Description |
+|---|---|---|
+| `/stats` | `/stats` | Bot usage statistics |
+| `/broadcast` | `/broadcast` | Mass message to users / channels / groups |
+| `/givemem` | `/givemem <id> <1d\|7d\|30d>` | Grant VIP membership |
+| `/extendmem` | `/extendmem <id> <1d\|7d\|30d>` | Extend existing VIP membership |
+| `/revokemem` | `/revokemem <id>` | Revoke VIP membership |
+| `/setplan` | `/setplan <plan> <price>` | Update membership pricing |
+| `/setmembershipqr` | `/setmembershipqr` | Upload UPI payment QR code |
+| `/setglobal` | `/setglobal <channel_id>` | Set global force-join channel |
+| `/removeglobal` | `/removeglobal` | Remove global force-join |
+| `/setforcejoin` | `/setforcejoin <channel_id>` | Configure force-join system |
+| `/setwelcomeimageurl` | `/setwelcomeimageurl <url>` | Set welcome spoiler image URL |
+| `/cleandb` | `/cleandb` | Remove giveaway data older than 30 days |
+| `/vip30` | `/vip30` | Grant yourself instant 30-day VIP |
+| `/listusers` | `/listusers` | List all bot users |
+| `/listchannels` | `/listchannels` | List registered channels and groups |
 
 ---
 
@@ -173,7 +217,7 @@ vote-bot.mjs
 ├── Mongoose Schemas      — Giveaway, Channel, Vip, Payment, BotConfig, BotUser
 ├── In-Memory Maps        — Fast access: giveaways, vipUsers, channels, pendingPayments
 ├── Animation Functions   — animLoading, animFresh, animCreate, animVote, animLeaderboard
-├── Core Helpers          — safeFormatDate, getMembership, formatLeaderboard, parseIST
+├── Core Helpers          — safeFormatDateTime, timeRemaining, getMembership, formatLeaderboard
 ├── Bot Commands          — /start, /membership, /stats, /broadcast, /givemem, etc.
 ├── Callback Handlers     — all inline button actions
 ├── Message Handlers      — state machine for multi-step flows
@@ -184,6 +228,30 @@ vote-bot.mjs
 
 ---
 
-## ✦ DRS NETWORK
+## 🍴 Fork & Customize
 
-> Built with ❤️ for the DRS Network community.
+```bash
+# 1. Fork this repo on GitHub
+# 2. Clone your fork
+git clone https://github.com/YOUR_USERNAME/telegram-vote-bot.git
+cd telegram-vote-bot
+
+# 3. Install dependencies
+npm install
+
+# 4. Set your secrets and run
+npm start
+```
+
+All bot logic lives in a single file — `vote-bot.mjs` — making it easy to customize.
+
+---
+
+<div align="center">
+
+**✦ ─── Built with ❤️ for the DRS Network ─── ✦**
+
+[![Telegram](https://img.shields.io/badge/Bot-@Drsvotebot-2CA5E0?style=flat&logo=telegram)](https://t.me/Drsvotebot)
+[![GitHub](https://img.shields.io/badge/Owner-mystricman0--cell-181717?style=flat&logo=github)](https://github.com/mystricman0-cell)
+
+</div>

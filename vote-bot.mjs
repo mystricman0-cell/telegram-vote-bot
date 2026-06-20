@@ -632,12 +632,34 @@ function safeFormatDate(d) {
   return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
 }
 
+function safeFormatDateTime(d) {
+  if (!d) return "∞";
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return "∞";
+  return date.toLocaleString("en-IN", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: true,
+    timeZone: "Asia/Kolkata"
+  }).replace(",", " ·") + " IST";
+}
+
+function timeRemaining(expiry) {
+  if (!expiry) return "";
+  const ms = new Date(expiry).getTime() - Date.now();
+  if (ms <= 0) return "⛔ Expired";
+  const days = Math.floor(ms / 86400000);
+  const hours = Math.floor((ms % 86400000) / 3600000);
+  const mins = Math.floor((ms % 3600000) / 60000);
+  if (days > 0) return `${days}d ${hours}h ${mins}m baki`;
+  if (hours > 0) return `${hours}h ${mins}m baki`;
+  return `${mins}m baki`;
+}
+
 function membershipBadge(uid) {
   const m = getMembership(uid);
   if (!m) return "❌ Inactive";
-  const expStr = safeFormatDate(m.expiry);
-  const startStr = safeFormatDate(m.startedAt);
-  return `◈ Active (${m.plan || "VIP"} · started ${startStr} · expires ${expStr})`;
+  const rem = timeRemaining(m.expiry);
+  return `◈ Active (${m.plan || "VIP"} · ⏱️ ${rem})`;
 }
 
 async function isMember(chatId, userId) {
@@ -1920,7 +1942,7 @@ bot.on("callback_query", async (query) => {
       `   ${badge}\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       (m
-        ? `<blockquote>✅ <b>You are a VIP Member!</b>\n📅 Started: <b>${safeFormatDate(m.startedAt)}</b>\n⏳ Expires: <b>${safeFormatDate(m.expiry)}</b></blockquote>\n\n`
+        ? `<blockquote>✅ <b>You are a VIP Member!</b>\n\n📅 <b>Shuru:</b>  ${safeFormatDateTime(m.startedAt)}\n⏳ <b>Khatam:</b> ${safeFormatDateTime(m.expiry)}\n⏱️ <b>Baki:</b>   ${timeRemaining(m.expiry)}</blockquote>\n\n`
         : `<blockquote>🔓 Upgrade now to unlock full power of DRS Bot!</blockquote>\n\n`) +
       `━━━◈ <b>PREMIUM FEATURES</b> ◈━━━\n\n` +
       `<blockquote>` +
@@ -2110,14 +2132,17 @@ bot.on("callback_query", async (query) => {
       `◈ User    ▸  <b>${appu?.firstName ? h(appu.firstName) : "Unknown"}</b>${appu?.username ? ` (@${appu.username})` : ""}\n` +
       `◈ User ID ▸  <code>${pending.userId}</code>\n` +
       `◈ Plan    ▸  <b>${plan.label}</b>\n` +
-      `◈ Expiry  ▸  ${safeFormatDate(expiry)}` +
+      `◈ Shuru  ▸  ${safeFormatDateTime(new Date())}\n` +
+      `◈ Khatam ▸  ${safeFormatDateTime(expiry)}` +
       `</blockquote>`
     );
     try {
       await bot.sendMessage(pending.userId,
         `<b>🎊 Membership Activated!</b>\n\n` +
         `⭐ Plan: <b>${plan.label}</b>\n` +
-        `📅 Expires: <b>${safeFormatDate(expiry)}</b>\n\n` +
+        `📅 Shuru:  <b>${safeFormatDateTime(new Date())}</b>\n` +
+        `⏳ Khatam: <b>${safeFormatDateTime(expiry)}</b>\n` +
+        `⏱️ Baki:   <b>${timeRemaining(expiry)}</b>\n\n` +
         `Premium features ab available hain!`,
         { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 My Membership", callback_data: "vip_membership" }]] } }
       );
@@ -3369,7 +3394,7 @@ bot.on("message", async (msg) => {
     vipUsers.set(userId, vipData);
     await saveVip(userId, vipData);
     await bot.sendMessage(chatId,
-      `<b>👑 VIP Activated!</b>\n\n📅 Started: <b>${safeFormatDate(new Date())}</b>\n⏳ Expires: <b>${safeFormatDate(expiry)}</b>`,
+      `<b>👑 VIP Activated!</b>\n\n📅 Shuru:  <b>${safeFormatDateTime(new Date())}</b>\n⏳ Khatam: <b>${safeFormatDateTime(expiry)}</b>\n⏱️ Baki:   <b>${timeRemaining(expiry)}</b>`,
       { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
     );
     return;
@@ -3928,8 +3953,9 @@ bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
     `<blockquote>` +
     `◈ User ID  ▸  <code>${targetId}</code>\n` +
     `◈ Plan     ▸  <b>${plan.label}</b>\n` +
-    `◈ Started  ▸  ${safeFormatDate(new Date())}\n` +
-    `◈ Expiry   ▸  ${safeFormatDate(expiry)}\n` +
+    `◈ Shuru  ▸  ${safeFormatDateTime(new Date())}\n` +
+    `◈ Khatam ▸  ${safeFormatDateTime(expiry)}\n` +
+    `◈ Baki   ▸  ${timeRemaining(expiry)}\n` +
     `◈ Access   ▸  Giveaway + Channel Post + Force Join` +
     `</blockquote>`,
     { parse_mode: "HTML" }
@@ -3941,7 +3967,9 @@ bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
       `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
       `<blockquote>` +
       `◈ Plan    ▸  <b>${plan.label}</b>\n` +
-      `◈ Expiry  ▸  <b>${expiry.toLocaleDateString("en-IN")}</b>\n\n` +
+      `◈ Shuru  ▸  <b>${safeFormatDateTime(new Date())}</b>\n` +
+      `◈ Khatam ▸  <b>${safeFormatDateTime(expiry)}</b>\n` +
+      `◈ Baki   ▸  <b>${timeRemaining(expiry)}</b>\n\n` +
       `━━━◈ <b>YOUR FEATURES</b> ◈━━━\n\n` +
       `🎁 Create giveaways\n` +
       `📢 Post giveaway image in your channel\n` +
@@ -4002,7 +4030,8 @@ bot.onText(/\/extendmem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
     `<blockquote>` +
     `◈ User ID    ▸  <code>${targetId}</code>\n` +
     `◈ Added      ▸  +${plan.days} days\n` +
-    `◈ New Expiry ▸  <b>${expiry.toLocaleDateString("en-IN")}</b>` +
+    `◈ Naya Khatam ▸  <b>${safeFormatDateTime(expiry)}</b>\n` +
+    `◈ Baki        ▸  <b>${timeRemaining(expiry)}</b>` +
     `</blockquote>`,
     { parse_mode: "HTML" }
   );
@@ -4011,7 +4040,7 @@ bot.onText(/\/extendmem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
       `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
       `  ⏰  <b>MEMBERSHIP EXTENDED!</b>\n` +
       `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
-      `<blockquote>◈ Added     ▸  +${plan.days} days\n◈ New Expiry ▸  <b>${expiry.toLocaleDateString("en-IN")}</b></blockquote>`,
+      `<blockquote>◈ Badha    ▸  +${plan.days} days\n◈ Khatam   ▸  <b>${safeFormatDateTime(expiry)}</b>\n◈ Baki     ▸  <b>${timeRemaining(expiry)}</b></blockquote>`,
       { parse_mode: "HTML" }
     );
   } catch {}
