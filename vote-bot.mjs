@@ -1837,16 +1837,30 @@ bot.on("callback_query", async (query) => {
     const payId = data.split(":")[1];
     const pending = pendingMembershipPayments.get(payId);
     if (!pending) {
-      await bot.answerCallbackQuery(query.id, { text: "Payment already processed ya expired.", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Payment session expired. Dobara try karo.", show_alert: true });
       return;
     }
     const plan = getMembershipPlan(pending.planKey);
-    await bot.answerCallbackQuery(query.id, { text: "📸 Screenshot bhejo!", show_alert: true });
-    await bot.editMessageCaption(
-      `💳 <b>Purchase ${plan?.label} Membership</b>\n\n🧾 <b>Amount: ₹${plan?.price}</b>\n\n📸 <b>Payment ID: <code>${payId}</code></b>\n\nAbhi payment ka <b>screenshot bhejo</b> (photo as image, file nahi).`,
-      { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+    await bot.answerCallbackQuery(query.id, { text: "✅ Ab screenshot bhejo!" });
+    // Remove the buttons from the QR message
+    await bot.editMessageReplyMarkup(
+      { inline_keyboard: [] },
+      { chat_id: chatId, message_id: msgId }
     ).catch(() => {});
+    // Set state BEFORE sending the prompt message
     userState.set(userId, { step: "awaiting_membership_screenshot", payId });
+    // Send a clear new message asking for screenshot
+    await bot.sendMessage(chatId,
+      `📸 <b>Screenshot Bhejo</b>\n\n` +
+      `<blockquote>` +
+      `◈ Plan    ▸  <b>${plan?.label || pending.planKey}</b>\n` +
+      `◈ Amount  ▸  <b>₹${plan?.price || "?"}</b>\n` +
+      `◈ Pay ID  ▸  <code>${payId}</code>` +
+      `</blockquote>\n\n` +
+      `Payment ka screenshot <b>photo ke roop mein</b> bhejo (file nahi).\n` +
+      `Admin verify karega aur membership activate kar dega. ✅`,
+      { parse_mode: "HTML" }
+    );
     return;
   }
 
