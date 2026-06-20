@@ -1043,7 +1043,6 @@ bot.on("callback_query", async (query) => {
   let msgId = query.message.message_id;
   const userId = query.from.id;
   const data = query.data;
-  await bot.answerCallbackQuery(query.id).catch(() => {});
 
   // Only delete welcome photo in PRIVATE chats (not channel vote cards)
   const isPhoto = !!(query.message.photo?.length);
@@ -1111,7 +1110,7 @@ bot.on("callback_query", async (query) => {
     }
     const state = userState.get(userId);
     if (!state || state.step !== "broadcast_pending") {
-      await bot.answerCallbackQuery(query.id, { text: "❌ Broadcast session expired. Use /broadcast again.", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Broadcast session expired. Use /broadcast again.", show_alert: true }).catch(() => {});
       return;
     }
     userState.delete(userId);
@@ -1282,7 +1281,7 @@ bot.on("callback_query", async (query) => {
     const g = getGiveaway(gId);
     if (!g || g.creatorId !== userId) return;
     if (!isVip(userId) && !isAdmin(userId)) {
-      await bot.answerCallbackQuery(query.id, { text: "👑 VIP Membership required for this feature!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "👑 VIP Membership required for this feature!", show_alert: true }).catch(() => {});
       return;
     }
     userState.set(userId, { step: "set_giveaway_fj", gId, msgId });
@@ -1309,7 +1308,7 @@ bot.on("callback_query", async (query) => {
     if (!g || g.creatorId !== userId) return;
     g.extraForceJoin = null;
     await saveGiveaway(g);
-    await bot.answerCallbackQuery(query.id, { text: "✅ Force join channel remove ho gaya!" });
+    await bot.answerCallbackQuery(query.id, { text: "✅ Force join channel remove ho gaya!" }).catch(() => {});
     await bot.editMessageReplyMarkup(mgmtKeyboard(gId, g, true), { chat_id: chatId, message_id: msgId }).catch(() => {});
     return;
   }
@@ -1339,9 +1338,9 @@ bot.on("callback_query", async (query) => {
   if (data.startsWith("topvoters:")) {
     const gId = data.split(":")[1];
     const g = getGiveaway(gId);
-    if (!g) { await bot.answerCallbackQuery(query.id, { text: "❌ Giveaway not found!", show_alert: true }); return; }
+    if (!g) { await bot.answerCallbackQuery(query.id, { text: "❌ Giveaway not found!", show_alert: true }).catch(() => {}); return; }
     if (g.creatorId !== userId && !isAdmin(userId)) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ Only the giveaway creator can view this!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Only the giveaway creator can view this!", show_alert: true }).catch(() => {});
       return;
     }
     const parts = [...g.participants.values()].sort((a, b) => b.votes - a.votes);
@@ -1376,13 +1375,13 @@ bot.on("callback_query", async (query) => {
     const g = getGiveaway(gId);
     if (!g) return;
     if (g.creatorId !== userId && !isAdmin(userId)) {
-      await bot.answerCallbackQuery(query.id, { text: "Sirf creator kar sakta hai!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "Sirf creator kar sakta hai!", show_alert: true }).catch(() => {});
       return;
     }
     g.paidVotesActive = !g.paidVotesActive;
     await saveGiveaway(g);
     await bot.editMessageReplyMarkup(mgmtKeyboard(gId, g), { chat_id: chatId, message_id: msgId }).catch(() => {});
-    await bot.answerCallbackQuery(query.id, { text: `Paid votes ${g.paidVotesActive ? "ON" : "OFF"}!` });
+    await bot.answerCallbackQuery(query.id, { text: `Paid votes ${g.paidVotesActive ? "ON" : "OFF"}!` }).catch(() => {});
     return;
   }
 
@@ -1392,13 +1391,13 @@ bot.on("callback_query", async (query) => {
     const g = getGiveaway(gId);
     if (!g) return;
     if (g.creatorId !== userId && !isAdmin(userId)) {
-      await bot.answerCallbackQuery(query.id, { text: "Sirf creator kar sakta hai!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "Sirf creator kar sakta hai!", show_alert: true }).catch(() => {});
       return;
     }
     g.participationOpen = !g.participationOpen;
     await saveGiveaway(g);
     await bot.editMessageReplyMarkup(mgmtKeyboard(gId, g), { chat_id: chatId, message_id: msgId }).catch(() => {});
-    await bot.answerCallbackQuery(query.id, { text: `Participation ${g.participationOpen ? "OPEN" : "CLOSED"}!` });
+    await bot.answerCallbackQuery(query.id, { text: `Participation ${g.participationOpen ? "OPEN" : "CLOSED"}!` }).catch(() => {});
     return;
   }
 
@@ -1408,7 +1407,7 @@ bot.on("callback_query", async (query) => {
     const g = getGiveaway(gId);
     if (!g) return;
     if (g.creatorId !== userId && !isAdmin(userId)) {
-      await bot.answerCallbackQuery(query.id, { text: "Sirf creator kar sakta hai!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "Sirf creator kar sakta hai!", show_alert: true }).catch(() => {});
       return;
     }
     g.active = false; g.participationOpen = false; g.paidVotesActive = false;
@@ -1458,7 +1457,7 @@ bot.on("callback_query", async (query) => {
     const g = getGiveaway(gId);
     if (!g || !g.channelId) return;
     if (g.creatorId !== userId && !isAdmin(userId)) {
-      await bot.answerCallbackQuery(query.id, { text: "Sirf creator kar sakta hai!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "Sirf creator kar sakta hai!", show_alert: true }).catch(() => {});
       return;
     }
     let cleared = 0;
@@ -1469,7 +1468,7 @@ bot.on("callback_query", async (query) => {
       }
     }
     await saveGiveaway(g);
-    await bot.answerCallbackQuery(query.id, { text: `${cleared} posts delete kiye!`, show_alert: true });
+    await bot.answerCallbackQuery(query.id, { text: `${cleared} posts delete kiye!`, show_alert: true }).catch(() => {});
     return;
   }
 
@@ -1479,7 +1478,7 @@ bot.on("callback_query", async (query) => {
     const g = getGiveaway(gId);
     if (!g) return;
     if (!g.participationOpen) {
-      await bot.answerCallbackQuery(query.id, { text: "Participation band hai!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "Participation band hai!", show_alert: true }).catch(() => {});
       return;
     }
 
@@ -1489,7 +1488,7 @@ bot.on("callback_query", async (query) => {
       const chLink = existing.channelMsgId && g.channelId
         ? `https://t.me/c/${String(g.channelId).replace("-100", "")}/${existing.channelMsgId}`
         : null;
-      await bot.answerCallbackQuery(query.id, { text: "You are already a participant in this giveaway!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "You are already a participant in this giveaway!", show_alert: true }).catch(() => {});
       await bot.editMessageText(
         `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
         `  ◆  <b>ALREADY JOINED</b>  ◆\n` +
@@ -1727,7 +1726,7 @@ bot.on("callback_query", async (query) => {
     const g = getGiveaway(gId);
     if (!g) return;
     if (!g.paidVotesActive) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ Paid votes are not available for this giveaway.", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Paid votes are not available for this giveaway.", show_alert: true }).catch(() => {});
       return;
     }
 
@@ -1759,7 +1758,7 @@ bot.on("callback_query", async (query) => {
     const gId = data.split(":")[1];
     const g = getGiveaway(gId);
     if (!g?.qrFileId) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ INR payment is not set up for this giveaway!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ INR payment is not set up for this giveaway!", show_alert: true }).catch(() => {});
       return;
     }
     userState.set(userId, { step: "awaiting_inr_screenshot", giveawayId: gId });
@@ -1787,7 +1786,7 @@ bot.on("callback_query", async (query) => {
     if (!g) return;
     const participant = g.participants.get(userId);
     if (!participant) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ You must join the giveaway first!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ You must join the giveaway first!", show_alert: true }).catch(() => {});
       return;
     }
     try {
@@ -1929,7 +1928,7 @@ bot.on("callback_query", async (query) => {
       await bot.answerCallbackQuery(query.id, {
         text: "❌ Payment QR is not configured yet. Please contact admin.",
         show_alert: true
-      });
+      }).catch(() => {});
       return;
     }
 
@@ -1941,7 +1940,7 @@ bot.on("callback_query", async (query) => {
     } catch (e) {
       console.error("PendingMembership create error:", e.message);
       pendingMembershipPayments.delete(payId);
-      await bot.answerCallbackQuery(query.id, { text: "❌ Server error. Please try again.", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Server error. Please try again.", show_alert: true }).catch(() => {});
       return;
     }
 
@@ -1974,11 +1973,11 @@ bot.on("callback_query", async (query) => {
     const payId = data.split(":")[1];
     const pending = pendingMembershipPayments.get(payId);
     if (!pending) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ Payment session expired. Please try again.", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Payment session expired. Please try again.", show_alert: true }).catch(() => {});
       return;
     }
     const plan = getMembershipPlan(pending.planKey);
-    await bot.answerCallbackQuery(query.id, { text: "✅ Now send your screenshot!" });
+    await bot.answerCallbackQuery(query.id, { text: "✅ Now send your screenshot!" }).catch(() => {});
     // Remove the buttons from the QR message
     await bot.editMessageReplyMarkup(
       { inline_keyboard: [] },
@@ -2057,12 +2056,12 @@ bot.on("callback_query", async (query) => {
     const payId = data.split(":")[1];
     const pending = pendingMembershipPayments.get(payId);
     if (!pending) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ Payment not found or already processed.", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Payment not found or already processed.", show_alert: true }).catch(() => {});
       return;
     }
     const plan = getMembershipPlan(pending.planKey);
     if (!plan) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ Plan configuration not found. Contact admin.", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Plan configuration not found. Contact admin.", show_alert: true }).catch(() => {});
       return;
     }
     pendingMembershipPayments.delete(payId);
@@ -2074,7 +2073,7 @@ bot.on("callback_query", async (query) => {
     vipUsers.set(pending.userId, vipData);
     await saveVip(pending.userId, vipData);
 
-    await bot.answerCallbackQuery(query.id, { text: `✅ Membership approved — ${plan.label}!` });
+    await bot.answerCallbackQuery(query.id, { text: `✅ Membership approved — ${plan.label}!` }).catch(() => {});
     await bot.editMessageText(
       `✅ <b>Membership Approved!</b>\nPayment ID: <code>${payId}</code> | Plan: ${plan.label} | User: <code>${pending.userId}</code>`,
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
@@ -2109,7 +2108,7 @@ bot.on("callback_query", async (query) => {
     if (!pending) return;
     pendingMembershipPayments.delete(payId);
     await PendingMembershipModel.deleteOne({ payId });
-    await bot.answerCallbackQuery(query.id, { text: "Payment rejected." });
+    await bot.answerCallbackQuery(query.id, { text: "Payment rejected." }).catch(() => {});
     await bot.editMessageText(
       `❌ <b>Membership Rejected</b>\nPayment ID: <code>${payId}</code>`,
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
@@ -2136,7 +2135,7 @@ bot.on("callback_query", async (query) => {
   if (data === "skip_custom_photo") {
     const st = userState.get(userId);
     if (st?.step === "giveaway_custom_photo") {
-      await bot.answerCallbackQuery(query.id, { text: "Default image use hogi." });
+      await bot.answerCallbackQuery(query.id, { text: "Default image use hogi." }).catch(() => {});
       await finishGiveawayCreation(userId, chatId, st.qrFileId);
     }
     return;
@@ -2151,7 +2150,7 @@ bot.on("callback_query", async (query) => {
     if (!VALID_PERMS[perm]) return;
     const v = vipUsers.get(targetId);
     if (!v) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ VIP record not found for this user.", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ VIP record not found for this user.", show_alert: true }).catch(() => {});
       return;
     }
     const current = getUserPerm(targetId, perm);
@@ -2160,7 +2159,7 @@ bot.on("callback_query", async (query) => {
     const updated = { ...v, perms: newPerms };
     vipUsers.set(targetId, updated);
     await saveVip(targetId, updated);
-    await bot.answerCallbackQuery(query.id, { text: `${VALID_PERMS[perm]}: ${newVal ? "✅ ON" : "❌ OFF"}` });
+    await bot.answerCallbackQuery(query.id, { text: `${VALID_PERMS[perm]}: ${newVal ? "✅ ON" : "❌ OFF"}` }).catch(() => {});
 
     // Rebuild the permissions keyboard and update message
     const bu = botUsers.get(targetId);
@@ -2197,7 +2196,7 @@ bot.on("callback_query", async (query) => {
     const updated = { ...v, perms: {} };
     vipUsers.set(targetId, updated);
     await saveVip(targetId, updated);
-    await bot.answerCallbackQuery(query.id, { text: "✅ All permissions reset (all enabled)." });
+    await bot.answerCallbackQuery(query.id, { text: "✅ All permissions reset (all enabled)." }).catch(() => {});
 
     const bu = botUsers.get(targetId);
     const buName = bu?.firstName ? h(bu.firstName) : `User ${targetId}`;
@@ -2266,7 +2265,7 @@ bot.on("callback_query", async (query) => {
     const ch = registeredChannels.get(chId);
     if (!ch) return;
     if (ch.addedBy !== userId && !isAdmin(userId)) {
-      await bot.answerCallbackQuery(query.id, { text: "Access denied!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "Access denied!", show_alert: true }).catch(() => {});
       return;
     }
     userState.set(userId, { step: "cp_compose", channelId: chId, channelTitle: ch.title, channelUsername: ch.username || null });
@@ -2418,10 +2417,10 @@ bot.on("callback_query", async (query) => {
     const payId = data.split(":")[1];
     const payment = pendingPayments.get(payId);
     if (!payment) {
-      return bot.answerCallbackQuery(query.id, { text: "❌ Payment record not found!", show_alert: true });
+      return bot.answerCallbackQuery(query.id, { text: "❌ Payment record not found!", show_alert: true }).catch(() => {});
     }
     userState.set(userId, { step: "approve_votes", paymentId: payId });
-    await bot.answerCallbackQuery(query.id);
+    await bot.answerCallbackQuery(query.id).catch(() => {});
     await bot.sendMessage(MAIN_ADMIN_ID,
       `How many votes to add for user <code>${payment.userId}</code>? (send a number)`,
       { parse_mode: "HTML" }
@@ -2437,7 +2436,7 @@ bot.on("callback_query", async (query) => {
     if (!payment) return;
     pendingPayments.delete(payId);
     await PendingPaymentModel.deleteOne({ payId });
-    await bot.answerCallbackQuery(query.id, { text: "Payment rejected!" });
+    await bot.answerCallbackQuery(query.id, { text: "Payment rejected!" }).catch(() => {});
     await bot.editMessageCaption(
       `❌ Payment Rejected — ID: ${payId}`,
       { chat_id: chatId, message_id: msgId }
