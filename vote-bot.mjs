@@ -70,6 +70,7 @@ const pendingMembershipSchema = new mongoose.Schema({
   payId: { type: String, required: true, unique: true },
   userId: Number,
   planKey: String,
+  screenshotFileId: String,
   timestamp: { type: Date, default: Date.now }
 });
 
@@ -110,6 +111,11 @@ let membershipPayCounter = 1;
 let welcomeImageUrl = null;
 let membershipQrFileId = null;
 let forceJoinChannels = [];
+let membershipPlans = {
+  "1d": { label: "1 Day", days: 1, price: 10 },
+  "7d": { label: "7 Days", days: 7, price: 50 },
+  "30d": { label: "30 Days", days: 30, price: 350 }
+};
 
 // Default giveaway / channel post image (attached to all channel posts)
 const GIVEAWAY_IMAGE_URL = "https://files.catbox.moe/72s3dg.jpg";
@@ -197,7 +203,7 @@ async function loadStateFromDB() {
   const allMemPending = await PendingMembershipModel.find({});
   for (const m of allMemPending) {
     pendingMembershipPayments.set(m.payId, {
-      userId: m.userId, planKey: m.planKey, timestamp: m.timestamp
+      userId: m.userId, planKey: m.planKey, screenshotFileId: m.screenshotFileId || null, timestamp: m.timestamp
     });
   }
   membershipPayCounter = allMemPending.length + 1;
@@ -208,6 +214,9 @@ async function loadStateFromDB() {
 
   const qrConfig = await BotConfigModel.findOne({ key: "membershipQrFileId" });
   if (qrConfig) membershipQrFileId = qrConfig.value;
+
+  const plansConfig = await BotConfigModel.findOne({ key: "membershipPlans" });
+  if (plansConfig) membershipPlans = plansConfig.value;
 
   // Always base force join on hardcoded defaults (links/labels from code)
   // Only IDs are persisted in MongoDB (via /setforcejoin)
@@ -482,14 +491,29 @@ async function animLeaderboard(chatId, msgId, finalText, opts = {}) {
 }
 
 // ============================================================
-// MEMBERSHIP PLANS
+// MEMBERSHIP PLANS — loaded from DB, editable via /setplan
 // ============================================================
 
-const MEMBERSHIP_PLANS = {
-  "1d": { label: "1 Day", days: 1, price: 10 },
-  "7d": { label: "7 Days", days: 7, price: 50 },
-  "30d": { label: "30 Days", days: 30, price: 350 }
-};
+function getMembershipPlan(key) { return membershipPlans[key] || null; }
+
+function buildPlanButtons() {
+  return [
+    [
+      { text: `1D - ₹${membershipPlans["1d"].price}`, callback_data: "buy_mem:1d" },
+      { text: `7D - ₹${membershipPlans["7d"].price}`, callback_data: "buy_mem:7d" }
+    ],
+    [{ text: `30D - ₹${membershipPlans["30d"].price}`, callback_data: "buy_mem:30d" }],
+    [{ text: "◀️ Back", callback_data: "main_menu" }]
+  ];
+}
+
+function buildPlansText() {
+  return (
+    `💳 1 Day   ▸  ₹${membershipPlans["1d"].price}\n` +
+    `💳 7 Days  ▸  ₹${membershipPlans["7d"].price}\n` +
+    `💎 30 Days ▸  ₹${membershipPlans["30d"].price}`
+  );
+}
 
 // ============================================================
 // HELPERS
@@ -1753,21 +1777,13 @@ bot.on("callback_query", async (query) => {
       `</blockquote>\n\n` +
       `━━━◈ <b>PLANS</b> ◈━━━\n\n` +
       `<blockquote>` +
-      `💳 1 Day   ▸  ₹10\n` +
-      `💳 7 Days  ▸  ₹50\n` +
-      `💎 30 Days ▸  ₹350` +
+      buildPlansText() +
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
 
     const kb = m
       ? { inline_keyboard: [[{ text: "◀️ Back", callback_data: "main_menu" }]] }
-      : {
-          inline_keyboard: [
-            [{ text: "1D - ₹10", callback_data: "buy_mem:1d" }, { text: "7D - ₹50", callback_data: "buy_mem:7d" }],
-            [{ text: "30D - ₹350", callback_data: "buy_mem:30d" }],
-            [{ text: "◀️ Back", callback_data: "main_menu" }]
-          ]
-        };
+      : { inline_keyboard: buildPlanButtons() };
 
     await replyToCallback(chatId, msgId, featuresText, { reply_markup: kb });
     return;
@@ -1776,7 +1792,7 @@ bot.on("callback_query", async (query) => {
   // ─── Buy Membership (INR plan) ───
   if (data.startsWith("buy_mem:")) {
     const planKey = data.split(":")[1];
-    const plan = MEMBERSHIP_PLANS[planKey];
+    const plan = getMembershipPlan(planKey);
     if (!plan) return;
 
     if (!membershipQrFileId) {
@@ -1816,7 +1832,7 @@ bot.on("callback_query", async (query) => {
     return;
   }
 
-  // ─── I've Paid (Membership) ───
+  // ─── I've Paid (Membership) — ask for screenshot ───
   if (data.startsWith("mem_paid:")) {
     const payId = data.split(":")[1];
     const pending = pendingMembershipPayments.get(payId);
@@ -1824,38 +1840,13 @@ bot.on("callback_query", async (query) => {
       await bot.answerCallbackQuery(query.id, { text: "Payment already processed ya expired.", show_alert: true });
       return;
     }
-    const plan = MEMBERSHIP_PLANS[pending.planKey];
-    await bot.answerCallbackQuery(query.id, { text: "✅ Request bhej di! Admin verify karega.", show_alert: true });
+    const plan = getMembershipPlan(pending.planKey);
+    await bot.answerCallbackQuery(query.id, { text: "📸 Screenshot bhejo!", show_alert: true });
     await bot.editMessageCaption(
-      `💳 <b>Purchase ${plan?.label} Membership</b>\n\n🧾 <b>Amount: ₹${plan?.price}</b>\n\n⏳ <i>Admin verification pending...</i>\nPayment ID: <code>${payId}</code>`,
+      `💳 <b>Purchase ${plan?.label} Membership</b>\n\n🧾 <b>Amount: ₹${plan?.price}</b>\n\n📸 <b>Payment ID: <code>${payId}</code></b>\n\nAbhi payment ka <b>screenshot bhejo</b> (photo as image, file nahi).`,
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
     ).catch(() => {});
-
-    try {
-      const claimantName = h(query.from.first_name || "");
-      const claimantUser = query.from.username ? `@${query.from.username}` : `ID: ${userId}`;
-      await bot.sendMessage(MAIN_ADMIN_ID,
-        `<b>💳 New Membership Payment Claim</b>\n\n` +
-        `<blockquote>` +
-        `◈ Name      ▸  <b>${claimantName}</b> (${claimantUser})\n` +
-        `◈ User ID   ▸  <code>${userId}</code>\n` +
-        `◈ Plan      ▸  <b>${plan?.label} — ₹${plan?.price}</b>\n` +
-        `◈ Pay ID    ▸  <code>${payId}</code>` +
-        `</blockquote>\n\n` +
-        `User ne payment claim ki hai. Approve karein?`,
-        {
-          parse_mode: "HTML",
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "✅ Approve", callback_data: `approve_mem:${payId}` },
-                { text: "❌ Reject", callback_data: `reject_mem:${payId}` }
-              ]
-            ]
-          }
-        }
-      );
-    } catch (e) { console.error("Admin mem notify:", e.message); }
+    userState.set(userId, { step: "awaiting_membership_screenshot", payId });
     return;
   }
 
@@ -1868,7 +1859,7 @@ bot.on("callback_query", async (query) => {
       await bot.answerCallbackQuery(query.id, { text: "Payment nahi mila ya already processed.", show_alert: true });
       return;
     }
-    const plan = MEMBERSHIP_PLANS[pending.planKey];
+    const plan = getMembershipPlan(pending.planKey);
     pendingMembershipPayments.delete(payId);
     await PendingMembershipModel.deleteOne({ payId });
 
@@ -2667,6 +2658,51 @@ bot.on("message", async (msg) => {
       return;
     }
 
+    if (state.step === "awaiting_membership_screenshot") {
+      const payId = state.payId;
+      const pending = pendingMembershipPayments.get(payId);
+      if (!pending) {
+        userState.delete(userId);
+        await bot.sendMessage(chatId, "❌ Payment session expired. Dobara try karo.", { parse_mode: "HTML" });
+        return;
+      }
+      pending.screenshotFileId = fileId;
+      await PendingMembershipModel.findOneAndUpdate({ payId }, { screenshotFileId: fileId });
+      userState.delete(userId);
+
+      await bot.sendMessage(chatId,
+        `✅ <b>Screenshot Received!</b>\n\nAdmin verify karega. Approve hone ke baad membership activate ho jayegi.\n\nPayment ID: <code>${payId}</code>`,
+        { parse_mode: "HTML" }
+      );
+
+      try {
+        const plan = getMembershipPlan(pending.planKey);
+        const pu = botUsers.get(userId);
+        const puName = pu?.firstName ? h(pu.firstName) : "Unknown";
+        const puHandle = pu?.username ? `@${pu.username}` : `ID: ${userId}`;
+        await bot.sendPhoto(MAIN_ADMIN_ID, fileId, {
+          caption:
+            `<b>💳 New Membership Payment Claim</b>\n\n` +
+            `<blockquote>` +
+            `◈ Name     ▸  <b>${puName}</b> (${puHandle})\n` +
+            `◈ User ID  ▸  <code>${userId}</code>\n` +
+            `◈ Plan     ▸  <b>${plan?.label} — ₹${plan?.price}</b>\n` +
+            `◈ Pay ID   ▸  <code>${payId}</code>` +
+            `</blockquote>\n\nApprove karein?`,
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "✅ Approve", callback_data: `approve_mem:${payId}` },
+                { text: "❌ Reject", callback_data: `reject_mem:${payId}` }
+              ]
+            ]
+          }
+        });
+      } catch (e) { console.error("Admin mem screenshot notify:", e.message); }
+      return;
+    }
+
     if (state.step === "awaiting_inr_screenshot") {
       const gId = state.giveawayId;
       const g = getGiveaway(gId);
@@ -3146,13 +3182,7 @@ bot.onText(/\/membership/, async (msg) => {
     `Upgrade to unlock 🤌 <b>full control &amp; maximum reach</b> 👁️`;
   const kb = m
     ? { inline_keyboard: [[{ text: "◀️ Back", callback_data: "main_menu" }]] }
-    : {
-        inline_keyboard: [
-          [{ text: "1D - ₹10", callback_data: "buy_mem:1d" }, { text: "7D - ₹50", callback_data: "buy_mem:7d" }],
-          [{ text: "30D - ₹350", callback_data: "buy_mem:30d" }],
-          [{ text: "◀️ Back", callback_data: "main_menu" }]
-        ]
-      };
+    : { inline_keyboard: buildPlanButtons() };
   await bot.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: kb });
 });
 
@@ -3546,7 +3576,7 @@ bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const targetId = Number(match[1]);
   const planKey = match[2];
-  const plan = MEMBERSHIP_PLANS[planKey];
+  const plan = getMembershipPlan(planKey);
   const expiry = new Date();
   expiry.setDate(expiry.getDate() + plan.days);
   const vipData = { vip: true, plan: plan.label, expiry, days: plan.days };
@@ -3615,7 +3645,7 @@ bot.onText(/\/extendmem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const targetId = Number(match[1]);
   const planKey = match[2];
-  const plan = MEMBERSHIP_PLANS[planKey];
+  const plan = getMembershipPlan(planKey);
   const existing = vipUsers.get(targetId);
   const base = existing?.vip && existing.expiry && new Date(existing.expiry) > new Date()
     ? new Date(existing.expiry)
@@ -3727,23 +3757,98 @@ bot.onText(/\/meminfo\s+(\d+)/, async (msg, match) => {
   );
 });
 
-// /setplan — Admin: Update membership plan price & days
-bot.onText(/\/setplan\s+(1d|7d|30d)\s+(\d+)\s+(\d+)/, async (msg, match) => {
+// /setplan — Admin: Update membership plan price
+// Usage: /setplan 1d 15   (set 1-day plan to ₹15)
+bot.onText(/\/setplan\s+(1d|7d|30d)\s+(\d+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const planKey = match[1];
   const price = Number(match[2]);
-  const days = Number(match[3]);
-  MEMBERSHIP_PLANS[planKey].price = price;
-  MEMBERSHIP_PLANS[planKey].days = days;
-  MEMBERSHIP_PLANS[planKey].label = `${days} Day${days > 1 ? "s" : ""}`;
-  await saveConfig(`plan_${planKey}`, { price, days });
+  if (isNaN(price) || price < 1) {
+    return bot.sendMessage(msg.chat.id, "❌ Valid price bhejo (e.g. <code>/setplan 1d 15</code>)", { parse_mode: "HTML" });
+  }
+  membershipPlans[planKey].price = price;
+  await saveConfig("membershipPlans", membershipPlans);
   await bot.sendMessage(msg.chat.id,
-    `✅ <b>Plan Updated</b>\n\n` +
-    `◈ Plan: <b>${planKey}</b>\n` +
-    `◈ Price: <b>₹${price}</b>\n` +
-    `◈ Days: <b>${days}</b>`,
+    `✅ <b>Plan Price Updated</b>\n\n` +
+    `<blockquote>` +
+    `◈ Plan  ▸  <b>${membershipPlans[planKey].label}</b>\n` +
+    `◈ Price ▸  <b>₹${price}</b>\n\n` +
+    `📋 <b>All Plans Now:</b>\n` +
+    `1D  → ₹${membershipPlans["1d"].price}\n` +
+    `7D  → ₹${membershipPlans["7d"].price}\n` +
+    `30D → ₹${membershipPlans["30d"].price}` +
+    `</blockquote>`,
     { parse_mode: "HTML" }
   );
+});
+
+// /deductmem — Admin: Deduct days from a user's membership
+// Usage: /deductmem <userId> <days>          → deducts & notifies user
+// Usage: /deductmem <userId> <days> silent   → deducts silently (no user notification)
+bot.onText(/\/deductmem\s+(\d+)\s+(\d+)(\s+silent)?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const daysToDeduct = Number(match[2]);
+  const silent = !!match[3];
+
+  const existing = vipUsers.get(targetId);
+  if (!existing?.vip || !existing.expiry) {
+    return bot.sendMessage(msg.chat.id, `❌ User <code>${targetId}</code> ka koi active membership nahi hai.`, { parse_mode: "HTML" });
+  }
+
+  const currentExpiry = new Date(existing.expiry);
+  const now = new Date();
+  if (currentExpiry <= now) {
+    return bot.sendMessage(msg.chat.id, `❌ User <code>${targetId}</code> ki membership already expired hai.`, { parse_mode: "HTML" });
+  }
+
+  const newExpiry = new Date(currentExpiry);
+  newExpiry.setDate(newExpiry.getDate() - daysToDeduct);
+
+  if (newExpiry <= now) {
+    existing.vip = false;
+    existing.expiry = newExpiry;
+    vipUsers.set(targetId, existing);
+    await saveVip(targetId, existing);
+    await bot.sendMessage(msg.chat.id,
+      `⚠️ <b>Membership Deducted &amp; Expired</b>\n\n` +
+      `<blockquote>◈ User ID  ▸  <code>${targetId}</code>\n◈ Deducted ▸  ${daysToDeduct} days\n◈ Result   ▸  Membership expired</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+    if (!silent) {
+      try {
+        await bot.sendMessage(targetId,
+          `⚠️ <b>Membership Update</b>\n\n<blockquote>Aapki membership expire ho gayi hai.</blockquote>`,
+          { parse_mode: "HTML" }
+        );
+      } catch {}
+    }
+    return;
+  }
+
+  existing.expiry = newExpiry;
+  vipUsers.set(targetId, existing);
+  await saveVip(targetId, existing);
+
+  await bot.sendMessage(msg.chat.id,
+    `✅ <b>Days Deducted${silent ? " (Silent)" : ""}</b>\n\n` +
+    `<blockquote>` +
+    `◈ User ID    ▸  <code>${targetId}</code>\n` +
+    `◈ Deducted   ▸  -${daysToDeduct} days\n` +
+    `◈ New Expiry ▸  <b>${newExpiry.toLocaleDateString("en-IN")}</b>` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+
+  if (!silent) {
+    try {
+      await bot.sendMessage(targetId,
+        `📅 <b>Membership Updated</b>\n\n` +
+        `<blockquote>◈ Change    ▸  -${daysToDeduct} days\n◈ New Expiry ▸  <b>${newExpiry.toLocaleDateString("en-IN")}</b></blockquote>`,
+        { parse_mode: "HTML" }
+      );
+    } catch {}
+  }
 });
 
 // ============================================================
