@@ -117,6 +117,10 @@ let membershipPlans = {
   "30d": { label: "30 Days", days: 30, price: 350 }
 };
 
+// Free giveaway quota for non-VIP users
+let freeGiveawayLimit = 15;   // max giveaways a free user can create
+let freeUnlimited = false;     // if true, all users can create unlimited giveaways
+
 // Default giveaway / channel post image (attached to all channel posts)
 const GIVEAWAY_IMAGE_URL = "https://files.catbox.moe/72s3dg.jpg";
 
@@ -222,6 +226,12 @@ async function loadStateFromDB() {
 
   const plansConfig = await BotConfigModel.findOne({ key: "membershipPlans" });
   if (plansConfig) membershipPlans = plansConfig.value;
+
+  const freeLimitConfig = await BotConfigModel.findOne({ key: "freeGiveawayLimit" });
+  if (freeLimitConfig?.value != null) freeGiveawayLimit = Number(freeLimitConfig.value);
+
+  const freeUnlimitedConfig = await BotConfigModel.findOne({ key: "freeUnlimited" });
+  if (freeUnlimitedConfig) freeUnlimited = !!freeUnlimitedConfig.value;
 
   // Always base force join on hardcoded defaults (links/labels from code)
   // Only IDs are persisted in MongoDB (via /setforcejoin)
@@ -1098,31 +1108,42 @@ bot.on("callback_query", async (query) => {
   // ─── New Giveaway ───
   if (data === "new_giveaway") {
     if (!isVip(userId) && !isAdmin(userId)) {
-      await bot.sendMessage(chatId,
-        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-        `   👑  <b>VIP REQUIRED</b>\n` +
-        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-        `<blockquote>` +
-        `Giveaway create karne ke liye <b>VIP Membership</b> chahiye!\n\n` +
-        `▸ Unlimited giveaways banao\n` +
-        `▸ Live voting &amp; leaderboard\n` +
-        `▸ Paid votes system\n` +
-        `▸ Auto winner announcement` +
-        `</blockquote>\n\n` +
-        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-        {
-          parse_mode: "HTML",
-          reply_markup: {
-            inline_keyboard: [
-              [{ text: "👑 Get VIP Membership", callback_data: "vip_membership" }],
-              [{ text: "◀️ Back to Menu", callback_data: "main_menu" }]
-            ]
+      // Count giveaways this free user has already created
+      const userGiveawayCount = [...giveaways.values()].filter(g => g.creatorId === userId).length;
+      const canCreate = freeUnlimited || userGiveawayCount < freeGiveawayLimit;
+
+      if (!canCreate) {
+        await bot.sendMessage(chatId,
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+          `   ⛔  <b>FREE LIMIT REACHED</b>\n` +
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+          `<blockquote>` +
+          `Aapne apne <b>${freeGiveawayLimit} free giveaways</b> use kar liye hain!\n\n` +
+          `Aur giveaways create karne ke liye:\n` +
+          `▸ 👑 VIP Membership upgrade karein\n` +
+          `▸ Unlimited giveaways banao\n` +
+          `▸ Paid votes &amp; premium features unlock karein` +
+          `</blockquote>\n\n` +
+          `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+          {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [
+                [{ text: "👑 Get VIP Membership", callback_data: "vip_membership" }],
+                [{ text: "◀️ Back to Menu", callback_data: "main_menu" }]
+              ]
+            }
           }
-        }
-      );
-      return;
+        );
+        return;
+      }
+
+      // Within free quota — proceed to creation
+      const remaining = freeUnlimited ? "∞" : (freeGiveawayLimit - userGiveawayCount - 1);
+      userState.set(userId, { step: "title", msgId, freeMode: true, remaining });
+    } else {
+      userState.set(userId, { step: "title", msgId });
     }
-    userState.set(userId, { step: "title", msgId });
     await animLoading(chatId, msgId);
     await replyToCallback(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
@@ -1557,13 +1578,13 @@ bot.on("callback_query", async (query) => {
     const g = getGiveaway(gId);
 
     if (!g || !g.active) {
-      await bot.answerCallbackQuery(query.id, { text: "⛔ Voting is not active for this giveaway!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "⛔ Voting is not active for this giveaway!", show_alert: true }).catch(() => {});
       return;
     }
     if (g.channelId) {
       const member = await isMember(g.channelId, userId);
       if (!member) {
-        await bot.answerCallbackQuery(query.id, { text: "⚠️ You must join the channel before voting!", show_alert: true });
+        await bot.answerCallbackQuery(query.id, { text: "⚠️ You must join the channel before voting!", show_alert: true }).catch(() => {});
         return;
       }
     }
@@ -1571,7 +1592,7 @@ bot.on("callback_query", async (query) => {
       await bot.answerCallbackQuery(query.id, {
         text: "⛔ DENIED — You cannot vote for yourself!",
         show_alert: true
-      });
+      }).catch(() => {});
       // Big photo warning — same style as welcome screen
       try {
         const denyPhoto = await bot.sendPhoto(userId, GIVEAWAY_IMAGE_URL, {
@@ -1611,14 +1632,14 @@ bot.on("callback_query", async (query) => {
 
     const participant = g.participants.get(participantUserId);
     if (!participant) {
-      await bot.answerCallbackQuery(query.id, { text: "❌ Participant not found!", show_alert: true });
+      await bot.answerCallbackQuery(query.id, { text: "❌ Participant not found!", show_alert: true }).catch(() => {});
       return;
     }
 
     const existingVote = g.voterMap?.get(userId);
     if (existingVote) {
       if (existingVote === participantUserId) {
-        await bot.answerCallbackQuery(query.id, { text: "You have already voted for this participant!", show_alert: true });
+        await bot.answerCallbackQuery(query.id, { text: "You have already voted for this participant!", show_alert: true }).catch(() => {});
         return;
       }
       const oldP = g.participants.get(existingVote);
@@ -1633,9 +1654,23 @@ bot.on("callback_query", async (query) => {
     participant.votes += 1;
     participant.voters.add(userId);
     g.voterMap.set(userId, participantUserId);
+
+    // Save and update channel post BEFORE answerCallbackQuery
+    // (answerCallbackQuery may silently fail if already answered by the pre-handler at top
+    //  of callback_query — that would skip everything after it)
     await saveGiveaway(g);
+    await updateChannelPost(g, participant);
 
     const voterName = (query.from.first_name || "") + (query.from.last_name ? ` ${query.from.last_name}` : "");
+    await notifyAdmin(
+      `🗳️ <b>Vote Cast</b>\n` +
+      `From: <b>${h(voterName)}</b> (<code>${userId}</code>)\n` +
+      `For: <b>${h(participant.name)}</b>\n` +
+      `Giveaway: <b>${h(g.title)}</b>\n` +
+      `Total votes: <b>${participant.votes}</b>`
+    );
+
+    // answerCallbackQuery may silently fail (already answered) — that's fine
     await bot.answerCallbackQuery(query.id, {
       text:
         `◈ VOTE CAST ◈\n` +
@@ -1646,16 +1681,7 @@ bot.on("callback_query", async (query) => {
         `━━━━━━━━━━━━━━━━\n` +
         `⚡ @${BOT_USERNAME}`,
       show_alert: true
-    });
-
-    await updateChannelPost(g, participant);
-    await notifyAdmin(
-      `🗳️ <b>Vote Cast</b>\n` +
-      `From: <b>${h(voterName)}</b> (<code>${userId}</code>)\n` +
-      `For: <b>${h(participant.name)}</b>\n` +
-      `Giveaway: <b>${h(g.title)}</b>\n` +
-      `Total votes: <b>${participant.votes}</b>`
-    );
+    }).catch(() => {});
     return;
   }
 
@@ -3303,7 +3329,11 @@ bot.on("chat_member", async (update) => {
       const theirVotedFor = g.voterMap?.get(leftUserId);
       if (theirVotedFor) {
         const theirP = g.participants.get(theirVotedFor);
-        if (theirP) { theirP.votes = Math.max(0, theirP.votes - 1); await updateChannelPost(g, theirP); }
+        if (theirP) {
+          theirP.votes = Math.max(0, theirP.votes - 1);
+          theirP.voters.delete(leftUserId); // fix: also remove from voters Set so they can vote again on rejoin
+          await updateChannelPost(g, theirP);
+        }
         g.voterMap.delete(leftUserId);
         await saveGiveaway(g);
       }
@@ -3949,6 +3979,56 @@ bot.onText(/\/setplan\s+(1d|7d|30d)\s+(\d+)/, async (msg, match) => {
     `7D  → ₹${membershipPlans["7d"].price}\n` +
     `30D → ₹${membershipPlans["30d"].price}` +
     `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// /setfreelimit — Admin: Set how many free giveaways non-VIP users can create
+// Usage: /setfreelimit 15        → allow up to 15 free giveaways
+// Usage: /setfreelimit unlimited → unlimited free giveaways for everyone
+// Usage: /setfreelimit limited   → revert to the current limit
+bot.onText(/\/setfreelimit\s+(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const val = match[1].toLowerCase();
+  if (val === "unlimited") {
+    freeUnlimited = true;
+    await saveConfig("freeUnlimited", true);
+    return bot.sendMessage(msg.chat.id,
+      `✅ <b>Free Giveaway Mode: UNLIMITED</b>\n\n` +
+      `<blockquote>All users (VIP &amp; non-VIP) can now create <b>unlimited giveaways</b> for free.\n\n` +
+      `Use <code>/setfreelimit limited</code> or <code>/setfreelimit &lt;number&gt;</code> to restore the limit.</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  }
+  if (val === "limited") {
+    freeUnlimited = false;
+    await saveConfig("freeUnlimited", false);
+    return bot.sendMessage(msg.chat.id,
+      `✅ <b>Free Giveaway Mode: LIMITED</b>\n\n` +
+      `<blockquote>Non-VIP users can create up to <b>${freeGiveawayLimit} giveaways</b> for free.\n\n` +
+      `Use <code>/setfreelimit &lt;number&gt;</code> to change the limit.</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  }
+  const n = Number(val);
+  if (isNaN(n) || n < 1) {
+    return bot.sendMessage(msg.chat.id,
+      `❌ <b>Invalid value.</b>\n\nUsage:\n` +
+      `<code>/setfreelimit 15</code>        — Set limit to 15\n` +
+      `<code>/setfreelimit unlimited</code>  — Unlimited for all\n` +
+      `<code>/setfreelimit limited</code>    — Re-enable limit`,
+      { parse_mode: "HTML" }
+    );
+  }
+  freeGiveawayLimit = n;
+  freeUnlimited = false;
+  await saveConfig("freeGiveawayLimit", n);
+  await saveConfig("freeUnlimited", false);
+  return bot.sendMessage(msg.chat.id,
+    `✅ <b>Free Giveaway Limit Set</b>\n\n` +
+    `<blockquote>◈ Non-VIP users can now create up to <b>${n} free giveaways</b>.\n\n` +
+    `After that limit they'll see an upgrade prompt.\n\n` +
+    `Use <code>/setfreelimit unlimited</code> to remove the limit anytime.</blockquote>`,
     { parse_mode: "HTML" }
   );
 });
