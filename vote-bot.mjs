@@ -4410,9 +4410,14 @@ bot.onText(/\/adminhelp/, async (msg) => {
 // ERROR HANDLING & STARTUP
 // ============================================================
 
+let last409Log = 0;
 bot.on("polling_error", e => {
   if (e.message && e.message.includes("409")) {
-    console.error("⚠️ 409 Conflict: Another bot instance is running. Will retry automatically.");
+    const now = Date.now();
+    if (now - last409Log > 60_000) {
+      console.error("⚠️ 409 Conflict: Another bot instance is running (Railway/VPS). Stop that instance to resolve. Will keep retrying...");
+      last409Log = now;
+    }
   } else if (e.message && e.message.includes("EFATAL")) {
     console.error("⚠️ Fatal polling error, reconnecting...");
   } else {
