@@ -55,6 +55,7 @@ const vipSchema = new mongoose.Schema({
   vip: Boolean,
   plan: String,
   expiry: Date,
+  startedAt: { type: Date, default: null },
   days: Number
 });
 
@@ -204,7 +205,7 @@ async function loadStateFromDB() {
   // Load VIP users
   const allVip = await VipModel.find({});
   for (const v of allVip) {
-    vipUsers.set(v.userId, { vip: v.vip, plan: v.plan, expiry: v.expiry, days: v.days });
+    vipUsers.set(v.userId, { vip: v.vip, plan: v.plan, expiry: v.expiry, startedAt: v.startedAt || null, days: v.days });
   }
 
   // Load pending payments
@@ -410,6 +411,26 @@ async function animLoading(chatId, msgId) {
   await sleep(150);
 }
 
+// 🌟 Fresh menu — deletes old message, plays animation, shows new menu
+async function animFresh(chatId, msgId, finalText, opts = {}) {
+  try { await bot.deleteMessage(chatId, msgId); } catch {}
+  const frames = ["✦", "✦ ─── ✦", "⚡ <b>DRS</b> ⚡", "🔥 <i>Loading...</i>"];
+  const delays = [90, 120, 150];
+  let msg;
+  try { msg = await bot.sendMessage(chatId, frames[0], { parse_mode: "HTML" }); } catch { return null; }
+  for (let i = 1; i < frames.length; i++) {
+    await sleep(delays[i - 1]);
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
+  }
+  await sleep(160);
+  try {
+    await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts });
+  } catch {
+    try { await bot.sendMessage(chatId, finalText, { parse_mode: "HTML", ...opts }); } catch {}
+  }
+  return msg;
+}
+
 // 🔀 Edit existing message OR send fresh — used when source was a photo (msgId=null)
 // Falls back to sendMessage if edit fails, so user always gets a response
 async function replyToCallback(chatId, msgId, text, opts = {}) {
@@ -604,11 +625,19 @@ function getMembership(uid) {
 
 function isVip(uid) { return getMembership(uid) !== null; }
 
+function safeFormatDate(d) {
+  if (!d) return "∞";
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return "∞";
+  return date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" });
+}
+
 function membershipBadge(uid) {
   const m = getMembership(uid);
   if (!m) return "❌ Inactive";
-  const expStr = m.expiry ? new Date(m.expiry).toLocaleDateString("en-IN") : "∞";
-  return `◈ Active (${m.plan || "VIP"} — expires ${expStr})`;
+  const expStr = safeFormatDate(m.expiry);
+  const startStr = safeFormatDate(m.startedAt);
+  return `◈ Active (${m.plan || "VIP"} · started ${startStr} · expires ${expStr})`;
 }
 
 async function isMember(chatId, userId) {
@@ -1207,8 +1236,7 @@ bot.on("callback_query", async (query) => {
       `▸ View live vote counts &amp; leaderboard` +
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
-    await animLoading(chatId, msgId);
-    await replyToCallback(chatId, msgId, caption, { reply_markup: kb });
+    await animFresh(chatId, msgId, caption, { reply_markup: kb });
     return;
   }
 
@@ -1839,8 +1867,7 @@ bot.on("callback_query", async (query) => {
 
   // ─── How to Use ───
   if (data === "how_to_use") {
-    await animLoading(chatId, msgId);
-    await replyToCallback(chatId, msgId,
+    await animFresh(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `   ❓  <b>GUIDE &amp; HELP</b>\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
@@ -1873,8 +1900,7 @@ bot.on("callback_query", async (query) => {
   if (data === "add_channel" || data === "add_group") {
     const type = data === "add_channel" ? "channel" : "group";
     userState.set(userId, { step: "reg_chat", type });
-    await animLoading(chatId, msgId);
-    await replyToCallback(chatId, msgId,
+    await animFresh(chatId, msgId,
       `<b>➕ Add ${type === "channel" ? "Channel" : "Group"}</b>\n\n` +
       `Send the ${type === "channel" ? "channel" : "group"} ID:\n<i>Example: -1001234567890</i>\n\n` +
       `<b>Note:</b> First make the bot an admin in the ${type === "channel" ? "channel" : "group"}.\n` +
@@ -1886,7 +1912,6 @@ bot.on("callback_query", async (query) => {
 
   // ─── VIP Membership ───
   if (data === "vip_membership") {
-    await animLoading(chatId, msgId);
     const badge = membershipBadge(userId);
     const m = getMembership(userId);
     const featuresText =
@@ -1895,7 +1920,7 @@ bot.on("callback_query", async (query) => {
       `   ${badge}\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       (m
-        ? `<blockquote>✅ <b>You are a VIP Member!</b>\n⏳ Expires: ${new Date(m.expiry).toLocaleDateString("en-IN")}</blockquote>\n\n`
+        ? `<blockquote>✅ <b>You are a VIP Member!</b>\n📅 Started: <b>${safeFormatDate(m.startedAt)}</b>\n⏳ Expires: <b>${safeFormatDate(m.expiry)}</b></blockquote>\n\n`
         : `<blockquote>🔓 Upgrade now to unlock full power of DRS Bot!</blockquote>\n\n`) +
       `━━━◈ <b>PREMIUM FEATURES</b> ◈━━━\n\n` +
       `<blockquote>` +
@@ -1914,7 +1939,7 @@ bot.on("callback_query", async (query) => {
       ? { inline_keyboard: [[{ text: "◀️ Back", callback_data: "main_menu" }]] }
       : { inline_keyboard: buildPlanButtons() };
 
-    await replyToCallback(chatId, msgId, featuresText, { reply_markup: kb });
+    await animFresh(chatId, msgId, featuresText, { reply_markup: kb });
     return;
   }
 
@@ -2069,7 +2094,7 @@ bot.on("callback_query", async (query) => {
 
     const expiry = new Date();
     expiry.setDate(expiry.getDate() + plan.days);
-    const vipData = { vip: true, plan: plan.label, expiry, days: plan.days };
+    const vipData = { vip: true, plan: plan.label, expiry, startedAt: new Date(), days: plan.days };
     vipUsers.set(pending.userId, vipData);
     await saveVip(pending.userId, vipData);
 
@@ -2085,14 +2110,14 @@ bot.on("callback_query", async (query) => {
       `◈ User    ▸  <b>${appu?.firstName ? h(appu.firstName) : "Unknown"}</b>${appu?.username ? ` (@${appu.username})` : ""}\n` +
       `◈ User ID ▸  <code>${pending.userId}</code>\n` +
       `◈ Plan    ▸  <b>${plan.label}</b>\n` +
-      `◈ Expiry  ▸  ${expiry.toLocaleDateString("en-IN")}` +
+      `◈ Expiry  ▸  ${safeFormatDate(expiry)}` +
       `</blockquote>`
     );
     try {
       await bot.sendMessage(pending.userId,
         `<b>🎊 Membership Activated!</b>\n\n` +
         `⭐ Plan: <b>${plan.label}</b>\n` +
-        `📅 Expires: <b>${expiry.toLocaleDateString("en-IN")}</b>\n\n` +
+        `📅 Expires: <b>${safeFormatDate(expiry)}</b>\n\n` +
         `Premium features ab available hain!`,
         { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 My Membership", callback_data: "vip_membership" }]] } }
       );
@@ -2532,6 +2557,13 @@ async function announceWinners(g, gId, creatorId) {
       }).join("\n")
     : `<i>▸ No votes yet</i>`;
 
+  const fullBoard = parts.map((p, i) => {
+    const rank = i < 3 ? medals[i] : `  <b>${i + 1}.</b>`;
+    const name = h(p.name).slice(0, 18);
+    const pad = "·".repeat(Math.max(2, 20 - name.length));
+    return `${rank} ${name} ${pad} <code>${p.votes}</code> 🗳️`;
+  }).join("\n") || `<i>▸ No votes yet</i>`;
+
   const channelCard =
     `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
     `  ◆  <b>GIVEAWAY ENDED</b>  ◆\n` +
@@ -2545,6 +2577,9 @@ async function announceWinners(g, gId, creatorId) {
     `🗳️ Total Votes   ▸  <b>${totalVotes}</b>\n` +
     `📅 Ended At      ▸  ${now}` +
     `</blockquote>\n\n` +
+    (parts.length > 3
+      ? `━━━◈ 📊 FULL LEADERBOARD ◈━━━\n\n${fullBoard}\n\n`
+      : ``) +
     `✦ <i>Sabko participation ke liye shukriya.</i>\n` +
     `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`;
 
@@ -2562,6 +2597,7 @@ async function announceWinners(g, gId, creatorId) {
     `🗳️ Total Votes   ▸  <b>${totalVotes}</b>\n` +
     `📅 Ended At      ▸  ${now}` +
     `</blockquote>\n\n` +
+    `━━━◈ 📊 FULL LEADERBOARD ◈━━━\n\n${fullBoard}\n\n` +
     `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
 
   if (g.channelId) {
@@ -3329,11 +3365,11 @@ bot.on("message", async (msg) => {
   if (payload.startsWith("vip_")) {
     const expiry = new Date();
     expiry.setDate(expiry.getDate() + 30);
-    const vipData = { vip: true, plan: "30 Days", expiry, days: 30 };
+    const vipData = { vip: true, plan: "30 Days", expiry, startedAt: new Date(), days: 30 };
     vipUsers.set(userId, vipData);
     await saveVip(userId, vipData);
     await bot.sendMessage(chatId,
-      `<b>👑 VIP Activated!</b>\n\nExpiry: <b>${expiry.toLocaleDateString("en-IN")}</b>`,
+      `<b>👑 VIP Activated!</b>\n\n📅 Started: <b>${safeFormatDate(new Date())}</b>\n⏳ Expires: <b>${safeFormatDate(expiry)}</b>`,
       { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
     );
     return;
@@ -3882,7 +3918,7 @@ bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
   const plan = getMembershipPlan(planKey);
   const expiry = new Date();
   expiry.setDate(expiry.getDate() + plan.days);
-  const vipData = { vip: true, plan: plan.label, expiry, days: plan.days };
+  const vipData = { vip: true, plan: plan.label, expiry, startedAt: new Date(), days: plan.days };
   vipUsers.set(targetId, vipData);
   await saveVip(targetId, vipData);
   await bot.sendMessage(msg.chat.id,
@@ -3892,7 +3928,8 @@ bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
     `<blockquote>` +
     `◈ User ID  ▸  <code>${targetId}</code>\n` +
     `◈ Plan     ▸  <b>${plan.label}</b>\n` +
-    `◈ Expiry   ▸  ${expiry.toLocaleDateString("en-IN")}\n` +
+    `◈ Started  ▸  ${safeFormatDate(new Date())}\n` +
+    `◈ Expiry   ▸  ${safeFormatDate(expiry)}\n` +
     `◈ Access   ▸  Giveaway + Channel Post + Force Join` +
     `</blockquote>`,
     { parse_mode: "HTML" }
