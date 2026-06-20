@@ -197,7 +197,10 @@ async function loadStateFromDB() {
       screenshotFileId: p.screenshotFileId, timestamp: p.timestamp
     });
   }
-  paymentCounter = allPending.length + 1;
+  // Use max existing ID + 1 to avoid duplicate key errors on restart
+  paymentCounter = allPending.length > 0
+    ? Math.max(...allPending.map(p => parseInt(p.payId, 10) || 0)) + 1
+    : 1;
 
   // Load pending membership
   const allMemPending = await PendingMembershipModel.find({});
@@ -206,7 +209,9 @@ async function loadStateFromDB() {
       userId: m.userId, planKey: m.planKey, screenshotFileId: m.screenshotFileId || null, timestamp: m.timestamp
     });
   }
-  membershipPayCounter = allMemPending.length + 1;
+  membershipPayCounter = allMemPending.length > 0
+    ? Math.max(...allMemPending.map(m => parseInt(m.payId, 10) || 0)) + 1
+    : 1;
 
   // Load config
   const imgConfig = await BotConfigModel.findOne({ key: "welcomeImageUrl" });
@@ -382,11 +387,16 @@ async function animLoading(chatId, msgId) {
 }
 
 // 🔀 Edit existing message OR send fresh — used when source was a photo (msgId=null)
+// Falls back to sendMessage if edit fails, so user always gets a response
 async function replyToCallback(chatId, msgId, text, opts = {}) {
   if (msgId) {
-    await bot.editMessageText(text, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts }).catch(() => {});
+    try {
+      await bot.editMessageText(text, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts });
+    } catch {
+      try { await bot.sendMessage(chatId, text, { parse_mode: "HTML", ...opts }); } catch {}
+    }
   } else {
-    await bot.sendMessage(chatId, text, { parse_mode: "HTML", ...opts }).catch(() => {});
+    try { await bot.sendMessage(chatId, text, { parse_mode: "HTML", ...opts }); } catch {}
   }
 }
 
@@ -402,7 +412,11 @@ async function animAction(chatId, finalText, opts = {}) {
     try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
   }
   await sleep(200);
-  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts }); } catch {}
+  try {
+    await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts });
+  } catch {
+    try { await bot.sendMessage(chatId, finalText, { parse_mode: "HTML", ...opts }); } catch {}
+  }
   return msg;
 }
 
@@ -415,7 +429,11 @@ async function animSuccess(chatId, msgId, finalText, opts = {}) {
     if (i < frames.length - 1) await sleep(delays[i]);
   }
   await sleep(200);
-  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts }); } catch {}
+  try {
+    await bot.editMessageText(finalText, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts });
+  } catch {
+    try { await bot.sendMessage(chatId, finalText, { parse_mode: "HTML", ...opts }); } catch {}
+  }
 }
 
 // 🗳️ Vote animation — quick pulse
@@ -430,7 +448,11 @@ async function animVote(chatId, finalText, opts = {}) {
     try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
   }
   await sleep(150);
-  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts }); } catch {}
+  try {
+    await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts });
+  } catch {
+    try { await bot.sendMessage(chatId, finalText, { parse_mode: "HTML", ...opts }); } catch {}
+  }
   return msg;
 }
 
@@ -446,7 +468,11 @@ async function animCreate(chatId, finalText, opts = {}) {
     try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
   }
   await sleep(200);
-  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts }); } catch {}
+  try {
+    await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts });
+  } catch {
+    try { await bot.sendMessage(chatId, finalText, { parse_mode: "HTML", ...opts }); } catch {}
+  }
   return msg;
 }
 
@@ -459,7 +485,11 @@ async function animCancel(chatId, msgId, finalText, opts = {}) {
     if (i < frames.length - 1) await sleep(delays[i]);
   }
   await sleep(160);
-  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts }); } catch {}
+  try {
+    await bot.editMessageText(finalText, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts });
+  } catch {
+    try { await bot.sendMessage(chatId, finalText, { parse_mode: "HTML", ...opts }); } catch {}
+  }
 }
 
 // 💎 Payment/VIP animation
@@ -474,7 +504,11 @@ async function animPayment(chatId, finalText, opts = {}) {
     try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
   }
   await sleep(200);
-  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts }); } catch {}
+  try {
+    await bot.editMessageText(finalText, { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML", ...opts });
+  } catch {
+    try { await bot.sendMessage(chatId, finalText, { parse_mode: "HTML", ...opts }); } catch {}
+  }
   return msg;
 }
 
@@ -487,7 +521,11 @@ async function animLeaderboard(chatId, msgId, finalText, opts = {}) {
     if (i < frames.length - 1) await sleep(delays[i]);
   }
   await sleep(180);
-  try { await bot.editMessageText(finalText, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts }); } catch {}
+  try {
+    await bot.editMessageText(finalText, { chat_id: chatId, message_id: msgId, parse_mode: "HTML", ...opts });
+  } catch {
+    try { await bot.sendMessage(chatId, finalText, { parse_mode: "HTML", ...opts }); } catch {}
+  }
 }
 
 // ============================================================
@@ -1806,7 +1844,14 @@ bot.on("callback_query", async (query) => {
     const payId = String(membershipPayCounter++);
     const memData = { userId, planKey, timestamp: new Date() };
     pendingMembershipPayments.set(payId, memData);
-    await PendingMembershipModel.create({ payId, ...memData });
+    try {
+      await PendingMembershipModel.create({ payId, ...memData });
+    } catch (e) {
+      console.error("PendingMembership create error:", e.message);
+      pendingMembershipPayments.delete(payId);
+      await bot.answerCallbackQuery(query.id, { text: "❌ Server error, dobara try karo.", show_alert: true });
+      return;
+    }
 
     try {
       await bot.sendPhoto(chatId, membershipQrFileId, {
@@ -1874,6 +1919,10 @@ bot.on("callback_query", async (query) => {
       return;
     }
     const plan = getMembershipPlan(pending.planKey);
+    if (!plan) {
+      await bot.answerCallbackQuery(query.id, { text: "❌ Plan config nahi mila. Admin check karo.", show_alert: true });
+      return;
+    }
     pendingMembershipPayments.delete(payId);
     await PendingMembershipModel.deleteOne({ payId });
 
@@ -2725,7 +2774,14 @@ bot.on("message", async (msg) => {
       const payId = String(paymentCounter++);
       const payData = { userId, giveawayId: gId, screenshotFileId: fileId, timestamp: new Date() };
       pendingPayments.set(payId, payData);
-      await PendingPaymentModel.create({ payId, ...payData });
+      try {
+        await PendingPaymentModel.create({ payId, ...payData });
+      } catch (e) {
+        console.error("PendingPayment create error:", e.message);
+        pendingPayments.delete(payId);
+        await bot.sendMessage(chatId, "❌ Server error, dobara try karo.", { parse_mode: "HTML" });
+        return;
+      }
       userState.delete(userId);
 
       await bot.sendMessage(chatId,
