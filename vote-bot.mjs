@@ -704,7 +704,7 @@ async function sendWelcome(chatId, userId) {
     `👑 <b>VIP</b>              ·  Unlock premium\n` +
     `➕ <b>Add Channel</b>   ·  Link your channel\n\n` +
     `✦ ────── <b>DRS NETWORK</b> ────── ✦\n` +
-    `💬 Support: @DRS_Support_DRS`;
+    `💬 Support: @drssupport`;
 
   // Send photo first with spoiler + first animation frame as caption
   const imgUrl = welcomeImageUrl || GIVEAWAY_IMAGE_URL;
@@ -747,7 +747,21 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
   const param = match[1]?.trim();
 
   userState.delete(userId);
+  const isNewUser = !botUsers.has(userId);
   trackUser(msg.from);
+
+  if (isNewUser) {
+    const nu = msg.from;
+    const nuName = h(nu.first_name || "");
+    const nuHandle = nu.username ? `@${nu.username}` : `ID: ${userId}`;
+    await notifyAdmin(
+      `👋 <b>New User Started Bot</b>\n` +
+      `<blockquote>` +
+      `◈ Name    ▸  <b>${nuName}</b> (${nuHandle})\n` +
+      `◈ User ID ▸  <code>${userId}</code>` +
+      `</blockquote>`
+    );
+  }
 
   // ── Force Join Check ──
   // Show force join if any channels are configured with links (VIP bypasses)
@@ -1817,11 +1831,16 @@ bot.on("callback_query", async (query) => {
     ).catch(() => {});
 
     try {
+      const claimantName = h(query.from.first_name || "");
+      const claimantUser = query.from.username ? `@${query.from.username}` : `ID: ${userId}`;
       await bot.sendMessage(MAIN_ADMIN_ID,
         `<b>💳 New Membership Payment Claim</b>\n\n` +
-        `Payment ID: <code>${payId}</code>\n` +
-        `User ID: <code>${userId}</code>\n` +
-        `Plan: <b>${plan?.label} — ₹${plan?.price}</b>\n\n` +
+        `<blockquote>` +
+        `◈ Name      ▸  <b>${claimantName}</b> (${claimantUser})\n` +
+        `◈ User ID   ▸  <code>${userId}</code>\n` +
+        `◈ Plan      ▸  <b>${plan?.label} — ₹${plan?.price}</b>\n` +
+        `◈ Pay ID    ▸  <code>${payId}</code>` +
+        `</blockquote>\n\n` +
         `User ne payment claim ki hai. Approve karein?`,
         {
           parse_mode: "HTML",
@@ -1863,6 +1882,16 @@ bot.on("callback_query", async (query) => {
       `✅ <b>Membership Approved!</b>\nPayment ID: <code>${payId}</code> | Plan: ${plan.label} | User: <code>${pending.userId}</code>`,
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
     ).catch(() => {});
+    const appu = botUsers.get(pending.userId);
+    await notifyAdmin(
+      `✅ <b>Membership Approved</b>\n` +
+      `<blockquote>` +
+      `◈ User    ▸  <b>${appu?.firstName ? h(appu.firstName) : "Unknown"}</b>${appu?.username ? ` (@${appu.username})` : ""}\n` +
+      `◈ User ID ▸  <code>${pending.userId}</code>\n` +
+      `◈ Plan    ▸  <b>${plan.label}</b>\n` +
+      `◈ Expiry  ▸  ${expiry.toLocaleDateString("en-IN")}` +
+      `</blockquote>`
+    );
     try {
       await bot.sendMessage(pending.userId,
         `<b>🎊 Membership Activated!</b>\n\n` +
@@ -1888,9 +1917,18 @@ bot.on("callback_query", async (query) => {
       `❌ <b>Membership Rejected</b>\nPayment ID: <code>${payId}</code>`,
       { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
     ).catch(() => {});
+    const rjpu = botUsers.get(pending.userId);
+    await notifyAdmin(
+      `❌ <b>Membership Rejected</b>\n` +
+      `<blockquote>` +
+      `◈ User    ▸  <b>${rjpu?.firstName ? h(rjpu.firstName) : "Unknown"}</b>${rjpu?.username ? ` (@${rjpu.username})` : ""}\n` +
+      `◈ User ID ▸  <code>${pending.userId}</code>\n` +
+      `◈ Pay ID  ▸  <code>${payId}</code>` +
+      `</blockquote>`
+    );
     try {
       await bot.sendMessage(pending.userId,
-        `<b>❌ Membership Payment Rejected</b>\n\nPayment ID: <code>${payId}</code>\n\nPayment verify nahi ho saka. Dobara try karo ya @DRS_Support_DRS se contact karo.`,
+        `<b>❌ Membership Payment Rejected</b>\n\nPayment ID: <code>${payId}</code>\n\nPayment verify nahi ho saka. Dobara try karo ya @drssupport se contact karo.`,
         { parse_mode: "HTML" }
       );
     } catch {}
@@ -2238,6 +2276,17 @@ async function announceWinners(g, gId, creatorId) {
   }
   try { await bot.sendMessage(creatorId, creatorCard, { parse_mode: "HTML" }); } catch {}
 
+  await notifyAdmin(
+    `🏁 <b>Giveaway Ended</b>\n` +
+    `<blockquote>` +
+    `◈ Title        ▸  <b>${h(g.title)}</b>\n` +
+    `◈ Giveaway ID  ▸  <code>${gId}</code>\n` +
+    `◈ Participants ▸  <b>${g.participants.size}</b>\n` +
+    `◈ Total Votes  ▸  <b>${[...g.participants.values()].reduce((s,p)=>s+p.votes,0)}</b>\n` +
+    (top3[0] ? `◈ 🥇 Winner    ▸  <b>${h(top3[0].name)}</b> (${top3[0].votes} votes)` : `◈ Winner      ▸  No participants`) +
+    `</blockquote>`
+  );
+
   for (let i = 0; i < top3.length; i++) {
     const winner = top3[i];
     if (winner.id === creatorId) continue;
@@ -2491,12 +2540,19 @@ bot.on("message", async (msg) => {
 
       try {
         await bot.sendPhoto(MAIN_ADMIN_ID, fileId, {
-          caption:
-            `<b>💰 New INR Payment Request</b>\n\n` +
-            `Payment ID: <code>${payId}</code>\n` +
-            `User ID: <code>${userId}</code>\n` +
-            `Giveaway: <b>${h(g.title)}</b> (<code>${gId}</code>)\n\n` +
-            `Kitne votes approve karein?`,
+          caption: (() => {
+            const pu = botUsers.get(userId);
+            const puName = pu?.firstName ? h(pu.firstName) : "Unknown";
+            const puHandle = pu?.username ? `@${pu.username}` : `ID: ${userId}`;
+            return `<b>💰 New INR Payment Request</b>\n\n` +
+              `<blockquote>` +
+              `◈ Name     ▸  <b>${puName}</b> (${puHandle})\n` +
+              `◈ User ID  ▸  <code>${userId}</code>\n` +
+              `◈ Giveaway ▸  <b>${h(g.title)}</b> (<code>${gId}</code>)\n` +
+              `◈ Pay ID   ▸  <code>${payId}</code>` +
+              `</blockquote>\n\n` +
+              `Kitne votes approve karein?`;
+          })(),
           parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [
@@ -2813,6 +2869,20 @@ bot.on("message", async (msg) => {
       `Current votes: <b>${participant.votes}</b>`,
       { parse_mode: "HTML" }
     );
+    const su = botUsers.get(userId);
+    const suName = su?.firstName ? h(su.firstName) : "Unknown";
+    const suHandle = su?.username ? `@${su.username}` : `ID: ${userId}`;
+    await notifyAdmin(
+      `⭐ <b>Stars Vote Purchase</b>\n` +
+      `<blockquote>` +
+      `◈ From     ▸  <b>${suName}</b> (${suHandle})\n` +
+      `◈ User ID  ▸  <code>${userId}</code>\n` +
+      `◈ Stars    ▸  <b>${stars} ⭐</b>\n` +
+      `◈ Votes    ▸  +<b>${votesToAdd}</b>\n` +
+      `◈ For      ▸  <b>${h(participant.name)}</b>\n` +
+      `◈ Giveaway ▸  <b>${h(g.title)}</b>` +
+      `</blockquote>`
+    );
     return;
   }
 });
@@ -2944,7 +3014,7 @@ bot.onText(/\/support/, async (msg) => {
   await bot.sendMessage(msg.chat.id,
     `<b>💬 DRS Bot Support</b>\n\n` +
     `Need help? Contact us:\n\n` +
-    `📩 Support: @DRS_Support_DRS\n` +
+    `📩 Support: @drssupport\n` +
     `⚡ Powered by: <b>DRS NETWORK</b>\n\n` +
     `<i>Please describe your issue clearly when contacting support.</i>`,
     { parse_mode: "HTML" }
@@ -3452,7 +3522,20 @@ bot.onText(/\/listmem/, async (msg) => {
   for (const [uid, v] of active) {
     const expiry = v.expiry ? new Date(v.expiry) : null;
     const daysLeft = expiry ? Math.ceil((expiry - now) / (1000 * 60 * 60 * 24)) : "∞";
-    text += `<blockquote>👤 <code>${uid}</code>\n◈ Plan     ▸ ${v.plan || "VIP"}\n◈ Expires  ▸ ${expiry ? expiry.toLocaleDateString("en-IN") : "∞"}\n◈ Days Left ▸ ${daysLeft} days</blockquote>\n\n`;
+    const bu = botUsers.get(uid);
+    const nameStr = bu?.firstName ? `<b>${h(bu.firstName)}</b>${bu.username ? ` (@${bu.username})` : ""}` : `<i>Unknown</i>`;
+    const permsObj = v.perms || {};
+    const permStr = Object.keys(permsObj).length
+      ? Object.entries(permsObj).map(([k,val]) => `${val ? "✅" : "❌"} ${k}`).join("  ")
+      : "✅ All Enabled";
+    text += `<blockquote>` +
+      `👤 ${nameStr}\n` +
+      `◈ ID       ▸ <code>${uid}</code>\n` +
+      `◈ Plan     ▸ ${v.plan || "VIP"}\n` +
+      `◈ Expires  ▸ ${expiry ? expiry.toLocaleDateString("en-IN") : "∞"}\n` +
+      `◈ Days Left▸ ${daysLeft} days\n` +
+      `◈ Perms    ▸ ${permStr}` +
+      `</blockquote>\n\n`;
   }
   await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
 });
@@ -3469,20 +3552,30 @@ bot.onText(/\/meminfo\s+(\d+)/, async (msg, match) => {
   const expiry = v.expiry ? new Date(v.expiry) : null;
   const now = new Date();
   const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - now) / (1000 * 60 * 60 * 24))) : "∞";
+  const mbu = botUsers.get(targetId);
+  const mNameStr = mbu?.firstName ? `${h(mbu.firstName)}${mbu.username ? ` (@${mbu.username})` : ""}` : "Unknown";
+  const permsObj = v.perms || {};
+  const permLines = Object.keys(permsObj).length
+    ? Object.entries(permsObj).map(([k, val]) => `  ${val ? "✅" : "❌"} ${k}`).join("\n")
+    : "  ✅ All Enabled (default)";
   await bot.sendMessage(msg.chat.id,
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
     `  🔍  <b>MEMBER INFO</b>\n` +
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
     `<blockquote>` +
+    `◈ Name      ▸  <b>${mNameStr}</b>\n` +
     `◈ User ID   ▸  <code>${targetId}</code>\n` +
     `◈ Status    ▸  ${m ? "✅ ACTIVE" : "❌ EXPIRED / INACTIVE"}\n` +
     `◈ Plan      ▸  ${v.plan || "VIP"}\n` +
     `◈ Expiry    ▸  ${expiry ? expiry.toLocaleDateString("en-IN") : "∞"}\n` +
-    `◈ Days Left ▸  ${m ? daysLeft + " days" : "0"}` +
+    `◈ Days Left ▸  ${m ? daysLeft + " days" : "0"}\n` +
+    `◈ Permissions:\n${permLines}` +
     `</blockquote>\n\n` +
     `<b>Quick Actions:</b>\n` +
     `/extendmem ${targetId} 7d — Extend 7 days\n` +
-    `/removemem ${targetId} — Revoke membership`,
+    `/removemem ${targetId} — Revoke membership\n` +
+    `/viewperms ${targetId} — Permissions\n` +
+    `/setperms ${targetId} &lt;perm&gt; &lt;on|off&gt; — Change permission`,
     { parse_mode: "HTML" }
   );
 });
@@ -3502,6 +3595,105 @@ bot.onText(/\/setplan\s+(1d|7d|30d)\s+(\d+)\s+(\d+)/, async (msg, match) => {
     `◈ Plan: <b>${planKey}</b>\n` +
     `◈ Price: <b>₹${price}</b>\n` +
     `◈ Days: <b>${days}</b>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ============================================================
+// MEMBERSHIP PERMISSION SYSTEM
+// ============================================================
+
+// Available permissions (all true by default for active VIP members)
+const VALID_PERMS = {
+  createGiveaway: "Create Giveaways",
+  voteFree:       "Cast Free Votes",
+  buyVotes:       "Buy Paid Votes (INR/Stars)",
+  createPost:     "Create Channel Posts",
+  forceJoin:      "Set Force Join",
+};
+
+function getUserPerm(uid, perm) {
+  const v = vipUsers.get(uid);
+  if (!v?.perms) return true; // default: all allowed
+  return v.perms[perm] !== false;
+}
+
+// /setperms — Admin: Set a permission for a user
+// Usage: /setperms <userId> <perm> <on|off>
+bot.onText(/\/setperms\s+(\d+)\s+(\w+)\s+(on|off)/i, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const perm = match[2];
+  const value = match[3].toLowerCase() === "on";
+
+  if (!VALID_PERMS[perm]) {
+    const permList = Object.keys(VALID_PERMS).map(k => `  • <code>${k}</code> — ${VALID_PERMS[k]}`).join("\n");
+    return bot.sendMessage(msg.chat.id,
+      `❌ <b>Invalid permission:</b> <code>${h(perm)}</code>\n\n<b>Valid permissions:</b>\n${permList}`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  const v = vipUsers.get(targetId);
+  if (!v) {
+    return bot.sendMessage(msg.chat.id,
+      `❌ User <code>${targetId}</code> ka koi VIP record nahi. Pehle /givemem se membership do.`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  const newPerms = { ...(v.perms || {}), [perm]: value };
+  const updated = { ...v, perms: newPerms };
+  vipUsers.set(targetId, updated);
+  await saveVip(targetId, updated);
+
+  const bu = botUsers.get(targetId);
+  const buName = bu?.firstName ? h(bu.firstName) : `User ${targetId}`;
+
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  🔧  <b>PERMISSION UPDATED</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `◈ User   ▸  <b>${buName}</b> (<code>${targetId}</code>)\n` +
+    `◈ Perm   ▸  <b>${VALID_PERMS[perm]}</b>\n` +
+    `◈ Status ▸  ${value ? "✅ ON (Allowed)" : "❌ OFF (Blocked)"}` +
+    `</blockquote>\n\n` +
+    `/viewperms ${targetId} — See all permissions`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// /viewperms — Admin: View all permissions for a user
+bot.onText(/\/viewperms\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const v = vipUsers.get(targetId);
+  const bu = botUsers.get(targetId);
+  const buName = bu?.firstName ? h(bu.firstName) : `User ${targetId}`;
+  const buHandle = bu?.username ? `@${bu.username}` : `ID: ${targetId}`;
+
+  const permLines = Object.entries(VALID_PERMS).map(([key, label]) => {
+    const allowed = getUserPerm(targetId, key);
+    return `  ${allowed ? "✅" : "❌"} <b>${label}</b>  (<code>${key}</code>)`;
+  }).join("\n");
+
+  const setExamples = Object.keys(VALID_PERMS).slice(0, 2)
+    .map(k => `/setperms ${targetId} ${k} off`).join("\n");
+
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  🔐  <b>USER PERMISSIONS</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `👤 <b>${buName}</b> (${buHandle})\n` +
+    `◈ User ID ▸  <code>${targetId}</code>\n` +
+    `◈ Plan    ▸  ${v?.plan || (v ? "VIP" : "❌ No Membership")}` +
+    `</blockquote>\n\n` +
+    `<b>━━◈ Permissions ◈━━</b>\n\n` +
+    `${permLines}\n\n` +
+    `<b>Change:</b>\n` +
+    `<code>${setExamples}</code>`,
     { parse_mode: "HTML" }
   );
 });
