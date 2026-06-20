@@ -1636,12 +1636,31 @@ bot.on("callback_query", async (query) => {
       return;
     }
 
+    const voterName = (query.from.first_name || "") + (query.from.last_name ? ` ${query.from.last_name}` : "");
     const existingVote = g.voterMap?.get(userId);
+
+    // ── TOGGLE: same participant clicked again → remove vote ──
+    if (existingVote === participantUserId) {
+      participant.votes = Math.max(0, participant.votes - 1);
+      participant.voters.delete(userId);
+      g.voterMap.delete(userId);
+      await saveGiveaway(g);
+      await updateChannelPost(g, participant);
+      await bot.answerCallbackQuery(query.id, {
+        text:
+          `◈ VOTE REMOVED ◈\n` +
+          `━━━━━━━━━━━━━━━━\n` +
+          `FOR    ▸ ${participant.name}\n` +
+          `TOTAL  ▸ ${participant.votes} votes\n` +
+          `━━━━━━━━━━━━━━━━\n` +
+          `Tap again to re-vote. ⚡ @${BOT_USERNAME}`,
+        show_alert: true
+      }).catch(() => {});
+      return;
+    }
+
+    // ── SWITCH: voted for someone else → remove old vote first ──
     if (existingVote) {
-      if (existingVote === participantUserId) {
-        await bot.answerCallbackQuery(query.id, { text: "You have already voted for this participant!", show_alert: true }).catch(() => {});
-        return;
-      }
       const oldP = g.participants.get(existingVote);
       if (oldP) {
         oldP.votes = Math.max(0, oldP.votes - 1);
@@ -1650,18 +1669,16 @@ bot.on("callback_query", async (query) => {
       }
     }
 
+    // ── CAST new vote ──
     if (!g.voterMap) g.voterMap = new Map();
     participant.votes += 1;
     participant.voters.add(userId);
     g.voterMap.set(userId, participantUserId);
 
     // Save and update channel post BEFORE answerCallbackQuery
-    // (answerCallbackQuery may silently fail if already answered by the pre-handler at top
-    //  of callback_query — that would skip everything after it)
     await saveGiveaway(g);
     await updateChannelPost(g, participant);
 
-    const voterName = (query.from.first_name || "") + (query.from.last_name ? ` ${query.from.last_name}` : "");
     await notifyAdmin(
       `🗳️ <b>Vote Cast</b>\n` +
       `From: <b>${h(voterName)}</b> (<code>${userId}</code>)\n` +
@@ -1670,7 +1687,6 @@ bot.on("callback_query", async (query) => {
       `Total votes: <b>${participant.votes}</b>`
     );
 
-    // answerCallbackQuery may silently fail (already answered) — that's fine
     await bot.answerCallbackQuery(query.id, {
       text:
         `◈ VOTE CAST ◈\n` +
