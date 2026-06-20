@@ -1965,6 +1965,56 @@ bot.on("callback_query", async (query) => {
     return;
   }
 
+  // ─── Admin: Support Ticket — Resolved / Not Resolved ───
+  if (data.startsWith("sup_resolve:") || data.startsWith("sup_pending:")) {
+    if (!isAdmin(userId)) return;
+    const isResolved = data.startsWith("sup_resolve:");
+    const targetUserId = Number(data.split(":")[1]);
+
+    if (isResolved) {
+      // Edit the admin's message to remove buttons and mark resolved
+      await bot.editMessageReplyMarkup(
+        { inline_keyboard: [[{ text: "✅ RESOLVED", callback_data: "noop" }]] },
+        { chat_id: chatId, message_id: msgId }
+      ).catch(() => {});
+      await bot.answerCallbackQuery(query.id, { text: "✅ Marked as Resolved", show_alert: false }).catch(() => {});
+
+      // Notify the user
+      try {
+        await bot.sendMessage(targetUserId,
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+          `  ✅  <b>ISSUE RESOLVED</b>\n` +
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+          `<blockquote>` +
+          `Aapka support request <b>resolve kar diya gaya hai</b>.\n\n` +
+          `Agar aur koi problem ho toh /support pe dubara message karein. 🙏` +
+          `</blockquote>\n\n` +
+          `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+          { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+        );
+      } catch (e) { console.error("Support resolve notify:", e.message); }
+    } else {
+      // Not resolved — just acknowledge admin and keep buttons
+      await bot.answerCallbackQuery(query.id, { text: "❌ Marked as Not Resolved", show_alert: false }).catch(() => {});
+      // Optionally notify user that we're still working on it
+      try {
+        await bot.sendMessage(targetUserId,
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+          `  ⏳  <b>WORKING ON IT</b>\n` +
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+          `<blockquote>` +
+          `Aapka issue abhi bhi review mein hai.\n\n` +
+          `Admin se directly contact karein:\n` +
+          `📩 <b>@drssupport</b>` +
+          `</blockquote>\n\n` +
+          `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+          { parse_mode: "HTML" }
+        );
+      } catch (e) { console.error("Support pending notify:", e.message); }
+    }
+    return;
+  }
+
   // ─── Admin: Approve Membership ───
   if (data.startsWith("approve_mem:")) {
     if (!isAdmin(userId)) return;
@@ -2728,24 +2778,48 @@ bot.on("message", async (msg) => {
     const pu = botUsers.get(userId) || {};
     const puName = h(msg.from.first_name || pu.firstName || "Unknown");
     const puHandle = msg.from.username ? `@${msg.from.username}` : (pu.username ? `@${pu.username}` : `ID: ${userId}`);
+
+    // Build text preview for text messages (show inline, not just forwarded)
+    const textPreview = msg.text
+      ? `\n\n📝 <b>Message:</b>\n<blockquote>${h(msg.text)}</blockquote>`
+      : (msg.caption ? `\n\n📝 <b>Caption:</b>\n<blockquote>${h(msg.caption)}</blockquote>` : "");
+
     const infoMsg =
-      `📩 <b>Support Request</b>\n\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  📩  <b>SUPPORT REQUEST</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `<blockquote>` +
       `◈ Name    ▸  <b>${puName}</b>\n` +
       `◈ Handle  ▸  ${puHandle}\n` +
       `◈ User ID ▸  <code>${userId}</code>` +
-      `</blockquote>`;
+      `</blockquote>` +
+      textPreview +
+      `\n\n✦ ─── <b>DRS NETWORK</b> ─── ✦`;
+
+    const resolveKb = {
+      inline_keyboard: [[
+        { text: "✅ Resolved", callback_data: `sup_resolve:${userId}` },
+        { text: "❌ Not Resolved", callback_data: `sup_pending:${userId}` }
+      ]]
+    };
+
     try {
-      await bot.sendMessage(MAIN_ADMIN_ID, infoMsg, { parse_mode: "HTML" });
-      await bot._request("forwardMessage", {
-        chat_id: MAIN_ADMIN_ID,
-        from_chat_id: chatId,
-        message_id: msg.message_id
-      });
+      await bot.sendMessage(MAIN_ADMIN_ID, infoMsg, { parse_mode: "HTML", reply_markup: resolveKb });
+      // Also forward the original message (photo/video/sticker/etc) if non-text
+      if (!msg.text) {
+        await bot._request("forwardMessage", {
+          chat_id: MAIN_ADMIN_ID,
+          from_chat_id: chatId,
+          message_id: msg.message_id
+        });
+      }
     } catch (e) { console.error("Support forward error:", e.message); }
+
     await bot.sendMessage(chatId,
-      `✅ <b>Message Sent!</b>\n\n` +
-      `<blockquote>Aapka message admin ko bhej diya gaya hai.\nJald hi <b>@drssupport</b> se response milega. 🙏</blockquote>\n\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  ✅  <b>MESSAGE SENT!</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>Aapka message admin ko bhej diya gaya hai.\nJald hi reply milega. 🙏</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
     );
@@ -3385,18 +3459,6 @@ bot.onText(/\/membership/, async (msg) => {
     ? { inline_keyboard: [[{ text: "◀️ Back", callback_data: "main_menu" }]] }
     : { inline_keyboard: buildPlanButtons() };
   await bot.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: kb });
-});
-
-bot.onText(/\/support/, async (msg) => {
-  if (msg.chat.type !== "private") return;
-  await bot.sendMessage(msg.chat.id,
-    `<b>💬 DRS Bot Support</b>\n\n` +
-    `Need help? Contact us:\n\n` +
-    `📩 Support: @drssupport\n` +
-    `⚡ Powered by: <b>DRS NETWORK</b>\n\n` +
-    `<i>Please describe your issue clearly when contacting support.</i>`,
-    { parse_mode: "HTML" }
-  );
 });
 
 bot.onText(/\/stats/, async (msg) => {
