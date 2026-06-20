@@ -137,12 +137,26 @@ const DEFAULT_FORCE_CHANNELS = [
 
 async function connectDB() {
   try {
-    await mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 10000 });
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 10000,
+      heartbeatFrequencyMS: 10000,
+    });
     console.log("✅ MongoDB Connected!");
     await loadStateFromDB();
   } catch (e) {
     console.error("❌ MongoDB connection error:", e.message);
   }
+
+  // Auto-reconnect on unexpected disconnect (Railway network hiccups)
+  mongoose.connection.on("disconnected", () => {
+    console.error("⚠️ MongoDB disconnected. Reconnecting in 5s...");
+    setTimeout(() => {
+      mongoose.connect(MONGODB_URI, { serverSelectionTimeoutMS: 10000, heartbeatFrequencyMS: 10000 })
+        .catch(e => console.error("MongoDB reconnect failed:", e.message));
+    }, 5000);
+  });
+  mongoose.connection.on("reconnected", () => console.log("✅ MongoDB reconnected!"));
+  mongoose.connection.on("error", e => console.error("MongoDB error:", e.message));
 }
 
 async function loadStateFromDB() {
@@ -1019,6 +1033,12 @@ bot.on("my_chat_member", async (update) => {
 // ============================================================
 
 bot.on("callback_query", async (query) => {
+  // Inline-mode callbacks have no .message (null) — guard before any access
+  if (!query.message) {
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+    return;
+  }
+  try {
   const chatId = query.message.chat.id;
   let msgId = query.message.message_id;
   const userId = query.from.id;
@@ -2430,6 +2450,7 @@ bot.on("callback_query", async (query) => {
     } catch {}
     return;
   }
+  } catch (e) { console.error("⚠️ callback_query handler error:", e.message, "| data:", query?.data); }
 });
 
 // ============================================================
@@ -2761,6 +2782,7 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
 // ============================================================
 
 bot.on("message", async (msg) => {
+  try {
   if (msg.chat.type !== "private") return;
   if (msg.successful_payment) return;
 
@@ -3287,6 +3309,7 @@ bot.on("message", async (msg) => {
     );
     return;
   }
+  } catch (e) { console.error("⚠️ message handler error:", e.message); }
 });
 
 // ============================================================
@@ -3359,6 +3382,7 @@ bot.on("message", async (msg) => {
 // ============================================================
 
 bot.on("chat_member", async (update) => {
+  try {
   const { chat, new_chat_member, old_chat_member } = update;
   const wasActive = ["member", "administrator", "creator"].includes(old_chat_member?.status);
   const isGone = ["left", "kicked", "banned"].includes(new_chat_member?.status);
@@ -3449,6 +3473,7 @@ bot.on("chat_member", async (update) => {
       );
     }
   }
+  } catch (e) { console.error("⚠️ chat_member handler error:", e.message); }
 });
 
 // ============================================================
@@ -4584,7 +4609,12 @@ bot.on("polling_error", e => {
       last409Log = now;
     }
   } else if (e.message && e.message.includes("EFATAL")) {
-    console.error("⚠️ Fatal polling error, reconnecting...");
+    console.error("⚠️ EFATAL polling error — restarting polling in 5s...");
+    setTimeout(() => {
+      bot.stopPolling().catch(() => {}).then(() => {
+        bot.startPolling().catch(re => console.error("Polling restart failed:", re.message));
+      });
+    }, 5000);
   } else {
     console.error("Polling error:", e.message);
   }
