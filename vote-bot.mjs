@@ -3576,6 +3576,66 @@ bot.onText(/\/membership/, async (msg) => {
   await bot.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: kb });
 });
 
+// /myplan — Any user: check own VIP membership status
+bot.onText(/\/myplan/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
+  const m = getMembership(userId);
+  const now = new Date();
+
+  if (!m) {
+    return bot.sendMessage(chatId,
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `   👑  <b>MERA PLAN</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>❌ <b>Koi active membership nahi hai.</b>\n\nVIP lene ke liye /membership use karo.</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [
+        [{ text: "👑 VIP Lena Hai", callback_data: "vip_membership" }],
+        [{ text: "🏠 Main Menu", callback_data: "main_menu" }]
+      ]}}
+    );
+    return;
+  }
+
+  const startedAt = m.startedAt ? new Date(m.startedAt) : null;
+  const expiry    = m.expiry    ? new Date(m.expiry)    : null;
+  const msLeft    = expiry ? expiry.getTime() - now.getTime() : null;
+  const daysLeft  = msLeft ? Math.ceil(msLeft / 86400000) : null;
+  const hoursLeft = msLeft ? Math.floor((msLeft % 86400000) / 3600000) : null;
+  const minsLeft  = msLeft ? Math.floor((msLeft % 3600000) / 60000) : null;
+
+  let progressBar = "";
+  if (startedAt && expiry && m.days) {
+    const totalMs  = expiry.getTime() - startedAt.getTime();
+    const usedMs   = now.getTime() - startedAt.getTime();
+    const pct      = Math.max(0, Math.min(100, Math.round((usedMs / totalMs) * 100)));
+    const filled   = Math.round(pct / 10);
+    progressBar    = `${"█".repeat(filled)}${"░".repeat(10 - filled)} ${pct}% used`;
+  }
+
+  const text =
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `   👑  <b>MERA PLAN</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>` +
+    `✅ <b>VIP Active Hai!</b>\n\n` +
+    `⭐ <b>Plan  :</b>  ${m.plan || "VIP"}\n` +
+    `📅 <b>Shuru :</b>  ${safeFormatDateTime(startedAt)}\n` +
+    `⏳ <b>Khatam:</b>  ${safeFormatDateTime(expiry)}\n` +
+    `⏱️ <b>Baki  :</b>  ${timeRemaining(expiry)}\n` +
+    (daysLeft !== null ? `📆 <b>Days  :</b>  ${daysLeft}d ${hoursLeft}h ${minsLeft}m\n` : "") +
+    (progressBar ? `\n<code>${progressBar}</code>` : "") +
+    `</blockquote>\n\n` +
+    `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
+
+  await bot.sendMessage(chatId, text, {
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] }
+  });
+});
+
 bot.onText(/\/stats/, async (msg) => {
   if (msg.chat.type !== "private") return;
   const userId = msg.from.id;
@@ -4512,47 +4572,6 @@ bot.onText(/\/cleandb/, async (msg) => {
   );
 });
 
-// /myplan — VIP User: Check own membership status
-bot.onText(/\/myplan/, async (msg) => {
-  if (msg.chat.type !== "private") return;
-  const userId = msg.from.id;
-  const m = getMembership(userId);
-  if (!m) {
-    return bot.sendMessage(msg.chat.id,
-      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
-      `  📋  <b>MY MEMBERSHIP</b>\n` +
-      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
-      `<blockquote>` +
-      `◈ Status  ▸  ❌ <b>No Active Membership</b>\n\n` +
-      `Use /membership to get a plan, or contact admin.` +
-      `</blockquote>`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 Get Membership", callback_data: "vip_membership" }]] } }
-    );
-  }
-  const expiry = m.expiry ? new Date(m.expiry) : null;
-  const now = new Date();
-  const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - now) / (1000 * 60 * 60 * 24))) : "∞";
-  await bot.sendMessage(msg.chat.id,
-    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
-    `  👑  <b>MY MEMBERSHIP</b>\n` +
-    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
-    `<blockquote>` +
-    `◈ Status    ▸  ✅ <b>ACTIVE</b>\n` +
-    `◈ Plan      ▸  ${m.plan || "VIP"}\n` +
-    `◈ Expires   ▸  ${expiry ? expiry.toLocaleDateString("en-IN") : "∞"}\n` +
-    `◈ Days Left ▸  <b>${daysLeft} days</b>` +
-    `</blockquote>\n\n` +
-    `━━━◈ <b>YOUR ACCESS</b> ◈━━━\n\n` +
-    `<blockquote>` +
-    `🎁 Create giveaways\n` +
-    `📢 Post giveaway image in your channel\n` +
-    `🔗 Set per-giveaway Force Join channel\n` +
-    `📊 Full giveaway management panel\n` +
-    `🏆 Live leaderboard & voting controls` +
-    `</blockquote>`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🎁 My Giveaways", callback_data: "my_giveaways" }]] } }
-  );
-});
 
 // /support — Contact support
 bot.onText(/\/support/, async (msg) => {
