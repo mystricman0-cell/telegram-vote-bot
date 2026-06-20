@@ -4467,80 +4467,87 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
     `<b>💳 MEMBERSHIP MANAGEMENT</b>\n` +
     `<blockquote>` +
-    `/givemem &lt;userId&gt; &lt;1d|7d|30d&gt;\n  → Grant membership to a user\n\n` +
-    `/removemem &lt;userId&gt;\n  → Revoke membership\n\n` +
-    `/extendmem &lt;userId&gt; &lt;1d|7d|30d&gt;\n  → Extend membership (added to existing)\n\n` +
-    `/listmem\n  → View all active members (name + permissions)\n\n` +
-    `/meminfo &lt;userId&gt;\n  → Check membership status of any user\n\n` +
-    `/setplan &lt;1d|7d|30d&gt; &lt;price&gt; &lt;days&gt;\n  → Update plan price/duration\n  Example: /setplan 7d 80 7` +
+    `/givemem &lt;userId&gt; &lt;1d|7d|30d&gt;\n  → Grant VIP membership to a user\n\n` +
+    `/removemem &lt;userId&gt;\n  → Revoke membership immediately\n\n` +
+    `/extendmem &lt;userId&gt; &lt;1d|7d|30d&gt;\n  → Add days on top of existing membership\n\n` +
+    `/deductmem &lt;userId&gt; &lt;days&gt;\n  → Deduct days from membership\n` +
+    `  Example: /deductmem 123456 3\n` +
+    `  Silent mode: /deductmem 123456 3 silent\n\n` +
+    `/listmem\n  → View all active VIP members\n\n` +
+    `/meminfo &lt;userId&gt;\n  → Check any user's membership status\n\n` +
+    `/setplan &lt;1d|7d|30d&gt; &lt;price&gt;\n  → Update plan price\n  Example: /setplan 7d 80` +
     `</blockquote>\n\n` +
-    `<b>🔐 PERMISSIONS (Button UI)</b>\n` +
+    `<b>🆓 FREE GIVEAWAY CONTROL</b>\n` +
     `<blockquote>` +
-    `/perms &lt;userId&gt;\n  → Interactive button toggle — tap to on/off any permission\n  Example: /perms 123456789\n\n` +
+    `/setfreelimit &lt;number&gt;\n  → Set free giveaway quota per non-VIP user\n  Example: /setfreelimit 15\n\n` +
+    `/setfreelimit unlimited\n  → Allow all users unlimited free giveaways\n\n` +
+    `/setfreelimit limited\n  → Re-enable the quota at current limit` +
+    `</blockquote>\n\n` +
+    `<b>🔐 PERMISSIONS</b>\n` +
+    `<blockquote>` +
+    `/perms &lt;userId&gt;\n  → Interactive button toggle (tap to on/off)\n  Example: /perms 123456789\n\n` +
     `/viewperms &lt;userId&gt;\n  → View all permissions for a user\n\n` +
-    `/setperms &lt;userId&gt; &lt;perm&gt; &lt;on|off&gt;\n  → Set a single permission (text command)\n\n` +
-    `<b>Available Permissions:</b>\n` +
-    `  • createGiveaway — Create giveaways\n` +
-    `  • voteFree — Cast free votes\n` +
-    `  • buyVotes — Buy votes with INR/Stars\n` +
-    `  • createPost — Post to channels\n` +
-    `  • forceJoin — Configure force join\n` +
-    `  • customPhoto — Upload custom giveaway photo` +
+    `/setperms &lt;userId&gt; &lt;perm&gt; &lt;on|off&gt;\n  → Set one permission via text\n  Example: /setperms 123456 customPhoto on\n\n` +
+    `<b>Available permissions:</b>\n` +
+    `  • createGiveaway  — Create giveaways\n` +
+    `  • voteFree        — Cast free votes\n` +
+    `  • buyVotes        — Buy votes (INR/Stars)\n` +
+    `  • createPost      — Post to channels\n` +
+    `  • forceJoin       — Configure force join\n` +
+    `  • customPhoto     — Upload custom giveaway photo` +
     `</blockquote>`;
 
   const part2 =
     `<b>🎁 GIVEAWAY CONTROLS</b>\n` +
     `<blockquote>` +
-    `/allgiveaways — View all giveaways\n\n` +
-    `/setstar &lt;gId&gt; &lt;n&gt; — Set votes per ⭐ Star\n` +
-    `/setinr &lt;gId&gt; &lt;n&gt; — Set votes per ₹1 INR\n` +
-    `  Example: /setstar ABC12345 10` +
+    `/allgiveaways\n  → List all giveaways (active + past)\n\n` +
+    `/setstar &lt;giveawayId&gt; &lt;votes&gt;\n  → Set votes awarded per Telegram ⭐ Star\n  Example: /setstar ABC12345 10\n\n` +
+    `/setinr &lt;giveawayId&gt; &lt;votes&gt;\n  → Set votes awarded per ₹1 INR paid\n  Example: /setinr ABC12345 5` +
     `</blockquote>\n\n` +
     `<b>📢 BROADCAST</b>\n` +
     `<blockquote>` +
-    `/broadcast — Choose target: Users / Channels / Groups / All (silent)\n` +
-    `/broadcast &lt;text&gt; — Send image+text to chosen target (silent)\n` +
-    `/loud — Same as broadcast but with notification sound\n` +
-    `/loud &lt;text&gt; — Send image+text loudly to chosen target\n\n` +
-    `💡 Reply to any message + /broadcast → forwards that exact message to the selected target` +
+    `/broadcast\n  → Choose target group (silent notification)\n\n` +
+    `/broadcast &lt;text&gt;\n  → Send image + text to chosen target (silent)\n\n` +
+    `/loud\n  → Same as /broadcast but WITH notification sound\n\n` +
+    `/loud &lt;text&gt;\n  → Send image + text loudly\n\n` +
+    `💡 <i>Reply to any message + /broadcast to forward it to all targets</i>` +
     `</blockquote>\n\n` +
     `<b>📩 DIRECT SEND & PIN</b>\n` +
     `<blockquote>` +
-    `/send &lt;chatId&gt; &lt;msg&gt; — Send to specific chat\n` +
-    `/sendloud &lt;chatId&gt; &lt;msg&gt; — LOUD send\n` +
-    `/pin &lt;chatId&gt; &lt;msg&gt; — Send &amp; pin` +
+    `/send &lt;chatId&gt; &lt;message&gt;\n  → Send message to a specific chat/channel\n  Example: /send -1001234567890 Hello!\n\n` +
+    `/sendloud &lt;chatId&gt; &lt;message&gt;\n  → Same as /send but with notification\n\n` +
+    `/pin &lt;chatId&gt; &lt;message&gt;\n  → Send a message and pin it in the chat` +
     `</blockquote>`;
 
   const part3 =
     `<b>🖼️ IMAGES & CONFIG</b>\n` +
     `<blockquote>` +
-    `/setwelcomeimageurl — Set welcome image (spoiler)\n` +
-    `/clearwelcomeimage — Remove welcome image\n` +
-    `/setmembershipqr — Upload payment QR photo\n` +
-    `/imageinfo — Check image status` +
+    `/setwelcomeimageurl\n  → Set welcome screen image (shown as spoiler)\n\n` +
+    `/clearwelcomeimage\n  → Remove welcome image\n\n` +
+    `/setmembershipqr\n  → Upload UPI/payment QR code photo\n\n` +
+    `/imageinfo\n  → Check current welcome image + QR status` +
     `</blockquote>\n\n` +
-    `<b>📢 FORCE JOIN</b>\n` +
+    `<b>🔗 FORCE JOIN</b>\n` +
     `<blockquote>` +
-    `/setforcejoin 1 — Set force join channel 1\n` +
-    `/setforcejoin 2 — Set force join channel 2\n` +
-    `/forcejoininfo — View current force join config` +
+    `/setforcejoin &lt;channelId&gt;\n  → Set force-join slot 1 channel ID\n\n` +
+    `/setforcejoin 2 &lt;channelId&gt;\n  → Set force-join slot 2 channel ID\n\n` +
+    `/forcejoininfo\n  → View current force join config + IDs` +
     `</blockquote>\n\n` +
     `<b>📊 INFO & MAINTENANCE</b>\n` +
     `<blockquote>` +
-    `/stats — Bot ka full dashboard (users, channels, votes)\n` +
-    `/allchannels — Registered channels\n` +
-    `/cleandb — Clean expired data from DB\n` +
-    `/adminhelp — Show this panel` +
+    `/stats\n  → Full bot dashboard (users, channels, giveaways, votes)\n\n` +
+    `/allchannels\n  → List all registered channels + groups\n\n` +
+    `/cleandb\n  → Remove expired/stale data from MongoDB\n\n` +
+    `/adminhelp\n  → Show this admin command panel` +
     `</blockquote>\n\n` +
-    `━━━◈ <b>VIP USER COMMANDS</b> ◈━━━\n` +
+    `<b>👤 USER COMMANDS (for reference)</b>\n` +
     `<blockquote>` +
-    `/myplan — Check your own membership status\n` +
-    `/membership — Membership info + plans\n\n` +
-    `<b>VIP Features (when Membership is Active):</b>\n` +
-    `▸ Giveaway creation\n` +
-    `▸ Giveaway image posted to channel\n` +
-    `▸ Per-giveaway Force Join set\n` +
-    `▸ Full management panel` +
+    `/start — Open main menu or join giveaway\n` +
+    `/membership — View membership status + plans\n` +
+    `/myplan — Check own VIP status\n` +
+    `/topvoters — Top participants in active giveaway\n` +
+    `/support — Send support message to admin\n` +
+    `/help — Full user guide` +
     `</blockquote>`;
 
   await bot.sendMessage(msg.chat.id, part1, { parse_mode: "HTML" });
