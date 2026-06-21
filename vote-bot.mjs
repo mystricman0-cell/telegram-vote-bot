@@ -2884,46 +2884,63 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  // ─── Support message (any message type) ───
+  // ─── Support message (text, photo, document, video, voice, audio, sticker, file) ───
   if (state?.step === "awaiting_support_message") {
     userState.delete(userId);
     const pu = botUsers.get(userId) || {};
-    const puName = h(msg.from.first_name || pu.firstName || "Unknown");
+    const puName  = h(msg.from.first_name || pu.firstName || "Unknown");
     const puHandle = msg.from.username ? `@${msg.from.username}` : (pu.username ? `@${pu.username}` : `ID: ${userId}`);
+    const vipTag   = getMembership(userId) ? " 👑 VIP" : "";
 
-    // Build text preview for text messages (show inline, not just forwarded)
-    const textPreview = msg.text
-      ? `\n\n📝 <b>Message:</b>\n<blockquote>${h(msg.text)}</blockquote>`
-      : (msg.caption ? `\n\n📝 <b>Caption:</b>\n<blockquote>${h(msg.caption)}</blockquote>` : "");
+    // Detect media type
+    let mediaType = "Text";
+    if      (msg.photo)    mediaType = "📷 Photo";
+    else if (msg.document) mediaType = "📄 Document / File";
+    else if (msg.video)    mediaType = "🎥 Video";
+    else if (msg.voice)    mediaType = "🎙️ Voice";
+    else if (msg.audio)    mediaType = "🎵 Audio";
+    else if (msg.sticker)  mediaType = "🎭 Sticker";
+    else if (msg.video_note) mediaType = "📹 Video Note";
 
-    const infoMsg =
+    const userCaption =
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `  📩  <b>SUPPORT REQUEST</b>\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `<blockquote>` +
-      `◈ Name    ▸  <b>${puName}</b>\n` +
+      `◈ Name    ▸  <b>${puName}</b>${vipTag}\n` +
       `◈ Handle  ▸  ${puHandle}\n` +
-      `◈ User ID ▸  <code>${userId}</code>` +
-      `</blockquote>` +
-      textPreview +
-      `\n\n✦ ─── <b>DRS NETWORK</b> ─── ✦`;
+      `◈ User ID ▸  <code>${userId}</code>\n` +
+      `◈ Type    ▸  ${mediaType}` +
+      (msg.caption ? `\n◈ Caption ▸  ${h(msg.caption)}` : "") +
+      (msg.text    ? `\n◈ Message ▸  ${h(msg.text)}`    : "") +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
 
-    const resolveKb = {
-      inline_keyboard: [[
-        { text: "✅ Resolved", callback_data: `sup_resolve:${userId}` },
-        { text: "❌ Not Resolved", callback_data: `sup_pending:${userId}` }
-      ]]
-    };
+    const resolveKb = { inline_keyboard: [[
+      { text: "✅ Resolved",     callback_data: `sup_resolve:${userId}` },
+      { text: "❌ Not Resolved", callback_data: `sup_pending:${userId}` }
+    ]]};
 
     try {
-      await bot.sendMessage(MAIN_ADMIN_ID, infoMsg, { parse_mode: "HTML", reply_markup: resolveKb });
-      // Also forward the original message (photo/video/sticker/etc) if non-text
-      if (!msg.text) {
-        await bot._request("forwardMessage", {
-          chat_id: MAIN_ADMIN_ID,
-          from_chat_id: chatId,
-          message_id: msg.message_id
-        });
+      // Step 1: Send info card to admin
+      await bot.sendMessage(MAIN_ADMIN_ID, userCaption, { parse_mode: "HTML", reply_markup: resolveKb });
+
+      // Step 2: Send the actual media file directly (photo/doc/video/voice/audio/sticker/video_note)
+      const mediaCaption = `📩 Support | ${puName} (${puHandle}) | ID: ${userId}`;
+      if (msg.photo) {
+        await bot.sendPhoto(MAIN_ADMIN_ID, msg.photo[msg.photo.length - 1].file_id, { caption: mediaCaption });
+      } else if (msg.document) {
+        await bot.sendDocument(MAIN_ADMIN_ID, msg.document.file_id, { caption: mediaCaption });
+      } else if (msg.video) {
+        await bot.sendVideo(MAIN_ADMIN_ID, msg.video.file_id, { caption: mediaCaption });
+      } else if (msg.voice) {
+        await bot.sendVoice(MAIN_ADMIN_ID, msg.voice.file_id, { caption: mediaCaption });
+      } else if (msg.audio) {
+        await bot.sendAudio(MAIN_ADMIN_ID, msg.audio.file_id, { caption: mediaCaption });
+      } else if (msg.sticker) {
+        await bot.sendSticker(MAIN_ADMIN_ID, msg.sticker.file_id);
+      } else if (msg.video_note) {
+        await bot.sendVideoNote(MAIN_ADMIN_ID, msg.video_note.file_id);
       }
     } catch (e) { console.error("Support forward error:", e.message); }
 
