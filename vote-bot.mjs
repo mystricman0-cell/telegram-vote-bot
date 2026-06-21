@@ -110,6 +110,8 @@ const botUsers = new Map();
 const bannedUsers = new Set();
 let maintenanceMode = false;
 let customWelcomeText = null;
+const scheduledMessages = new Map(); // id → { id, timeStr, text, timerId, createdAt }
+let scheduleCounter = 1;
 let paymentCounter = 1;
 let membershipPayCounter = 1;
 let welcomeImageUrl = null;
@@ -4916,6 +4918,133 @@ bot.onText(/\/clonegiveaway\s+(\S+)/, async (msg, match) => {
   );
 });
 
+// ─── /schedule HH:MM <message> — Schedule a broadcast ───
+bot.onText(/\/schedule\s+(\d{1,2}:\d{2})\s+([\s\S]+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const timeStr = match[1].trim();   // e.g. "22:00"
+  const text    = match[2].trim();
+
+  // Parse HH:MM
+  const [hh, mm] = timeStr.split(":").map(Number);
+  if (isNaN(hh) || isNaN(mm) || hh > 23 || mm > 59) {
+    return bot.sendMessage(chatId,
+      `❌ <b>Invalid time format.</b>\nUse HH:MM (24h) — e.g. <code>/schedule 22:00 Aaj ki update</code>`,
+      { parse_mode: "HTML" });
+  }
+
+  // Calculate milliseconds until target time (IST = UTC+5:30)
+  const nowUTC = new Date();
+  const nowIST = new Date(nowUTC.getTime() + (5.5 * 60 * 60 * 1000));
+  const targetIST = new Date(nowIST);
+  targetIST.setHours(hh, mm, 0, 0);
+  let msUntil = targetIST - nowIST;
+  if (msUntil <= 0) msUntil += 24 * 60 * 60 * 1000; // next day if time already passed
+
+  const schedId = `SC${String(scheduleCounter++).padStart(3, "0")}`;
+
+  const timerId = setTimeout(async () => {
+    scheduledMessages.delete(schedId);
+    const allUsers = [...botUsers.keys()];
+    let sent = 0, fail = 0;
+    for (const uid of allUsers) {
+      try {
+        await bot.sendMessage(uid,
+          `📢 <b>Scheduled Message</b>\n\n${text}`,
+          { parse_mode: "HTML" });
+        sent++;
+      } catch { fail++; }
+    }
+    // Notify admin
+    try {
+      await bot.sendMessage(chatId,
+        `✅ <b>Scheduled message sent!</b>\n\n` +
+        `<blockquote>ID: <code>${schedId}</code>\n` +
+        `Time: <b>${timeStr} IST</b>\n` +
+        `Delivered: <b>${sent}</b> users | Failed: <b>${fail}</b></blockquote>`,
+        { parse_mode: "HTML" });
+    } catch {}
+  }, msUntil);
+
+  scheduledMessages.set(schedId, { id: schedId, timeStr, text, timerId, createdAt: new Date() });
+
+  const mins = Math.round(msUntil / 60000);
+  const hrsLeft = Math.floor(mins / 60);
+  const minsLeft = mins % 60;
+  const eta = hrsLeft > 0 ? `${hrsLeft}h ${minsLeft}m` : `${minsLeft}m`;
+
+  await bot.sendMessage(chatId,
+    `⏰ <b>Broadcast Scheduled!</b>\n\n` +
+    `<blockquote>` +
+    `ID      ▸  <code>${schedId}</code>\n` +
+    `Time    ▸  <b>${timeStr} IST</b>\n` +
+    `In      ▸  <b>${eta}</b>\n` +
+    `Message ▸  ${h(text.slice(0, 80))}${text.length > 80 ? "…" : ""}` +
+    `</blockquote>\n\n` +
+    `Cancel karna ho to: <code>/cancelschedule ${schedId}</code>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /schedule (no args) — usage hint ───
+bot.onText(/^\/schedule$/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  await bot.sendMessage(msg.chat.id,
+    `⏰ <b>Schedule a Broadcast</b>\n\n` +
+    `<b>Usage:</b>\n<code>/schedule HH:MM Message text</code>\n\n` +
+    `<b>Examples:</b>\n` +
+    `<code>/schedule 22:00 Aaj ki update aagyi!</code>\n` +
+    `<code>/schedule 08:30 Good morning everyone 🌅</code>\n\n` +
+    `• Time is in <b>IST (24h format)</b>\n` +
+    `• Message goes to <b>all bot users</b>\n` +
+    `• View pending: /schedulelist\n` +
+    `• Cancel: /cancelschedule &lt;ID&gt;`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /schedulelist — Show all pending scheduled messages ───
+bot.onText(/\/schedulelist/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  if (scheduledMessages.size === 0) {
+    return bot.sendMessage(chatId,
+      `📭 <b>No scheduled messages.</b>\n\nSchedule karne ke liye:\n<code>/schedule 22:00 Aaj ki update</code>`,
+      { parse_mode: "HTML" });
+  }
+  let lines = `⏰ <b>Pending Scheduled Broadcasts (${scheduledMessages.size})</b>\n\n`;
+  for (const s of scheduledMessages.values()) {
+    lines +=
+      `<blockquote>` +
+      `🔖 <code>${s.id}</code>  ▸  <b>${s.timeStr} IST</b>\n` +
+      `${h(s.text.slice(0, 60))}${s.text.length > 60 ? "…" : ""}` +
+      `</blockquote>\n`;
+  }
+  lines += `\nCancel: <code>/cancelschedule &lt;ID&gt;</code>`;
+  await bot.sendMessage(chatId, lines, { parse_mode: "HTML" });
+});
+
+// ─── /cancelschedule <id> — Cancel a scheduled message ───
+bot.onText(/\/cancelschedule\s+(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const schedId = match[1].trim().toUpperCase();
+  const entry = scheduledMessages.get(schedId);
+  if (!entry) {
+    return bot.sendMessage(chatId,
+      `❌ <b>Schedule not found:</b> <code>${schedId}</code>\n\nView list: /schedulelist`,
+      { parse_mode: "HTML" });
+  }
+  clearTimeout(entry.timerId);
+  scheduledMessages.delete(schedId);
+  await bot.sendMessage(chatId,
+    `🗑️ <b>Schedule Cancelled</b>\n\n` +
+    `<blockquote>` +
+    `ID      ▸  <code>${schedId}</code>\n` +
+    `Was set ▸  <b>${entry.timeStr} IST</b>\n` +
+    `Message ▸  ${h(entry.text.slice(0, 60))}${entry.text.length > 60 ? "…" : ""}` +
+    `</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
 // ─── /userinfo <userId> ───
 bot.onText(/\/userinfo\s+(\d+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
@@ -5212,8 +5341,14 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `<blockquote>` +
     `/broadcast\n  → Compose photo/doc/video+text, pick target (silent)\n\n` +
     `/broadcast &lt;text&gt;\n  → Image+text broadcast (silent)\n\n` +
-    `/loud\n  → Same as /broadcast but WITH sound\n\n` +
+    `/loud\n  → Same as /broadcast with sound\n\n` +
     `💡 <i>Reply to any msg + /broadcast → copy-forward mode</i>` +
+    `</blockquote>\n\n` +
+    `<b>⏰ SCHEDULED BROADCAST</b>\n` +
+    `<blockquote>` +
+    `/schedule &lt;HH:MM&gt; &lt;message&gt;\n  → Auto-send to all users at set IST time\n  Example: /schedule 22:00 Aaj ki update\n\n` +
+    `/schedulelist\n  → View all pending scheduled broadcasts\n\n` +
+    `/cancelschedule &lt;ID&gt;\n  → Cancel a scheduled broadcast by ID` +
     `</blockquote>\n\n` +
     `<b>📩 DIRECT SEND & PIN</b>\n` +
     `<blockquote>` +

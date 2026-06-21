@@ -204,6 +204,16 @@
 - New giveaway created in draft (inactive) state — zero participants
 - Admin can activate it from My Giveaways menu
 
+### ⏰ &nbsp;Scheduled Broadcasts
+- `/schedule 22:00 Aaj ki update` — Auto-sends message to all users at the given IST time
+- Time is in **24h IST format** (HH:MM)
+- If the time has already passed today, message sends **tomorrow** at that time
+- Each schedule gets a unique ID (e.g. `SC001`) for easy tracking/cancellation
+- `/schedulelist` — View all pending scheduled broadcasts with ID + time + preview
+- `/cancelschedule <ID>` — Cancel any pending schedule by its ID
+- Admin gets a **delivery report** (sent/failed counts) after the message fires
+- Multiple schedules can be queued at the same time
+
 ### 🔗 &nbsp;Force Join System
 - Per-giveaway force join — voters must join a specific channel first
 - Global force join — applies to all bot users (VIP 7D+)
@@ -330,6 +340,9 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/broadcast` | `/broadcast` | Compose photo/doc/video+text, pick target (silent) |
 | `/broadcast` | `/broadcast <text>` | Image + styled text broadcast (silent) |
 | `/loud` | `/loud` | Same as /broadcast with notification sound |
+| `/schedule` | `/schedule <HH:MM> <text>` | Schedule a broadcast for a specific IST time |
+| `/schedulelist` | `/schedulelist` | View all pending scheduled broadcasts |
+| `/cancelschedule` | `/cancelschedule <ID>` | Cancel a pending scheduled broadcast |
 | `/send` | `/send <chatId> <text>` | Send to specific chat/channel |
 | `/pin` | `/pin <chatId> <text>` | Send and pin a message |
 
