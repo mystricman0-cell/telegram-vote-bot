@@ -1185,7 +1185,7 @@ bot.on("callback_query", async (query) => {
       `⏳ <b>Broadcasting to ${targetLabel}...</b>\n<i>Please wait...</i>`,
       { parse_mode: "HTML" }
     );
-    await doBroadcast(chatId, state.adminMsg, state.text, state.silent, target);
+    await doBroadcast(chatId, state.adminMsg, state.text, state.silent, target, state.composeMsg || null);
     return;
   }
 
@@ -2884,6 +2884,13 @@ bot.on("message", async (msg) => {
     return;
   }
 
+  // ─── Broadcast compose — admin sends content to broadcast ───
+  if (state?.step === "broadcast_compose") {
+    userState.delete(userId);
+    await showBroadcastMenu(chatId, userId, null, "", state.silent, msg);
+    return;
+  }
+
   // ─── Support message (text, photo, document, video, voice, audio, sticker, file) ───
   if (state?.step === "awaiting_support_message") {
     userState.delete(userId);
@@ -3771,7 +3778,7 @@ bot.onText(/\/createpost/, async (msg) => {
 
 // ── Broadcast helper ──
 // target: "users" | "channels" | "groups" | "all"
-async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = "all") {
+async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = "all", composeMsg = null) {
   const channelIds = [...registeredChannels.entries()]
     .filter(([, c]) => c.type === "channel")
     .map(([id]) => id);
@@ -3781,21 +3788,28 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
   const userIds = [...botUsers.keys()];
 
   let targets = [];
-  if (target === "users")    targets = userIds;
+  if (target === "users")         targets = userIds;
   else if (target === "channels") targets = channelIds;
   else if (target === "groups")   targets = groupIds;
   else targets = [...new Set([...channelIds, ...groupIds, ...userIds])];
 
-  const replyTo = adminMsg.reply_to_message;
+  const replyTo = adminMsg?.reply_to_message;
   let sent = 0, failed = 0;
 
   for (const id of targets) {
     try {
-      if (replyTo) {
+      if (composeMsg) {
+        // Admin composed content (photo/doc/video/text with caption)
+        await bot.copyMessage(id, composeMsg.chat.id, composeMsg.message_id, {
+          disable_notification: silent
+        });
+      } else if (replyTo) {
+        // Admin replied to an existing message
         await bot.copyMessage(id, adminMsg.chat.id, replyTo.message_id, {
           disable_notification: silent
         });
       } else {
+        // Text-only: send styled broadcast card
         const caption =
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
           `  📢  <b>DRS BROADCAST</b>\n` +
@@ -3812,7 +3826,7 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
   }
 
   const targetLabel = { users: "👥 Users", channels: "📢 Channels", groups: "👥 Groups", all: "🌐 All" }[target];
-  const mode = replyTo ? "Message-Copy" : "Image+Text";
+  const modeStr = composeMsg ? "📎 Composed" : replyTo ? "📋 Message-Copy" : "🖼️ Image+Text";
   const notif = silent ? "🔕 Silent" : "🔔 LOUD";
   await bot.sendMessage(adminChatId,
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
@@ -3820,7 +3834,7 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
     `<blockquote>` +
     `◈ Target   ▸  ${targetLabel}\n` +
-    `◈ Mode     ▸  ${notif} ${mode}\n` +
+    `◈ Mode     ▸  ${notif} ${modeStr}\n` +
     `◈ Total    ▸  ${targets.length}\n` +
     `◈ Sent     ▸  ✅ ${sent}\n` +
     `◈ Failed   ▸  ❌ ${failed}` +
@@ -3830,17 +3844,28 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
 }
 
 // ── Show broadcast target selection menu ──
-async function showBroadcastMenu(chatId, userId, adminMsg, text, silent) {
-  userState.set(userId, { step: "broadcast_pending", adminMsg, text, silent });
+async function showBroadcastMenu(chatId, userId, adminMsg, text, silent, composeMsg = null) {
+  userState.set(userId, { step: "broadcast_pending", adminMsg, text, silent, composeMsg });
   const notif = silent ? "🔕 Silent" : "🔔 LOUD";
-  const mode = adminMsg.reply_to_message ? "📋 Message-Copy" : "🖼️ Image+Text";
+  let mode, preview;
+  if (composeMsg) {
+    const t = composeMsg.photo ? "📷 Photo" : composeMsg.document ? "📄 Document" : composeMsg.video ? "🎥 Video" : composeMsg.audio ? "🎵 Audio" : composeMsg.voice ? "🎙️ Voice" : "📝 Text";
+    const cap = composeMsg.caption || composeMsg.text || "";
+    mode = `📎 Composed — ${t}`;
+    preview = cap ? `Caption: <i>${h(cap.slice(0, 60))}${cap.length > 60 ? "..." : ""}</i>` : `${t} ready ✅`;
+  } else if (adminMsg?.reply_to_message) {
+    mode = "📋 Message-Copy";
+    preview = "Copied message selected ✅";
+  } else {
+    mode = "🖼️ Image+Text";
+    preview = text ? `Message: <i>${h(text.slice(0, 60))}${text.length > 60 ? "..." : ""}</i>` : "";
+  }
   await bot.sendMessage(chatId,
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
     `  📢  <b>BROADCAST — ${notif}</b>\n` +
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
     `<blockquote>` +
-    `Mode: ${mode}\n` +
-    `${text ? `Message: <i>${h(text.slice(0, 60))}${text.length > 60 ? "..." : ""}</i>` : `Copied message selected ✅`}` +
+    `Mode: ${mode}\n${preview}` +
     `</blockquote>\n\n` +
     `<b>Kahan bhejni hai broadcast?</b>`,
     {
@@ -3866,38 +3891,52 @@ async function showBroadcastMenu(chatId, userId, adminMsg, text, silent) {
 bot.onText(/\/broadcast(?:\s+([\s\S]+))?/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const text = match[1]?.trim();
-  if (!text && !msg.reply_to_message) {
-    return bot.sendMessage(msg.chat.id,
-      `<b>📢 /broadcast — Usage:</b>\n\n` +
-      `<blockquote>` +
-      `Option 1: Reply to ANY message (photo/text/video) + type <code>/broadcast</code>\n` +
-      `→ That exact message will be copied to: Users / Channels / Groups / All\n\n` +
-      `Option 2: <code>/broadcast Your text here</code>\n` +
-      `→ Sends image + text in premium style` +
-      `</blockquote>`,
-      { parse_mode: "HTML" }
-    );
+  if (text || msg.reply_to_message) {
+    return showBroadcastMenu(msg.chat.id, msg.from.id, msg, text || "", true);
   }
-  await showBroadcastMenu(msg.chat.id, msg.from.id, msg, text || "", true);
+  // No text, no reply — ask admin to compose content
+  userState.set(msg.from.id, { step: "broadcast_compose", silent: true });
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  📢  <b>BROADCAST — COMPOSE</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `Ab jo bhejni hai woh send karo:\n\n` +
+    `▸ 📝 Text message\n` +
+    `▸ 📷 Photo + caption (text)\n` +
+    `▸ 📄 Document + caption (text)\n` +
+    `▸ 🎥 Video + caption (text)\n` +
+    `▸ 🎵 Audio / Voice note\n\n` +
+    `<i>Ya /broadcast &lt;text&gt; likho seedha text ke liye</i>` +
+    `</blockquote>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]] } }
+  );
 });
 
 // /loud — LOUD broadcast with target selection
 bot.onText(/\/loud(?:\s+([\s\S]+))?/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const text = match[1]?.trim();
-  if (!text && !msg.reply_to_message) {
-    return bot.sendMessage(msg.chat.id,
-      `<b>🔔 /loud — Usage:</b>\n\n` +
-      `<blockquote>` +
-      `Option 1: Reply to ANY message (photo/text/video) + type <code>/loud</code>\n` +
-      `→ That exact message will be LOUDLY sent to: Users / Channels / Groups / All\n\n` +
-      `Option 2: <code>/loud Your text here</code>\n` +
-      `→ Image + text with notification sound` +
-      `</blockquote>`,
-      { parse_mode: "HTML" }
-    );
+  if (text || msg.reply_to_message) {
+    return showBroadcastMenu(msg.chat.id, msg.from.id, msg, text || "", false);
   }
-  await showBroadcastMenu(msg.chat.id, msg.from.id, msg, text || "", false);
+  // No text, no reply — ask admin to compose content
+  userState.set(msg.from.id, { step: "broadcast_compose", silent: false });
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  🔔  <b>LOUD BROADCAST — COMPOSE</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `Ab jo bhejni hai woh send karo:\n\n` +
+    `▸ 📝 Text message\n` +
+    `▸ 📷 Photo + caption (text)\n` +
+    `▸ 📄 Document + caption (text)\n` +
+    `▸ 🎥 Video + caption (text)\n` +
+    `▸ 🎵 Audio / Voice note\n\n` +
+    `<i>Ya /loud &lt;text&gt; likho seedha text ke liye</i>` +
+    `</blockquote>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]] } }
+  );
 });
 
 bot.onText(/\/pin\s+(-?\d+)\s+([\s\S]+)/, async (msg, match) => {
