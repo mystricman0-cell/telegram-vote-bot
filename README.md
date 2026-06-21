@@ -73,7 +73,8 @@
 - **3 Plans** — 1 Day · 7 Days · 30 Days *(prices configurable)*
 - Purchase via INR/UPI (QR code) or Telegram Stars
 - Admin can grant / revoke / extend via commands
-- Shows **exact start datetime + expiry datetime + time remaining** in IST
+- Shows **exact start datetime + expiry datetime + time remaining** (IST, real-time)
+- **Membership survives bot restarts** — MongoDB-backed, never lost
 
 ```
   ┌─────────────────────────────────────────────┐
@@ -83,6 +84,64 @@
   │  ◈ 1 extra Force-Join gate per giveaway     │
   │  ◈ Global Force-Join for all users (7D+)    │
   └─────────────────────────────────────────────┘
+```
+
+### 📋 &nbsp;/myplan Command
+- Any user can check their own VIP status anytime
+- Shows plan name, start date, expiry date, time remaining — all in IST
+- Visual progress bar showing % of plan used
+- Non-VIP users see a prompt to upgrade
+
+```
+  ✦━━━━━━━━━━━━━━━━━━━━━✦
+     👑  MERA PLAN
+  ✦━━━━━━━━━━━━━━━━━━━━━✦
+
+  ✅ VIP Active Hai!
+  ⭐ Plan  :  30 Days
+  📅 Shuru :  20 Jun 2026 · 01:40 pm IST
+  ⏳ Khatam:  20 Jul 2026 · 01:40 pm IST
+  ⏱️ Baki  :  29d 22h 15m baki
+  ░░░░░░░░░░ 3% used
+```
+
+### ⚠️ &nbsp;Auto Expiry Warning
+- Bot automatically sends a **1-day-before warning** to every VIP member
+- Message shows plan name, exact expiry time (IST), time remaining
+- One-tap **Renew Membership** button included
+- Warning sent only once (not spammy) — tracked in DB
+
+```
+  ✦━━━━━━━━━━━━━━━━━━━━━✦
+    ⚠️  MEMBERSHIP EXPIRY
+  ✦━━━━━━━━━━━━━━━━━━━━━✦
+
+  🔔 Kal teri VIP membership khatam ho rahi hai!
+  ⭐ Plan   ▸  30 Days
+  ⏳ Khatam ▸  20 Jul 2026 · 01:40 pm IST
+  ⏱️ Baki   ▸  23h 45m baki
+
+  [ 👑 Renew Membership ]
+```
+
+### 📩 &nbsp;Support System
+- Users can send support messages via `/support`
+- Supports **all media types**: Text · Photo · Document · Video · Voice · Audio · Sticker · Video Note
+- Admin receives an info card with user name, handle, ID, VIP status, media type
+- Media files sent **directly** (not forwarded) with user info in caption
+- Admin can mark ticket as ✅ Resolved or ❌ Not Resolved
+
+```
+  ✦━━━━━━━━━━━━━━━━━━━━━✦
+    📩  SUPPORT REQUEST
+  ✦━━━━━━━━━━━━━━━━━━━━━✦
+
+  ◈ Name    ▸  Rahul 👑 VIP
+  ◈ Handle  ▸  @rahulxyz
+  ◈ User ID ▸  123456789
+  ◈ Type    ▸  📄 Document / File
+
+  [ ✅ Resolved ]  [ ❌ Not Resolved ]
 ```
 
 ### 🔗 &nbsp;Force Join System
@@ -165,6 +224,8 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 |---|---|
 | `/start` | Open main menu |
 | `/membership` | View / purchase VIP membership |
+| `/myplan` | Check your own VIP status, expiry & time remaining |
+| `/support` | Send a support message to admin (text, photo, file, video, voice) |
 
 #### Admin Commands
 
@@ -175,6 +236,8 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/givemem` | `/givemem <id> <1d\|7d\|30d>` | Grant VIP membership |
 | `/extendmem` | `/extendmem <id> <1d\|7d\|30d>` | Extend existing VIP |
 | `/revokemem` | `/revokemem <id>` | Revoke VIP |
+| `/listmem` | `/listmem` | List all active VIP members |
+| `/meminfo` | `/meminfo <id>` | Check any user's membership details |
 | `/setplan` | `/setplan <plan> <price>` | Update membership pricing |
 | `/setmembershipqr` | `/setmembershipqr` | Upload UPI QR code |
 | `/setglobal` | `/setglobal <channel_id>` | Set global force-join channel |
@@ -185,7 +248,6 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/vip30` | `/vip30` | Grant yourself 30-day VIP (admin only) |
 | `/listusers` | `/listusers` | List all registered bot users |
 | `/listchannels` | `/listchannels` | List registered channels and groups |
-| `/listmem` | `/listmem` | List all active VIP members |
 
 ---
 
@@ -202,14 +264,14 @@ vote-bot.mjs
 ├── ⚡  In-Memory Maps         Fast access: giveaways · vipUsers · channels · payments
 ├── 🎞️  Animation Functions    animLoading · animFresh · animCreate · animVote
 ├── 🔧  Core Helpers           safeFormatDateTime · timeRemaining · getMembership
-├── 📡  Bot Commands           /start · /membership · /stats · /broadcast · /givemem …
+├── 📡  Bot Commands           /start · /membership · /myplan · /support · /stats …
 ├── 🖱️  Callback Handlers      All inline button actions
-├── 💬  Message Handlers       State machine for multi-step flows
-└── ⏱️  Schedulers             Auto-end timers · heartbeat · reminders · VIP expiry
+├── 💬  Message Handlers       State machine: giveaway wizard · support · payments
+└── ⏱️  Schedulers             Auto-end timers · heartbeat · reminders · VIP expiry + warning
 ```
 
 > **Data flow:** All writes go to both the in-memory Map *(instant)* and MongoDB *(persistent)*.  
-> On startup, all data is loaded from MongoDB into memory. VIP expiry is synced every 30 minutes.
+> On startup, all data is loaded from MongoDB into memory. VIP expiry + 1-day warning runs every 30 minutes.
 
 ---
 

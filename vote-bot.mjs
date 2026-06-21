@@ -4808,14 +4808,43 @@ Ready!
     // ⏳ Auto-Reminder — check every 2 minutes
     setInterval(checkAndSendReminders, 2 * 60 * 1000);
 
-    // 👑 VIP Expiry Checker — runs every 30 minutes, marks expired memberships in DB
+    // 👑 VIP Expiry Checker + 1-Day Warning — runs every 30 minutes
     setInterval(async () => {
       const now = new Date();
+      const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
       for (const [uid, v] of vipUsers) {
-        if (v.vip && v.expiry && new Date(v.expiry) < now) {
-          v.vip = false; // update in-memory
+        if (!v.vip || !v.expiry) continue;
+        const expDate = new Date(v.expiry);
+
+        // ── Mark expired memberships in DB ──
+        if (expDate < now) {
+          v.vip = false;
+          try { await VipModel.findOneAndUpdate({ userId: uid }, { vip: false }); } catch {}
+          continue;
+        }
+
+        // ── 1-day expiry warning (send once only) ──
+        if (expDate <= in24h && !v.warned24h) {
+          v.warned24h = true;
+          try { await VipModel.findOneAndUpdate({ userId: uid }, { warned24h: true }); } catch {}
           try {
-            await VipModel.findOneAndUpdate({ userId: uid }, { vip: false });
+            await bot.sendMessage(uid,
+              `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+              `  ⚠️  <b>MEMBERSHIP EXPIRY</b>\n` +
+              `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+              `<blockquote>` +
+              `🔔 <b>Kal teri VIP membership khatam ho rahi hai!</b>\n\n` +
+              `⭐ Plan    ▸  ${v.plan || "VIP"}\n` +
+              `⏳ Khatam  ▸  <b>${safeFormatDateTime(expDate)}</b>\n` +
+              `⏱️ Baki    ▸  <b>${timeRemaining(expDate)}</b>\n\n` +
+              `Renew karo aur uninterrupted access lo! 🚀` +
+              `</blockquote>\n\n` +
+              `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+              { parse_mode: "HTML", reply_markup: { inline_keyboard: [
+                [{ text: "👑 Renew Membership", callback_data: "vip_membership" }]
+              ]}}
+            );
           } catch {}
         }
       }
