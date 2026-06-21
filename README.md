@@ -199,6 +199,32 @@
 - Breakdown by giveaway (for vote payments) and by plan (for memberships)
 - Also shows: Active VIP count · Banned user count · Maintenance status
 
+### 📊 &nbsp;Giveaway Report
+- `/giveawayreport <giveawayId>` — Downloads a `.txt` file with full giveaway data
+- Includes: title, status, winner count, total votes, payment summary
+- Full ranked leaderboard (all participants by vote count)
+- Winner list if giveaway has ended
+- Generated in IST timestamp
+
+### 📢 &nbsp;Participant Announcement
+- `/announce <gId> <text>` — Send a custom message to all participants of a specific giveaway
+- Shows preview + confirmation step before sending
+- Delivery report sent to admin (sent/failed counts)
+
+### ⚙️ &nbsp;Change Winner Count
+- `/setwinner <gId> <count>` — Update winner count of any giveaway (active or ended)
+- Range: 1 to 100 winners
+- Saves to MongoDB immediately
+
+### 🌍 &nbsp;Global Vote Leaderboard
+- `/voteleaderboard` — Top 20 voters across **all** giveaways combined
+- Shows rank, name, username, user ID, total votes
+
+### 🔔 &nbsp;Vote Reminder
+- `/remindvote <gId>` — Send a push reminder to all participants of an active giveaway
+- Includes the current top 3 leaderboard for motivation
+- Delivery report sent to admin
+
 ### 🔁 &nbsp;Giveaway Clone
 - `/clonegiveaway <giveawayId>` — Clone any giveaway with same settings
 - New giveaway created in draft (inactive) state — zero participants
@@ -327,9 +353,14 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/allgiveaways` | `/allgiveaways` | List all giveaways (active + past) |
 | `/addvotes` | `/addvotes <gId> <userId> <count>` | Manually add votes to any participant |
 | `/removevotes` | `/removevotes <gId> <userId> <count>` | Remove votes (cheating fix) |
+| `/setwinner` | `/setwinner <gId> <count>` | Change winner count of any giveaway (1–100) |
 | `/endgiveaway` | `/endgiveaway <giveawayId>` | Force-close any giveaway + announce winners |
 | `/resetvotes` | `/resetvotes <giveawayId>` | Reset all votes in a giveaway to zero |
 | `/clonegiveaway` | `/clonegiveaway <giveawayId>` | Clone giveaway with same settings |
+| `/giveawayreport` | `/giveawayreport <gId>` | Download full giveaway report as .txt file |
+| `/announce` | `/announce <gId> <text>` | Send custom message to all giveaway participants |
+| `/remindvote` | `/remindvote <gId>` | Send vote reminder + top 3 to all participants |
+| `/voteleaderboard` | `/voteleaderboard` | Global top 20 voters across all giveaways |
 | `/setstar` | `/setstar <giveawayId> <votes>` | Votes per Telegram ⭐ Star |
 | `/setinr` | `/setinr <giveawayId> <votes>` | Votes per ₹1 INR paid |
 

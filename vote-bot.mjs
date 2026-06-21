@@ -5045,6 +5045,197 @@ bot.onText(/\/cancelschedule\s+(\S+)/, async (msg, match) => {
     { parse_mode: "HTML" });
 });
 
+// ─── /giveawayreport <gId> — Full report of a giveaway ───
+bot.onText(/\/giveawayreport\s+(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const g = giveaways.get(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${gId}</code> nahi mila.`, { parse_mode: "HTML" });
+
+  const participants = [...g.participants.entries()].sort((a, b) => b[1].votes - a[1].votes);
+  const totalVotes = participants.reduce((s, [, p]) => s + (p.votes || 0), 0);
+
+  // payments for this giveaway
+  const gPayments = [...pendingPayments.values()].filter(p => p.giveawayId === gId);
+  const pendingPay = gPayments.filter(p => p.status === "pending").length;
+  const approvedPay = gPayments.filter(p => p.status === "approved").length;
+
+  let lines = [];
+  lines.push(`📊 GIVEAWAY REPORT — ${g.title}`);
+  lines.push(`ID: ${gId}`);
+  lines.push(`Status: ${g.active ? "🟢 Active" : "🔴 Ended"}`);
+  lines.push(`Winners: ${g.winnersCount}`);
+  lines.push(`Total Participants: ${participants.length}`);
+  lines.push(`Total Votes Cast: ${totalVotes}`);
+  lines.push(`Payments — Pending: ${pendingPay} | Approved: ${approvedPay}`);
+  lines.push(`Created: ${g.createdAt ? new Date(g.createdAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "N/A"}`);
+  lines.push(``);
+  lines.push(`LEADERBOARD:`);
+  lines.push(`${"Rank".padEnd(5)} ${"Name".padEnd(20)} ${"UserID".padEnd(12)} Votes`);
+  lines.push(`─`.repeat(55));
+  participants.forEach(([uid, p], i) => {
+    const bu = botUsers.get(uid);
+    const name = (bu?.firstName || "Unknown").slice(0, 18);
+    lines.push(`${String(i + 1).padEnd(5)} ${name.padEnd(20)} ${String(uid).padEnd(12)} ${p.votes || 0}`);
+  });
+  if (g.winners?.length) {
+    lines.push(``);
+    lines.push(`WINNERS:`);
+    g.winners.forEach((uid, i) => {
+      const bu = botUsers.get(uid);
+      lines.push(`  ${i + 1}. ${bu?.firstName || "Unknown"} (ID: ${uid})`);
+    });
+  }
+  lines.push(``);
+  lines.push(`Generated: ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST`);
+
+  const fileContent = lines.join("\n");
+  const buf = Buffer.from(fileContent, "utf-8");
+  await bot.sendDocument(chatId, buf, {
+    caption: `📊 <b>Giveaway Report</b> — <code>${gId}</code>\n${participants.length} participants · ${totalVotes} total votes`,
+    parse_mode: "HTML"
+  }, { filename: `report_${gId}.txt`, contentType: "text/plain" });
+});
+
+// ─── /announce <gId> <text> — Send message to all giveaway participants ───
+bot.onText(/\/announce\s+(\S+)\s+([\s\S]+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const text = match[2].trim();
+  const g = giveaways.get(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${gId}</code> nahi mila.`, { parse_mode: "HTML" });
+
+  const participants = [...g.participants.keys()];
+  if (participants.length === 0)
+    return bot.sendMessage(chatId, `⚠️ Is giveaway mein koi participant nahi hai abhi.`, { parse_mode: "HTML" });
+
+  const confirm = await bot.sendMessage(chatId,
+    `📢 <b>Announce to ${participants.length} participants?</b>\n\n` +
+    `<blockquote>${h(text.slice(0, 200))}${text.length > 200 ? "…" : ""}</blockquote>\n\n` +
+    `Confirm karne ke liye: /announceconfirm_${gId}`,
+    { parse_mode: "HTML" });
+
+  // Store pending announce
+  userState.set(chatId, { action: "announce_pending", gId, text });
+});
+
+bot.onText(/\/announceconfirm_(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const state = userState.get(chatId);
+  if (!state || state.action !== "announce_pending" || state.gId !== gId) {
+    return bot.sendMessage(chatId, `❌ Pehle /announce command chalaao.`, { parse_mode: "HTML" });
+  }
+  userState.delete(chatId);
+  const g = giveaways.get(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway nahi mila.`, { parse_mode: "HTML" });
+  const text = state.text;
+  const participants = [...g.participants.keys()];
+  let sent = 0, fail = 0;
+  for (const uid of participants) {
+    try {
+      await bot.sendMessage(uid,
+        `📢 <b>Announcement — ${h(g.title)}</b>\n\n${text}`,
+        { parse_mode: "HTML" });
+      sent++;
+    } catch { fail++; }
+  }
+  await bot.sendMessage(chatId,
+    `✅ <b>Announcement Sent!</b>\n\n` +
+    `<blockquote>Giveaway  ▸  <b>${h(g.title)}</b>\nDelivered ▸  <b>${sent}</b>\nFailed    ▸  <b>${fail}</b></blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /setwinner <gId> <count> — Change winner count ───
+bot.onText(/\/setwinner\s+(\S+)\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const count = Number(match[2]);
+  const g = giveaways.get(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${gId}</code> nahi mila.`, { parse_mode: "HTML" });
+  if (count < 1 || count > 100)
+    return bot.sendMessage(chatId, `❌ Winner count 1–100 ke beech hona chahiye.`, { parse_mode: "HTML" });
+  const old = g.winnersCount;
+  g.winnersCount = count;
+  await GiveawayModel.updateOne({ giveawayId: gId }, { winnersCount: count });
+  await bot.sendMessage(chatId,
+    `🏆 <b>Winner Count Updated</b>\n\n` +
+    `<blockquote>Giveaway ▸  <b>${h(g.title)}</b> (<code>${gId}</code>)\n` +
+    `Before   ▸  <b>${old}</b>\nAfter    ▸  <b>${count}</b></blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /voteleaderboard — Global top voters across all giveaways ───
+bot.onText(/\/voteleaderboard/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const tally = new Map();
+  for (const g of giveaways.values()) {
+    for (const [uid, p] of g.participants) {
+      tally.set(uid, (tally.get(uid) || 0) + (p.votes || 0));
+    }
+  }
+  if (tally.size === 0)
+    return bot.sendMessage(chatId, `📭 Koi votes nahi hain abhi.`, { parse_mode: "HTML" });
+  const sorted = [...tally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20);
+  const medals = ["🥇", "🥈", "🥉"];
+  let text = `🏆 <b>Global Vote Leaderboard (Top ${sorted.length})</b>\n\n`;
+  sorted.forEach(([uid, votes], i) => {
+    const bu = botUsers.get(uid);
+    const name = h(bu?.firstName || "Unknown");
+    const uname = bu?.username ? ` @${bu.username}` : "";
+    const medal = medals[i] || `${i + 1}.`;
+    text += `${medal} <b>${name}</b>${uname}\n   ID: <code>${uid}</code> · <b>${votes}</b> votes\n`;
+  });
+  await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
+});
+
+// ─── /remindvote <gId> — Send reminder to all giveaway participants ───
+bot.onText(/\/remindvote\s+(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const g = giveaways.get(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${gId}</code> nahi mila.`, { parse_mode: "HTML" });
+  if (!g.active)
+    return bot.sendMessage(chatId, `⚠️ Yeh giveaway already end ho chuka hai.`, { parse_mode: "HTML" });
+  const participants = [...g.participants.keys()];
+  if (participants.length === 0)
+    return bot.sendMessage(chatId, `⚠️ Koi participant nahi hai abhi.`, { parse_mode: "HTML" });
+
+  // Leaderboard top 3 for motivation
+  const top3 = [...g.participants.entries()]
+    .sort((a, b) => b[1].votes - a[1].votes)
+    .slice(0, 3)
+    .map(([uid, p], i) => {
+      const bu = botUsers.get(uid);
+      const medal = ["🥇", "🥈", "🥉"][i];
+      return `${medal} ${bu?.firstName || "User"} — ${p.votes} votes`;
+    }).join("\n");
+
+  let sent = 0, fail = 0;
+  for (const uid of participants) {
+    try {
+      await bot.sendMessage(uid,
+        `🔔 <b>Vote Reminder!</b>\n\n` +
+        `<b>${h(g.title)}</b> giveaway chal raha hai!\n\n` +
+        `📊 <b>Current Top 3:</b>\n${top3}\n\n` +
+        `<b>Apni position improve karo — abhi vote karo!</b>\n` +
+        `👉 /start dabao`,
+        { parse_mode: "HTML" });
+      sent++;
+    } catch { fail++; }
+  }
+  await bot.sendMessage(chatId,
+    `✅ <b>Reminder Sent!</b>\n\n` +
+    `<blockquote>Giveaway  ▸  <b>${h(g.title)}</b>\nDelivered ▸  <b>${sent}</b>\nFailed    ▸  <b>${fail}</b></blockquote>`,
+    { parse_mode: "HTML" });
+});
+
 // ─── /userinfo <userId> ───
 bot.onText(/\/userinfo\s+(\d+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
@@ -5329,11 +5520,16 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `<b>🎁 GIVEAWAY CONTROLS</b>\n` +
     `<blockquote>` +
     `/allgiveaways\n  → List all giveaways\n\n` +
-    `/addvotes &lt;gId&gt; &lt;userId&gt; &lt;count&gt;\n  → Manually add votes to a participant\n  Example: /addvotes ABC123 9876 50\n\n` +
-    `/removevotes &lt;gId&gt; &lt;userId&gt; &lt;count&gt;\n  → Remove votes from a participant\n\n` +
+    `/addvotes &lt;gId&gt; &lt;userId&gt; &lt;count&gt;\n  → Manually add votes\n  Example: /addvotes ABC123 9876 50\n\n` +
+    `/removevotes &lt;gId&gt; &lt;userId&gt; &lt;count&gt;\n  → Remove votes (cheating fix)\n\n` +
+    `/setwinner &lt;gId&gt; &lt;count&gt;\n  → Change winner count (1–100)\n\n` +
     `/endgiveaway &lt;gId&gt;\n  → Force-close + announce winners\n\n` +
     `/resetvotes &lt;gId&gt;\n  → Reset all votes to zero\n\n` +
     `/clonegiveaway &lt;gId&gt;\n  → Clone giveaway with same settings\n\n` +
+    `/giveawayreport &lt;gId&gt;\n  → Download full report (.txt) — leaderboard + payments\n\n` +
+    `/announce &lt;gId&gt; &lt;text&gt;\n  → Send message to all participants of a giveaway\n\n` +
+    `/remindvote &lt;gId&gt;\n  → Send vote reminder + top 3 to all participants\n\n` +
+    `/voteleaderboard\n  → Global top 20 voters across all giveaways\n\n` +
     `/setstar &lt;gId&gt; &lt;votes&gt;\n  → Votes per ⭐ Star\n\n` +
     `/setinr &lt;gId&gt; &lt;votes&gt;\n  → Votes per ₹1 INR` +
     `</blockquote>\n\n` +
