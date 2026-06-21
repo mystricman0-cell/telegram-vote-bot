@@ -171,6 +171,39 @@
 - Admin can unban with `/unban <userId>`
 - Ban list persists across restarts (MongoDB-backed)
 
+### 🗳️ &nbsp;Admin Vote Control
+- **`/addvotes <gId> <userId> <count>`** — Manually credit votes to any participant
+- **`/removevotes <gId> <userId> <count>`** — Remove votes (cheating correction)
+- Works even for users not yet in the giveaway (auto-adds them)
+- Instantly saves to MongoDB — no data loss on restart
+
+### 🔧 &nbsp;Maintenance Mode
+- `/maintenance on` — Blocks all non-admin users instantly
+- Users see a friendly "Bot update mein hai" message
+- `/maintenance off` — Re-opens the bot to everyone
+- State persists across restarts (MongoDB-backed)
+
+### 📋 &nbsp;Custom Welcome Message
+- `/setwelcomemsg` — Set a fully custom welcome text (HTML formatting supported)
+- `/clearwelcomemsg` — Restore original default welcome
+- Custom text shown instead of default when users run `/start`
+- Survives bot restarts (MongoDB-backed)
+
+### 📁 &nbsp;User Export
+- `/exportusers` — Downloads a `.txt` file with all bot users
+- Shows: User ID · Name · Username · VIP status · Ban status
+- Ready for external use, marketing, or audit
+
+### 💰 &nbsp;Payment Stats
+- `/paystats` — Dashboard for pending vote payments and membership payments
+- Breakdown by giveaway (for vote payments) and by plan (for memberships)
+- Also shows: Active VIP count · Banned user count · Maintenance status
+
+### 🔁 &nbsp;Giveaway Clone
+- `/clonegiveaway <giveawayId>` — Clone any giveaway with same settings
+- New giveaway created in draft (inactive) state — zero participants
+- Admin can activate it from My Giveaways menu
+
 ### 🔗 &nbsp;Force Join System
 - Per-giveaway force join — voters must join a specific channel first
 - Global force join — applies to all bot users (VIP 7D+)
@@ -282,8 +315,11 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | Command | Usage | Description |
 |---|---|---|
 | `/allgiveaways` | `/allgiveaways` | List all giveaways (active + past) |
+| `/addvotes` | `/addvotes <gId> <userId> <count>` | Manually add votes to any participant |
+| `/removevotes` | `/removevotes <gId> <userId> <count>` | Remove votes (cheating fix) |
 | `/endgiveaway` | `/endgiveaway <giveawayId>` | Force-close any giveaway + announce winners |
 | `/resetvotes` | `/resetvotes <giveawayId>` | Reset all votes in a giveaway to zero |
+| `/clonegiveaway` | `/clonegiveaway <giveawayId>` | Clone giveaway with same settings |
 | `/setstar` | `/setstar <giveawayId> <votes>` | Votes per Telegram ⭐ Star |
 | `/setinr` | `/setinr <giveawayId> <votes>` | Votes per ₹1 INR paid |
 
@@ -291,8 +327,8 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 
 | Command | Usage | Description |
 |---|---|---|
-| `/broadcast` | `/broadcast` | Compose & send media+text broadcast (silent) |
-| `/broadcast` | `/broadcast <text>` | Image + styled text (silent) |
+| `/broadcast` | `/broadcast` | Compose photo/doc/video+text, pick target (silent) |
+| `/broadcast` | `/broadcast <text>` | Image + styled text broadcast (silent) |
 | `/loud` | `/loud` | Same as /broadcast with notification sound |
 | `/send` | `/send <chatId> <text>` | Send to specific chat/channel |
 | `/pin` | `/pin <chatId> <text>` | Send and pin a message |
@@ -302,6 +338,11 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | Command | Usage | Description |
 |---|---|---|
 | `/stats` | `/stats` | Full bot dashboard |
+| `/paystats` | `/paystats` | Pending payments + VIP + ban + maintenance status |
+| `/maintenance` | `/maintenance on\|off` | Block all non-admin users during updates |
+| `/setwelcomemsg` | `/setwelcomemsg` | Set custom welcome message text (HTML supported) |
+| `/clearwelcomemsg` | `/clearwelcomemsg` | Restore default welcome message |
+| `/exportusers` | `/exportusers` | Download all bot users as .txt file |
 | `/setmembershipqr` | `/setmembershipqr` | Upload UPI QR code photo |
 | `/setwelcomeimageurl` | `/setwelcomeimageurl` | Set welcome spoiler image URL |
 | `/setforcejoin` | `/setforcejoin <channelId>` | Configure force-join channel |

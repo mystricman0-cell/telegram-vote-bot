@@ -108,6 +108,8 @@ const pendingPayments = new Map();
 const pendingMembershipPayments = new Map();
 const botUsers = new Map();
 const bannedUsers = new Set();
+let maintenanceMode = false;
+let customWelcomeText = null;
 let paymentCounter = 1;
 let membershipPayCounter = 1;
 let welcomeImageUrl = null;
@@ -283,6 +285,12 @@ async function loadStateFromDB() {
   if (bannedCfg?.value && Array.isArray(bannedCfg.value)) {
     for (const uid of bannedCfg.value) bannedUsers.add(uid);
   }
+
+  // Load maintenance mode & custom welcome text
+  const maintCfg = await BotConfigModel.findOne({ key: "maintenanceMode" });
+  if (maintCfg?.value) maintenanceMode = true;
+  const cwCfg = await BotConfigModel.findOne({ key: "customWelcomeText" });
+  if (cwCfg?.value) customWelcomeText = cwCfg.value;
 
   console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users`);
 }
@@ -847,7 +855,7 @@ async function sendWelcome(chatId, userId) {
 
   try { await bot.sendChatAction(chatId, "typing"); } catch {}
 
-  const welcomeText =
+  const welcomeText = customWelcomeText ||
     `✦ ━━━━━━━━━━━━━━━━━━━━━ ✦\n` +
     `   🎁  <b>DRS GIVEAWAY BOT</b>  🎁\n` +
     `✦ ━━━━━━━━━━━━━━━━━━━━━ ✦\n\n` +
@@ -2878,6 +2886,16 @@ bot.on("message", async (msg) => {
     ).catch(() => {});
     return;
   }
+
+  // ─── Maintenance mode check ───
+  if (maintenanceMode && !isAdmin(userId)) {
+    await bot.sendMessage(chatId,
+      `🔧 <b>Bot Maintenance Mode Mein Hai</b>\n\n` +
+      `<blockquote>Abhi bot update ho raha hai.\nThodi der mein wapas aayein. 🙏</blockquote>`,
+      { parse_mode: "HTML" }
+    ).catch(() => {});
+    return;
+  }
   const text = msg.text?.trim() || "";
   const state = userState.get(userId);
 
@@ -3382,6 +3400,18 @@ bot.on("message", async (msg) => {
     } catch {
       await bot.sendMessage(chatId, `❌ Chat not found. Make sure the bot is an admin in the channel, then try again.`, { parse_mode: "HTML" });
     }
+    return;
+  }
+
+  // ─── Admin: set custom welcome text ───
+  if (state?.step === "set_welcome_msg" && isAdmin(userId)) {
+    userState.delete(userId);
+    customWelcomeText = text || null;
+    await saveConfig("customWelcomeText", customWelcomeText);
+    await bot.sendMessage(chatId,
+      `✅ <b>Custom welcome message set!</b>\n\n<blockquote>${h((text || "").slice(0, 200))}</blockquote>\n\n<i>Ab /start karo preview dekhne ke liye.</i>`,
+      { parse_mode: "HTML" }
+    );
     return;
   }
 
@@ -4669,6 +4699,223 @@ bot.onText(/\/support/, async (msg) => {
   );
 });
 
+// ─── /addvotes <giveawayId> <userId> <count> ───
+bot.onText(/\/addvotes\s+(\S+)\s+(\d+)\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const targetId = Number(match[2]);
+  const count = parseInt(match[3]);
+  if (count <= 0 || count > 100000) return bot.sendMessage(chatId, `❌ Count 1-100000 ke beech hona chahiye.`, { parse_mode: "HTML" });
+  const g = getGiveaway(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${h(gId)}</code> nahi mila.`, { parse_mode: "HTML" });
+  let p = g.participants.get(targetId);
+  if (!p) {
+    const bu = botUsers.get(targetId);
+    const name = bu?.firstName || `User ${targetId}`;
+    p = { name, votes: 0, freeVoteDone: false, voters: [] };
+    g.participants.set(targetId, p);
+  }
+  p.votes += count;
+  g.participants.set(targetId, p);
+  await saveGiveaway(g);
+  const bu = botUsers.get(targetId);
+  await bot.sendMessage(chatId,
+    `✅ <b>Votes Added!</b>\n\n` +
+    `<blockquote>` +
+    `◈ Giveaway  ▸  <b>${h(g.title)}</b>\n` +
+    `◈ User      ▸  <b>${h(bu?.firstName || String(targetId))}</b> (<code>${targetId}</code>)\n` +
+    `◈ Added     ▸  +${count} votes\n` +
+    `◈ New Total ▸  ${p.votes} votes` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /removevotes <giveawayId> <userId> <count> ───
+bot.onText(/\/removevotes\s+(\S+)\s+(\d+)\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const targetId = Number(match[2]);
+  const count = parseInt(match[3]);
+  const g = getGiveaway(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${h(gId)}</code> nahi mila.`, { parse_mode: "HTML" });
+  const p = g.participants.get(targetId);
+  if (!p) return bot.sendMessage(chatId, `❌ Yeh user is giveaway mein nahi hai.`, { parse_mode: "HTML" });
+  const oldVotes = p.votes;
+  p.votes = Math.max(0, p.votes - count);
+  g.participants.set(targetId, p);
+  await saveGiveaway(g);
+  const bu = botUsers.get(targetId);
+  await bot.sendMessage(chatId,
+    `✅ <b>Votes Removed!</b>\n\n` +
+    `<blockquote>` +
+    `◈ Giveaway  ▸  <b>${h(g.title)}</b>\n` +
+    `◈ User      ▸  <b>${h(bu?.firstName || String(targetId))}</b> (<code>${targetId}</code>)\n` +
+    `◈ Removed   ▸  -${Math.min(count, oldVotes)} votes\n` +
+    `◈ New Total ▸  ${p.votes} votes` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /maintenance <on|off> ───
+bot.onText(/\/maintenance\s+(on|off)/i, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const val = match[1].toLowerCase() === "on";
+  maintenanceMode = val;
+  await saveConfig("maintenanceMode", val || null);
+  await bot.sendMessage(chatId,
+    val
+      ? `🔧 <b>Maintenance Mode ON</b>\n\n<blockquote>Non-admin users ko block kar diya gaya hai.\nBot update karne ke baad /maintenance off karo.</blockquote>`
+      : `✅ <b>Maintenance Mode OFF</b>\n\n<blockquote>Bot ab sabke liye available hai.</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /setwelcomemsg — Set custom welcome text ───
+bot.onText(/\/setwelcomemsg/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  userState.set(msg.from.id, { step: "set_welcome_msg" });
+  await bot.sendMessage(chatId,
+    `<b>📝 Custom Welcome Message</b>\n\n` +
+    `<blockquote>Ab naya welcome message type karo.\nHTML formatting allowed hai (<b>bold</b>, <i>italic</i>, <code>code</code>).\n\n` +
+    `Ya /clearwelcomemsg bhejo default restore karne ke liye.</blockquote>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]] } }
+  );
+});
+
+bot.onText(/\/clearwelcomemsg/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  customWelcomeText = null;
+  await saveConfig("customWelcomeText", null);
+  await bot.sendMessage(msg.chat.id, `✅ <b>Welcome message default pe reset ho gaya.</b>`, { parse_mode: "HTML" });
+});
+
+// ─── /exportusers — Export all users as text file ───
+bot.onText(/\/exportusers/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  await bot.sendMessage(chatId, `⏳ <b>Exporting users...</b>`, { parse_mode: "HTML" });
+  const lines = ["User ID | Name | Username | VIP | Banned"];
+  lines.push("-".repeat(60));
+  for (const [uid, u] of botUsers) {
+    const vipTag = isVip(uid) ? "VIP" : "Free";
+    const banTag = bannedUsers.has(uid) ? "BANNED" : "Active";
+    const uname = u.username ? `@${u.username}` : "-";
+    lines.push(`${uid} | ${u.firstName || "?"} | ${uname} | ${vipTag} | ${banTag}`);
+  }
+  const content = lines.join("\n");
+  const buf = Buffer.from(content, "utf8");
+  const now = new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" }).replace(/\//g, "-");
+  try {
+    await bot.sendDocument(chatId, buf, {
+      caption: `📁 <b>User Export — ${botUsers.size} users</b>\n<i>${now} IST</i>`,
+      parse_mode: "HTML"
+    }, {
+      filename: `drs-users-${now}.txt`,
+      contentType: "text/plain"
+    });
+  } catch (e) {
+    await bot.sendMessage(chatId, `❌ Export failed: ${h(e.message)}`, { parse_mode: "HTML" });
+  }
+});
+
+// ─── /paystats — Pending payments + revenue info ───
+bot.onText(/\/paystats/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const pendVote = [...pendingPayments.values()];
+  const pendMem = [...pendingMembershipPayments.values()];
+
+  // Per-plan membership breakdown
+  const planCount = {};
+  for (const m of pendMem) {
+    planCount[m.planKey] = (planCount[m.planKey] || 0) + 1;
+  }
+  const planLines = Object.entries(planCount)
+    .map(([k, c]) => `  • ${k}: ${c} pending`)
+    .join("\n") || "  None";
+
+  // Vote payment giveaway breakdown
+  const gLines = [...new Set(pendVote.map(p => p.giveawayId))]
+    .map(gid => {
+      const g = getGiveaway(gid);
+      const cnt = pendVote.filter(p => p.giveawayId === gid).length;
+      return `  • ${g ? h(g.title).slice(0, 20) : gid}: ${cnt} pending`;
+    }).join("\n") || "  None";
+
+  const vipActive = [...vipUsers.values()].filter(v => v.vip && (!v.expiry || new Date() < new Date(v.expiry)));
+  const bannedCount = bannedUsers.size;
+
+  await bot.sendMessage(chatId,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  💰  <b>PAYMENT STATS</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<b>🗳️ Pending Vote Payments:</b>\n<blockquote>${gLines}</blockquote>\n\n` +
+    `<b>👑 Pending Membership Payments:</b>\n<blockquote>${planLines}</blockquote>\n\n` +
+    `<blockquote>` +
+    `◈ Total Pending Votes ▸  ${pendVote.length}\n` +
+    `◈ Total Pending Memberships ▸  ${pendMem.length}\n` +
+    `◈ Active VIP Members ▸  ${vipActive.length}\n` +
+    `◈ Banned Users ▸  ${bannedCount}\n` +
+    `◈ Maintenance ▸  ${maintenanceMode ? "🔧 ON" : "✅ OFF"}` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /clonegiveaway <giveawayId> — Clone a giveaway ───
+bot.onText(/\/clonegiveaway\s+(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const src = getGiveaway(gId);
+  if (!src) return bot.sendMessage(chatId, `❌ Giveaway <code>${h(gId)}</code> nahi mila.`, { parse_mode: "HTML" });
+
+  const newId = Math.random().toString(36).slice(2, 10).toUpperCase();
+  const now = new Date();
+  const newG = {
+    id: newId,
+    title: `${src.title} (Clone)`,
+    description: src.description || "",
+    prize: src.prize || "",
+    winnerCount: src.winnerCount || 1,
+    durationMinutes: src.durationMinutes || 0,
+    channelId: src.channelId || null,
+    channelUsername: src.channelUsername || null,
+    creatorId: msg.from.id,
+    active: false,
+    participationOpen: false,
+    paidVotesActive: false,
+    starsPerVote: src.starsPerVote || 1,
+    inrPerVote: src.inrPerVote || 1,
+    participants: new Map(),
+    voterMap: new Map(),
+    endTime: null,
+    createdAt: now,
+    photoId: src.photoId || null,
+    extraForceJoin: src.extraForceJoin || null,
+  };
+  giveaways.set(newId, newG);
+  await saveGiveaway(newG);
+
+  await bot.sendMessage(chatId,
+    `✅ <b>Giveaway Cloned!</b>\n\n` +
+    `<blockquote>` +
+    `◈ Original ▸  <b>${h(src.title)}</b>\n` +
+    `◈ New ID   ▸  <code>${newId}</code>\n` +
+    `◈ Title    ▸  <b>${h(newG.title)}</b>\n` +
+    `◈ Status   ▸  Draft (inactive)\n\n` +
+    `Use /start → My Giveaways to activate it.` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
 // ─── /userinfo <userId> ───
 bot.onText(/\/userinfo\s+(\d+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
@@ -4942,41 +5189,47 @@ bot.onText(/\/adminhelp/, async (msg) => {
   const part2 =
     `<b>👥 USER MANAGEMENT</b>\n` +
     `<blockquote>` +
-    `/userinfo &lt;userId&gt;\n  → Full user profile (VIP, giveaways, votes, perms, ban status)\n\n` +
-    `/listusers\n  → Paginated list of all bot users\n  /listusers 2 → page 2\n\n` +
-    `/ban &lt;userId&gt; [reason]\n  → Ban user (blocks bot access + notifies user)\n  Example: /ban 123456 Spam\n\n` +
-    `/unban &lt;userId&gt;\n  → Remove ban from a user\n\n` +
-    `/dm &lt;userId&gt; &lt;message&gt;\n  → Send direct message to any user\n  Example: /dm 123456 Aapka order ready hai\n\n` +
-    `/reply &lt;text&gt;\n  → Reply to a support message (reply to forwarded card + /reply text)` +
+    `/userinfo &lt;userId&gt;\n  → Full user profile (VIP, giveaways, votes, perms, ban)\n\n` +
+    `/listusers [page]\n  → All bot users — 👑 VIP &amp; 🚫 Banned marked\n\n` +
+    `/ban &lt;userId&gt; [reason]\n  → Ban user (blocks + notifies)\n\n` +
+    `/unban &lt;userId&gt;\n  → Remove ban\n\n` +
+    `/dm &lt;userId&gt; &lt;msg&gt;\n  → Direct message any user\n\n` +
+    `/reply &lt;text&gt;\n  → Reply to support card (reply to forwarded msg + /reply text)\n\n` +
+    `/exportusers\n  → Download all users as .txt file` +
     `</blockquote>\n\n` +
     `<b>🎁 GIVEAWAY CONTROLS</b>\n` +
     `<blockquote>` +
-    `/allgiveaways\n  → List all giveaways (active + past)\n\n` +
-    `/endgiveaway &lt;giveawayId&gt;\n  → Force-close any giveaway + announce winners\n\n` +
-    `/resetvotes &lt;giveawayId&gt;\n  → Reset all votes in a giveaway to zero\n\n` +
-    `/setstar &lt;giveawayId&gt; &lt;votes&gt;\n  → Set votes per Telegram ⭐ Star\n\n` +
-    `/setinr &lt;giveawayId&gt; &lt;votes&gt;\n  → Set votes per ₹1 INR paid` +
+    `/allgiveaways\n  → List all giveaways\n\n` +
+    `/addvotes &lt;gId&gt; &lt;userId&gt; &lt;count&gt;\n  → Manually add votes to a participant\n  Example: /addvotes ABC123 9876 50\n\n` +
+    `/removevotes &lt;gId&gt; &lt;userId&gt; &lt;count&gt;\n  → Remove votes from a participant\n\n` +
+    `/endgiveaway &lt;gId&gt;\n  → Force-close + announce winners\n\n` +
+    `/resetvotes &lt;gId&gt;\n  → Reset all votes to zero\n\n` +
+    `/clonegiveaway &lt;gId&gt;\n  → Clone giveaway with same settings\n\n` +
+    `/setstar &lt;gId&gt; &lt;votes&gt;\n  → Votes per ⭐ Star\n\n` +
+    `/setinr &lt;gId&gt; &lt;votes&gt;\n  → Votes per ₹1 INR` +
     `</blockquote>\n\n` +
     `<b>📢 BROADCAST</b>\n` +
     `<blockquote>` +
-    `/broadcast\n  → Compose content (photo/doc/video/text) then pick target\n\n` +
-    `/broadcast &lt;text&gt;\n  → Image + styled text (silent)\n\n` +
+    `/broadcast\n  → Compose photo/doc/video+text, pick target (silent)\n\n` +
+    `/broadcast &lt;text&gt;\n  → Image+text broadcast (silent)\n\n` +
     `/loud\n  → Same as /broadcast but WITH sound\n\n` +
-    `💡 <i>Reply to any message + /broadcast → copy-forward mode</i>` +
+    `💡 <i>Reply to any msg + /broadcast → copy-forward mode</i>` +
     `</blockquote>\n\n` +
     `<b>📩 DIRECT SEND & PIN</b>\n` +
     `<blockquote>` +
-    `/send &lt;chatId&gt; &lt;message&gt;\n  → Send to specific chat/channel\n\n` +
-    `/sendloud &lt;chatId&gt; &lt;message&gt;\n  → Same with notification\n\n` +
-    `/pin &lt;chatId&gt; &lt;message&gt;\n  → Send and pin a message` +
+    `/send &lt;chatId&gt; &lt;msg&gt;\n  → Send to specific chat/channel\n\n` +
+    `/sendloud &lt;chatId&gt; &lt;msg&gt;\n  → Same with notification\n\n` +
+    `/pin &lt;chatId&gt; &lt;msg&gt;\n  → Send and pin a message` +
     `</blockquote>`;
 
   const part3 =
-    `<b>🖼️ IMAGES & CONFIG</b>\n` +
+    `<b>🖼️ IMAGES & WELCOME</b>\n` +
     `<blockquote>` +
-    `/setwelcomeimageurl\n  → Set welcome screen image\n\n` +
+    `/setwelcomemsg\n  → Set custom welcome message text (HTML ok)\n\n` +
+    `/clearwelcomemsg\n  → Restore default welcome message\n\n` +
+    `/setwelcomeimageurl\n  → Set welcome spoiler image (URL)\n\n` +
     `/clearwelcomeimage\n  → Remove welcome image\n\n` +
-    `/setmembershipqr\n  → Upload UPI/payment QR code photo\n\n` +
+    `/setmembershipqr\n  → Upload UPI/payment QR code\n\n` +
     `/imageinfo\n  → Check current image + QR status` +
     `</blockquote>\n\n` +
     `<b>🔗 FORCE JOIN</b>\n` +
@@ -4985,18 +5238,20 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/setforcejoin 2 &lt;channelId&gt;\n  → Set force-join slot 2\n\n` +
     `/forcejoininfo\n  → View current force join config` +
     `</blockquote>\n\n` +
-    `<b>📊 INFO & MAINTENANCE</b>\n` +
+    `<b>📊 STATS & MAINTENANCE</b>\n` +
     `<blockquote>` +
     `/stats\n  → Full bot dashboard\n\n` +
+    `/paystats\n  → Pending payments + VIP + ban counts\n\n` +
+    `/maintenance on|off\n  → Block all non-admin users (for updates)\n\n` +
     `/allchannels\n  → List all registered channels + groups\n\n` +
     `/cleandb\n  → Clean expired data from MongoDB\n\n` +
-    `/adminhelp\n  → Show this admin command panel` +
+    `/adminhelp\n  → Show this panel` +
     `</blockquote>\n\n` +
-    `<b>👤 USER COMMANDS (for reference)</b>\n` +
+    `<b>👤 USER COMMANDS (reference)</b>\n` +
     `<blockquote>` +
     `/start — Main menu\n` +
     `/membership — VIP plans + status\n` +
-    `/myplan — Own VIP plan status\n` +
+    `/myplan — Own VIP plan card\n` +
     `/topvoters — Top participants\n` +
     `/support — Send message to admin\n` +
     `/help — Full user guide` +
