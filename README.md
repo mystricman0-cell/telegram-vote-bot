@@ -130,6 +130,7 @@
 - Admin receives an info card with user name, handle, ID, VIP status, media type
 - Media files sent **directly** (not forwarded) with user info in caption
 - Admin can mark ticket as ✅ Resolved or ❌ Not Resolved
+- Admin can reply directly with `/reply <text>` (reply to forwarded support card)
 
 ```
   ✦━━━━━━━━━━━━━━━━━━━━━✦
@@ -143,6 +144,32 @@
 
   [ ✅ Resolved ]  [ ❌ Not Resolved ]
 ```
+
+### 📢 &nbsp;Advanced Broadcast System
+- **3 broadcast modes** — Text-only · Reply-copy · Compose (new!)
+- **Compose mode** — admin sends any media (photo/doc/video + caption) → picks target
+- **4 targets** — Users only · Channels only · Groups only · All
+- `/broadcast` = Silent · `/loud` = With sound notification
+- Delivery report shows sent ✅ / failed ❌ count + mode used
+
+```
+  ◈━━━━━━━━━━━━━━━━━━━━━━◈
+    📢  BROADCAST — 🔕 Silent
+  ◈━━━━━━━━━━━━━━━━━━━━━━◈
+
+  Mode: 📎 Composed — 📷 Photo
+  Caption: Aaj ki update...
+
+  [ 👥 Users ]  [ 📢 Channels ]
+  [ 🏘️ Groups ]  [ 🌐 All ]
+```
+
+### 🚫 &nbsp;Ban System
+- Admin can ban any user with `/ban <userId> [reason]`
+- Banned users instantly blocked from all bot interactions
+- User receives notification with the ban reason
+- Admin can unban with `/unban <userId>`
+- Ban list persists across restarts (MongoDB-backed)
 
 ### 🔗 &nbsp;Force Join System
 - Per-giveaway force join — voters must join a specific channel first
@@ -227,27 +254,62 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/myplan` | Check your own VIP status, expiry & time remaining |
 | `/support` | Send a support message to admin (text, photo, file, video, voice) |
 
-#### Admin Commands
+#### Admin Commands — User Management
 
 | Command | Usage | Description |
 |---|---|---|
-| `/stats` | `/stats` | Full bot statistics |
-| `/broadcast` | `/broadcast` | Mass message — users · channels · groups |
+| `/userinfo` | `/userinfo <userId>` | Full user profile — VIP, giveaways, votes, perms, ban status |
+| `/listusers` | `/listusers [page]` | Paginated list of all bot users (👑 VIP · 🚫 Banned shown) |
+| `/ban` | `/ban <userId> [reason]` | Ban user — blocks bot + notifies user with reason |
+| `/unban` | `/unban <userId>` | Remove ban from a user |
+| `/dm` | `/dm <userId> <message>` | Send a direct message to any user |
+| `/reply` | `/reply <text>` | Reply to a support ticket (reply to forwarded support card) |
+
+#### Admin Commands — Membership
+
+| Command | Usage | Description |
+|---|---|---|
 | `/givemem` | `/givemem <id> <1d\|7d\|30d>` | Grant VIP membership |
-| `/extendmem` | `/extendmem <id> <1d\|7d\|30d>` | Extend existing VIP |
-| `/revokemem` | `/revokemem <id>` | Revoke VIP |
+| `/extendmem` | `/extendmem <id> <1d\|7d\|30d>` | Add days to existing VIP |
+| `/removemem` | `/removemem <id>` | Revoke VIP immediately |
+| `/deductmem` | `/deductmem <id> <days> [silent]` | Deduct days from VIP |
 | `/listmem` | `/listmem` | List all active VIP members |
-| `/meminfo` | `/meminfo <id>` | Check any user's membership details |
-| `/setplan` | `/setplan <plan> <price>` | Update membership pricing |
-| `/setmembershipqr` | `/setmembershipqr` | Upload UPI QR code |
-| `/setglobal` | `/setglobal <channel_id>` | Set global force-join channel |
-| `/removeglobal` | `/removeglobal` | Remove global force-join |
-| `/setforcejoin` | `/setforcejoin <channel_id>` | Configure force-join system |
-| `/setwelcomeimageurl` | `/setwelcomeimageurl <url>` | Set welcome spoiler image |
-| `/cleandb` | `/cleandb` | Clean old giveaway + expired data |
-| `/vip30` | `/vip30` | Grant yourself 30-day VIP (admin only) |
-| `/listusers` | `/listusers` | List all registered bot users |
-| `/listchannels` | `/listchannels` | List registered channels and groups |
+| `/meminfo` | `/meminfo <id>` | Check any user's membership status |
+| `/setplan` | `/setplan <1d\|7d\|30d> <price>` | Update plan pricing |
+
+#### Admin Commands — Giveaways
+
+| Command | Usage | Description |
+|---|---|---|
+| `/allgiveaways` | `/allgiveaways` | List all giveaways (active + past) |
+| `/endgiveaway` | `/endgiveaway <giveawayId>` | Force-close any giveaway + announce winners |
+| `/resetvotes` | `/resetvotes <giveawayId>` | Reset all votes in a giveaway to zero |
+| `/setstar` | `/setstar <giveawayId> <votes>` | Votes per Telegram ⭐ Star |
+| `/setinr` | `/setinr <giveawayId> <votes>` | Votes per ₹1 INR paid |
+
+#### Admin Commands — Broadcast & Messaging
+
+| Command | Usage | Description |
+|---|---|---|
+| `/broadcast` | `/broadcast` | Compose & send media+text broadcast (silent) |
+| `/broadcast` | `/broadcast <text>` | Image + styled text (silent) |
+| `/loud` | `/loud` | Same as /broadcast with notification sound |
+| `/send` | `/send <chatId> <text>` | Send to specific chat/channel |
+| `/pin` | `/pin <chatId> <text>` | Send and pin a message |
+
+#### Admin Commands — Config & Maintenance
+
+| Command | Usage | Description |
+|---|---|---|
+| `/stats` | `/stats` | Full bot dashboard |
+| `/setmembershipqr` | `/setmembershipqr` | Upload UPI QR code photo |
+| `/setwelcomeimageurl` | `/setwelcomeimageurl` | Set welcome spoiler image URL |
+| `/setforcejoin` | `/setforcejoin <channelId>` | Configure force-join channel |
+| `/setfreelimit` | `/setfreelimit <n\|unlimited>` | Set free giveaway quota |
+| `/perms` | `/perms <userId>` | Toggle user permissions (button UI) |
+| `/allchannels` | `/allchannels` | List all registered channels + groups |
+| `/cleandb` | `/cleandb` | Clean expired data from MongoDB |
+| `/adminhelp` | `/adminhelp` | Full admin command reference |
 
 ---
 

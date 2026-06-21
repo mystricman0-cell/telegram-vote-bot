@@ -107,6 +107,7 @@ const vipUsers = new Map();
 const pendingPayments = new Map();
 const pendingMembershipPayments = new Map();
 const botUsers = new Map();
+const bannedUsers = new Set();
 let paymentCounter = 1;
 let membershipPayCounter = 1;
 let welcomeImageUrl = null;
@@ -275,6 +276,12 @@ async function loadStateFromDB() {
   const allBotUsers = await BotUserModel.find({});
   for (const u of allBotUsers) {
     botUsers.set(u.userId, { firstName: u.firstName, username: u.username });
+  }
+
+  // Load banned users
+  const bannedCfg = await BotConfigModel.findOne({ key: "bannedUsers" });
+  if (bannedCfg?.value && Array.isArray(bannedCfg.value)) {
+    for (const uid of bannedCfg.value) bannedUsers.add(uid);
   }
 
   console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users`);
@@ -2862,6 +2869,15 @@ bot.on("message", async (msg) => {
 
   const userId = msg.from.id;
   const chatId = msg.chat.id;
+
+  // ─── Banned user check ───
+  if (bannedUsers.has(userId) && !isAdmin(userId)) {
+    await bot.sendMessage(chatId,
+      `🚫 <b>Aapko is bot se ban kar diya gaya hai.</b>\n<i>Agar yeh galti se hua hai toh admin se contact karein.</i>`,
+      { parse_mode: "HTML" }
+    ).catch(() => {});
+    return;
+  }
   const text = msg.text?.trim() || "";
   const state = userState.get(userId);
 
@@ -4653,6 +4669,237 @@ bot.onText(/\/support/, async (msg) => {
   );
 });
 
+// ─── /userinfo <userId> ───
+bot.onText(/\/userinfo\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const chatId = msg.chat.id;
+  const bu = botUsers.get(targetId);
+  const vip = vipUsers.get(targetId);
+  const isVipNow = isVip(targetId);
+  const userGiveaways = [...giveaways.values()].filter(g => g.creatorId === targetId);
+  const joinedGiveaways = [...giveaways.values()].filter(g => g.participants.has(targetId));
+  const totalVotesCast = joinedGiveaways.reduce((s, g) => {
+    const p = g.participants.get(targetId);
+    return s + (p?.votes || 0);
+  }, 0);
+  const isBanned = bannedUsers.has(targetId);
+  const name = bu ? (bu.firstName || "Unknown") : "Not in DB";
+  const uname = bu?.username ? `@${bu.username}` : "—";
+  const vipLine = isVipNow
+    ? `✅ VIP — ${vip?.plan || "?"} | Khatam: ${safeFormatDate(vip?.expiry)}`
+    : `❌ Free User`;
+  const permsList = Object.keys(VALID_PERMS)
+    .map(k => `  • ${k}: ${getUserPerm(targetId, k) ? "✅" : "❌"}`)
+    .join("\n");
+
+  await bot.sendMessage(chatId,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  👤  <b>USER INFO</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `◈ Name      ▸  <b>${h(name)}</b>\n` +
+    `◈ Username  ▸  ${h(uname)}\n` +
+    `◈ User ID   ▸  <code>${targetId}</code>\n` +
+    `◈ Status    ▸  ${isBanned ? "🚫 BANNED" : "✅ Active"}\n` +
+    `◈ VIP       ▸  ${vipLine}\n` +
+    `◈ Giveaways Created  ▸  ${userGiveaways.length}\n` +
+    `◈ Giveaways Joined   ▸  ${joinedGiveaways.length}\n` +
+    `◈ Total Votes Cast   ▸  ${totalVotesCast}` +
+    `</blockquote>\n\n` +
+    `<b>🔐 Permissions:</b>\n<blockquote>${permsList}</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /ban <userId> [reason] ───
+bot.onText(/\/ban\s+(\d+)(?:\s+([\s\S]+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const reason = match[2]?.trim() || "Admin action";
+  const chatId = msg.chat.id;
+  if (isAdmin(targetId)) {
+    return bot.sendMessage(chatId, `❌ Admin ko ban nahi kar sakte!`, { parse_mode: "HTML" });
+  }
+  bannedUsers.add(targetId);
+  await saveConfig("bannedUsers", [...bannedUsers]);
+  const bu = botUsers.get(targetId);
+  const name = bu?.firstName || String(targetId);
+  await bot.sendMessage(chatId,
+    `✅ <b>User Banned!</b>\n\n` +
+    `<blockquote>` +
+    `◈ User   ▸  <b>${h(name)}</b> (<code>${targetId}</code>)\n` +
+    `◈ Reason ▸  ${h(reason)}` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+  // Notify user
+  bot.sendMessage(targetId,
+    `🚫 <b>Aapko is bot se ban kar diya gaya hai.</b>\n\n` +
+    `<blockquote>Reason: ${h(reason)}</blockquote>`,
+    { parse_mode: "HTML" }
+  ).catch(() => {});
+});
+
+// ─── /unban <userId> ───
+bot.onText(/\/unban\s+(\d+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const chatId = msg.chat.id;
+  if (!bannedUsers.has(targetId)) {
+    return bot.sendMessage(chatId, `ℹ️ Yeh user pehle se ban nahi hai.`, { parse_mode: "HTML" });
+  }
+  bannedUsers.delete(targetId);
+  await saveConfig("bannedUsers", [...bannedUsers]);
+  const bu = botUsers.get(targetId);
+  const name = bu?.firstName || String(targetId);
+  await bot.sendMessage(chatId,
+    `✅ <b>User Unbanned!</b>\n\n` +
+    `<blockquote>◈ User ▸ <b>${h(name)}</b> (<code>${targetId}</code>)</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+  bot.sendMessage(targetId,
+    `✅ <b>Aapka ban hat gaya hai.</b>\nAb aap bot use kar sakte hain.`,
+    { parse_mode: "HTML" }
+  ).catch(() => {});
+});
+
+// ─── /dm <userId> <message> ───
+bot.onText(/\/dm\s+(\d+)\s+([\s\S]+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const text = match[2].trim();
+  const chatId = msg.chat.id;
+  try {
+    await bot.sendMessage(targetId,
+      `📩 <b>Admin Message:</b>\n\n<blockquote>${h(text)}</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+    await bot.sendMessage(chatId,
+      `✅ <b>Message sent!</b> → <code>${targetId}</code>\n<blockquote>${h(text.slice(0, 100))}${text.length > 100 ? "..." : ""}</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  } catch (e) {
+    await bot.sendMessage(chatId, `❌ Send failed: ${h(e.message)}`, { parse_mode: "HTML" });
+  }
+});
+
+// ─── /reply — Admin replies to support message (reply to forwarded msg + /reply <text>) ───
+bot.onText(/\/reply\s+([\s\S]+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const replyText = match[1].trim();
+  const replyTo = msg.reply_to_message;
+  if (!replyTo) {
+    return bot.sendMessage(chatId,
+      `<b>📩 /reply — Usage:</b>\n<blockquote>Pehle kisi support message ko reply karein, phir:\n<code>/reply Aapka jawab yahan</code></blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  }
+  // Extract userId from forwarded message text (format: "👤 Name | ID: 123456")
+  const idMatch = replyTo.text?.match(/ID:\s*(\d+)/) || replyTo.caption?.match(/ID:\s*(\d+)/);
+  if (!idMatch) {
+    return bot.sendMessage(chatId,
+      `❌ User ID detect nahi hua. Support card reply karein (jisme "ID: 123456" ho).`,
+      { parse_mode: "HTML" }
+    );
+  }
+  const targetId = Number(idMatch[1]);
+  try {
+    await bot.sendMessage(targetId,
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+      `  💬  <b>ADMIN REPLY</b>\n` +
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+      `<blockquote>${h(replyText)}</blockquote>\n\n` +
+      `<i>Agar aur help chahiye toh /support karein.</i>`,
+      { parse_mode: "HTML" }
+    );
+    await bot.sendMessage(chatId,
+      `✅ <b>Reply sent!</b> → <code>${targetId}</code>`,
+      { parse_mode: "HTML" }
+    );
+  } catch (e) {
+    await bot.sendMessage(chatId, `❌ Failed: ${h(e.message)}`, { parse_mode: "HTML" });
+  }
+});
+
+// ─── /listusers [page] ───
+bot.onText(/\/listusers(?:\s+(\d+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const PAGE = 20;
+  const page = Math.max(1, parseInt(match[1] || "1"));
+  const allUsers = [...botUsers.entries()];
+  const total = allUsers.length;
+  const totalPages = Math.ceil(total / PAGE);
+  const slice = allUsers.slice((page - 1) * PAGE, page * PAGE);
+  if (slice.length === 0) {
+    return bot.sendMessage(chatId, `❌ Koi users nahi mile.`, { parse_mode: "HTML" });
+  }
+  const lines = slice.map(([uid, u]) => {
+    const name = u.firstName || "?";
+    const uname = u.username ? `@${u.username}` : `—`;
+    const vipTag = isVip(uid) ? " 👑" : "";
+    const banTag = bannedUsers.has(uid) ? " 🚫" : "";
+    return `▸ <code>${uid}</code>  <b>${h(name)}</b>  ${h(uname)}${vipTag}${banTag}`;
+  }).join("\n");
+  await bot.sendMessage(chatId,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  👥  <b>USER LIST — Page ${page}/${totalPages}</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `${lines}\n\n` +
+    `<blockquote>Total: ${total} | 👑 VIP shown | 🚫 Banned shown\n` +
+    `Next page: /listusers ${page + 1}</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /endgiveaway <giveawayId> ───
+bot.onText(/\/endgiveaway\s+(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const g = getGiveaway(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${h(gId)}</code> nahi mila.`, { parse_mode: "HTML" });
+  if (!g.active) return bot.sendMessage(chatId, `ℹ️ Yeh giveaway pehle se end ho chuka hai.`, { parse_mode: "HTML" });
+  g.active = false; g.participationOpen = false; g.paidVotesActive = false;
+  await saveGiveaway(g);
+  await announceWinners(g, gId, g.creatorId);
+  await bot.sendMessage(chatId,
+    `✅ <b>Giveaway Force-Ended!</b>\n\n` +
+    `<blockquote>◈ Title  ▸  <b>${h(g.title)}</b>\n◈ ID     ▸  <code>${gId}</code>\n◈ Participants ▸  ${g.participants.size}</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /resetvotes <giveawayId> ───
+bot.onText(/\/resetvotes\s+(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const g = getGiveaway(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${h(gId)}</code> nahi mila.`, { parse_mode: "HTML" });
+  const oldTotal = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
+  // Reset all votes
+  for (const [uid, p] of g.participants) {
+    p.votes = 0;
+    p.freeVoteDone = false;
+    p.voters = [];
+    g.participants.set(uid, p);
+  }
+  if (g.voterMap) g.voterMap.clear();
+  await saveGiveaway(g);
+  await bot.sendMessage(chatId,
+    `✅ <b>Votes Reset!</b>\n\n` +
+    `<blockquote>` +
+    `◈ Giveaway   ▸  <b>${h(g.title)}</b>\n` +
+    `◈ ID         ▸  <code>${gId}</code>\n` +
+    `◈ Votes Cleared  ▸  ${oldTotal} → 0` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
 bot.onText(/\/adminhelp/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
 
@@ -4693,55 +4940,65 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `</blockquote>`;
 
   const part2 =
+    `<b>👥 USER MANAGEMENT</b>\n` +
+    `<blockquote>` +
+    `/userinfo &lt;userId&gt;\n  → Full user profile (VIP, giveaways, votes, perms, ban status)\n\n` +
+    `/listusers\n  → Paginated list of all bot users\n  /listusers 2 → page 2\n\n` +
+    `/ban &lt;userId&gt; [reason]\n  → Ban user (blocks bot access + notifies user)\n  Example: /ban 123456 Spam\n\n` +
+    `/unban &lt;userId&gt;\n  → Remove ban from a user\n\n` +
+    `/dm &lt;userId&gt; &lt;message&gt;\n  → Send direct message to any user\n  Example: /dm 123456 Aapka order ready hai\n\n` +
+    `/reply &lt;text&gt;\n  → Reply to a support message (reply to forwarded card + /reply text)` +
+    `</blockquote>\n\n` +
     `<b>🎁 GIVEAWAY CONTROLS</b>\n` +
     `<blockquote>` +
     `/allgiveaways\n  → List all giveaways (active + past)\n\n` +
-    `/setstar &lt;giveawayId&gt; &lt;votes&gt;\n  → Set votes awarded per Telegram ⭐ Star\n  Example: /setstar ABC12345 10\n\n` +
-    `/setinr &lt;giveawayId&gt; &lt;votes&gt;\n  → Set votes awarded per ₹1 INR paid\n  Example: /setinr ABC12345 5` +
+    `/endgiveaway &lt;giveawayId&gt;\n  → Force-close any giveaway + announce winners\n\n` +
+    `/resetvotes &lt;giveawayId&gt;\n  → Reset all votes in a giveaway to zero\n\n` +
+    `/setstar &lt;giveawayId&gt; &lt;votes&gt;\n  → Set votes per Telegram ⭐ Star\n\n` +
+    `/setinr &lt;giveawayId&gt; &lt;votes&gt;\n  → Set votes per ₹1 INR paid` +
     `</blockquote>\n\n` +
     `<b>📢 BROADCAST</b>\n` +
     `<blockquote>` +
-    `/broadcast\n  → Choose target group (silent notification)\n\n` +
-    `/broadcast &lt;text&gt;\n  → Send image + text to chosen target (silent)\n\n` +
-    `/loud\n  → Same as /broadcast but WITH notification sound\n\n` +
-    `/loud &lt;text&gt;\n  → Send image + text loudly\n\n` +
-    `💡 <i>Reply to any message + /broadcast to forward it to all targets</i>` +
+    `/broadcast\n  → Compose content (photo/doc/video/text) then pick target\n\n` +
+    `/broadcast &lt;text&gt;\n  → Image + styled text (silent)\n\n` +
+    `/loud\n  → Same as /broadcast but WITH sound\n\n` +
+    `💡 <i>Reply to any message + /broadcast → copy-forward mode</i>` +
     `</blockquote>\n\n` +
     `<b>📩 DIRECT SEND & PIN</b>\n` +
     `<blockquote>` +
-    `/send &lt;chatId&gt; &lt;message&gt;\n  → Send message to a specific chat/channel\n  Example: /send -1001234567890 Hello!\n\n` +
-    `/sendloud &lt;chatId&gt; &lt;message&gt;\n  → Same as /send but with notification\n\n` +
-    `/pin &lt;chatId&gt; &lt;message&gt;\n  → Send a message and pin it in the chat` +
+    `/send &lt;chatId&gt; &lt;message&gt;\n  → Send to specific chat/channel\n\n` +
+    `/sendloud &lt;chatId&gt; &lt;message&gt;\n  → Same with notification\n\n` +
+    `/pin &lt;chatId&gt; &lt;message&gt;\n  → Send and pin a message` +
     `</blockquote>`;
 
   const part3 =
     `<b>🖼️ IMAGES & CONFIG</b>\n` +
     `<blockquote>` +
-    `/setwelcomeimageurl\n  → Set welcome screen image (shown as spoiler)\n\n` +
+    `/setwelcomeimageurl\n  → Set welcome screen image\n\n` +
     `/clearwelcomeimage\n  → Remove welcome image\n\n` +
     `/setmembershipqr\n  → Upload UPI/payment QR code photo\n\n` +
-    `/imageinfo\n  → Check current welcome image + QR status` +
+    `/imageinfo\n  → Check current image + QR status` +
     `</blockquote>\n\n` +
     `<b>🔗 FORCE JOIN</b>\n` +
     `<blockquote>` +
-    `/setforcejoin &lt;channelId&gt;\n  → Set force-join slot 1 channel ID\n\n` +
-    `/setforcejoin 2 &lt;channelId&gt;\n  → Set force-join slot 2 channel ID\n\n` +
-    `/forcejoininfo\n  → View current force join config + IDs` +
+    `/setforcejoin &lt;channelId&gt;\n  → Set force-join slot 1\n\n` +
+    `/setforcejoin 2 &lt;channelId&gt;\n  → Set force-join slot 2\n\n` +
+    `/forcejoininfo\n  → View current force join config` +
     `</blockquote>\n\n` +
     `<b>📊 INFO & MAINTENANCE</b>\n` +
     `<blockquote>` +
-    `/stats\n  → Full bot dashboard (users, channels, giveaways, votes)\n\n` +
+    `/stats\n  → Full bot dashboard\n\n` +
     `/allchannels\n  → List all registered channels + groups\n\n` +
-    `/cleandb\n  → Remove expired/stale data from MongoDB\n\n` +
+    `/cleandb\n  → Clean expired data from MongoDB\n\n` +
     `/adminhelp\n  → Show this admin command panel` +
     `</blockquote>\n\n` +
     `<b>👤 USER COMMANDS (for reference)</b>\n` +
     `<blockquote>` +
-    `/start — Open main menu or join giveaway\n` +
-    `/membership — View membership status + plans\n` +
-    `/myplan — Check own VIP status\n` +
-    `/topvoters — Top participants in active giveaway\n` +
-    `/support — Send support message to admin\n` +
+    `/start — Main menu\n` +
+    `/membership — VIP plans + status\n` +
+    `/myplan — Own VIP plan status\n` +
+    `/topvoters — Top participants\n` +
+    `/support — Send message to admin\n` +
     `/help — Full user guide` +
     `</blockquote>`;
 
