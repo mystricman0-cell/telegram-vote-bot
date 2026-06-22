@@ -484,6 +484,7 @@ All bot logic lives in a **single file** — `vote-bot.mjs` — making it easy t
 ```
 
 [![Telegram](https://img.shields.io/badge/Bot-@Drsvotebot-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/Drsvotebot)
+[![Developer](https://img.shields.io/badge/Developer-@rchiex-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)](https://t.me/rchiex)
 [![GitHub](https://img.shields.io/badge/Owner-mystricman0--cell-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/mystricman0-cell)
 
 </div>

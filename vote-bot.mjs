@@ -892,9 +892,9 @@ async function sendWelcome(chatId, userId) {
     `</blockquote>\n\n` +
     `🔺 ᴛᴀᴘ 🎁 ɴᴇᴡ ɢɪᴠᴇᴀᴡᴀʏ ʙᴜᴛᴛᴏɴ ᴛᴏ ᴄʀᴇᴀᴛᴇ ᴀ ɢɪᴠᴇᴀᴡᴀʏ ⭐\n` +
     `🔺 ᴛᴀᴘ 📂 ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ ʙᴜᴛᴛᴏɴ ᴛᴏ ᴠɪᴇᴡ ʏᴏᴜʀ ɢɪᴠᴇᴀᴡᴀʏꜱ ⭐️\n\n` +
-    `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
+    `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
     `<blockquote>` +
-    `⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/+uv1o-BJg3mE3ZmQ1">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
+    `⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/rchiex">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
     `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥` +
     `</blockquote>`;
 
@@ -3861,8 +3861,8 @@ bot.onText(/\/help/, async (msg) => {
     `▸ ɢʟᴏʙᴀʟ ꜰᴏʀᴄᴇ-ᴊᴏɪɴ (7D+ ᴘʟᴀɴ)\n` +
     `▸ ᴜɴʟɪᴍɪᴛᴇᴅ ɢɪᴠᴇᴀᴡᴀʏꜱ` +
     `</blockquote>\n\n` +
-    `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
-    `<blockquote>⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/+uv1o-BJg3mE3ZmQ1">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
+    `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
+    `<blockquote>⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/rchiex">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
     `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥</blockquote>`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
   );
@@ -3925,7 +3925,7 @@ bot.onText(/\/mystats/, async (msg) => {
     `◈ ᴛᴏᴛᴀʟ ᴘᴀʀᴛɪᴄɪᴘᴀɴᴛꜱ ▸  ${totalPart}\n` +
     `◈ ᴛᴏᴛᴀʟ ᴠᴏᴛᴇꜱ ᴄᴀꜱᴛ  ▸  ${totalVotes}` +
     `</blockquote>\n\n` +
-    `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
+    `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
   );
 });
@@ -3985,7 +3985,7 @@ bot.onText(/\/botstatus/, async (msg) => {
     `◈ ᴄʜᴀɴɴᴇʟꜱ       ▸  ${totalChannels}\n` +
     `◈ ᴘᴇɴᴅɪɴɢ ᴘᴀʏꜱ   ▸  ${pendingTotal}` +
     `</blockquote>\n\n` +
-    `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
+    `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
   );
 });
