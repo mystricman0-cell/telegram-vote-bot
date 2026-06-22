@@ -780,18 +780,18 @@ function mainMenuKeyboard() {
   return {
     inline_keyboard: [
       [
-        { text: "🎁 New Giveaway", callback_data: "new_giveaway" },
-        { text: "📂 My Giveaways", callback_data: "my_giveaways" }
+        { text: "🎁 New Giveaway ✦", callback_data: "new_giveaway" },
+        { text: "✦ My Giveaways 📂", callback_data: "my_giveaways" }
       ],
       [
-        { text: "➕ Add Channel", callback_data: "add_channel" },
-        { text: "➕ Add Group", callback_data: "add_group" }
+        { text: "📢 Add Channel ⚡", callback_data: "add_channel" },
+        { text: "⚡ Add Group 👥", callback_data: "add_group" }
       ],
       [
-        { text: "👑 VIP Membership", callback_data: "vip_membership" },
-        { text: "📢 Create Post", callback_data: "create_post" }
+        { text: "👑 VIP Membership 💎", callback_data: "vip_membership" },
+        { text: "🚀 Create Post ✍️", callback_data: "create_post" }
       ],
-      [{ text: "❓ Guide & Help", callback_data: "how_to_use" }]
+      [{ text: "🌟 ─── Guide & Help ─── 🌟", callback_data: "how_to_use" }]
     ]
   };
 }
@@ -5637,13 +5637,26 @@ async function main() {
     BOT_USERNAME = me.username;
 
     try {
+      // Register user-facing commands for ALL users (shows in bot menu for everyone)
+      await bot.setMyCommands([
+        { command: "start",       description: "🎁 Open DRS Giveaway Bot" },
+        { command: "membership",  description: "👑 Get VIP Membership" },
+        { command: "myplan",      description: "📋 Check my membership status & expiry" },
+        { command: "createpost",  description: "📢 Create a post in your channel" },
+        { command: "topvoters",   description: "🏆 Top participants in your giveaway" },
+        { command: "support",     description: "💬 Contact Support" }
+      ]);
+
+      // Register full admin command list — visible only in admin's private chat
       await bot.setMyCommands([
         { command: "start",                description: "🎁 Open DRS Giveaway Bot" },
         { command: "membership",           description: "👑 Get Premium Membership" },
         { command: "myplan",               description: "📋 Check my membership status" },
         { command: "createpost",           description: "📢 Create a channel post" },
+        { command: "topvoters",            description: "🏆 Top participants in your giveaway" },
         { command: "support",              description: "💬 Contact Support — @drssupport" },
         { command: "adminhelp",            description: "👑 Admin command list" },
+        { command: "stats",                description: "📊 Bot statistics dashboard" },
         { command: "broadcast",            description: "📢 Silent broadcast — Users/Channels/Groups/All" },
         { command: "loud",                 description: "🔊 LOUD broadcast — Users/Channels/Groups/All" },
         { command: "send",                 description: "📩 Send message to specific chat" },
@@ -5652,14 +5665,47 @@ async function main() {
         { command: "allchannels",          description: "📋 List all registered channels" },
         { command: "allgiveaways",         description: "🎁 List all giveaways" },
         { command: "givemem",              description: "💳 Give membership to user" },
+        { command: "removemem",            description: "🗑️ Revoke user membership" },
+        { command: "extendmem",            description: "➕ Extend user membership" },
+        { command: "listmem",              description: "📋 List all active VIP members" },
+        { command: "meminfo",              description: "ℹ️ Check any user's membership" },
+        { command: "setplan",              description: "💰 Update plan pricing" },
+        { command: "ban",                  description: "🚫 Ban a user" },
+        { command: "unban",                description: "✅ Unban a user" },
+        { command: "userinfo",             description: "👤 Full user profile" },
+        { command: "listusers",            description: "👥 Paginated list of all users" },
+        { command: "dm",                   description: "📩 Direct message any user" },
+        { command: "addvotes",             description: "➕ Manually add votes to participant" },
+        { command: "removevotes",          description: "➖ Remove votes from participant" },
+        { command: "endgiveaway",          description: "🏁 Force-close a giveaway" },
+        { command: "resetvotes",           description: "🔄 Reset all votes in a giveaway" },
+        { command: "setwinner",            description: "🏆 Set winner count for giveaway" },
+        { command: "clonegiveaway",        description: "📋 Clone a giveaway" },
+        { command: "announce",             description: "📢 Message all giveaway participants" },
+        { command: "remindvote",           description: "🔔 Send vote reminder to participants" },
+        { command: "voteleaderboard",      description: "🌍 Global top 20 voters" },
+        { command: "giveawayreport",       description: "📄 Download giveaway report .txt" },
+        { command: "setstar",              description: "⭐ Set votes per Telegram Star" },
+        { command: "setinr",               description: "₹ Set votes per INR paid" },
+        { command: "schedule",             description: "⏰ Schedule a broadcast at IST time" },
+        { command: "schedulelist",         description: "📋 View pending scheduled broadcasts" },
+        { command: "cancelschedule",       description: "❌ Cancel a scheduled broadcast" },
+        { command: "paystats",             description: "💰 Pending payments dashboard" },
+        { command: "exportusers",          description: "📁 Download all users as .txt" },
+        { command: "maintenance",          description: "🔧 Toggle maintenance mode on/off" },
+        { command: "setwelcomemsg",        description: "✏️ Set custom welcome message" },
+        { command: "clearwelcomemsg",      description: "🗑️ Restore default welcome message" },
         { command: "setwelcomeimageurl",   description: "🖼️ Set welcome image via URL (spoiler)" },
-        { command: "setmembershipqr",      description: "📸 Upload membership QR code" },
         { command: "clearwelcomeimage",    description: "🗑️ Remove welcome banner" },
+        { command: "setmembershipqr",      description: "📸 Upload membership QR code" },
         { command: "imageinfo",            description: "ℹ️ Check image status" },
         { command: "setforcejoin",         description: "📢 Configure force join channel" },
         { command: "forcejoininfo",        description: "ℹ️ View force join config" },
-        { command: "stats",                description: "📊 Bot statistics dashboard" },
-        { command: "topvoters",            description: "📊 Top participants in your giveaway" },
+        { command: "setfreelimit",         description: "🆓 Set free giveaway quota" },
+        { command: "perms",                description: "🔐 Toggle user permissions" },
+        { command: "viewperms",            description: "🔐 View user permissions" },
+        { command: "setperms",             description: "🔐 Set a specific permission" },
+        { command: "allchannels",          description: "📋 List all registered channels" },
         { command: "cleandb",              description: "🧹 Clean junk/expired data" }
       ], { scope: { type: "chat", chat_id: MAIN_ADMIN_ID } });
 

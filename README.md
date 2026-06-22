@@ -321,6 +321,8 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/start` | Open main menu |
 | `/membership` | View / purchase VIP membership |
 | `/myplan` | Check your own VIP status, expiry & time remaining |
+| `/createpost` | Create and send a post to your registered channel |
+| `/topvoters` | View top participants in your active giveaway |
 | `/support` | Send a support message to admin (text, photo, file, video, voice) |
 
 #### Admin Commands — User Management
