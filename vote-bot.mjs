@@ -6283,6 +6283,7 @@ async function checkAndSendReminders() {
     const totalVotes = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
     const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
 
+    // ── Channel reminders (3h / 1h / 30m) ──
     for (const { label, ms, timeStr } of REMINDER_THRESHOLDS) {
       if (timeLeft <= ms) {
         const key = `${gId}:${label}`;
@@ -6321,8 +6322,63 @@ async function checkAndSendReminders() {
         } catch (e) {
           console.error(`Reminder send error [${gId}:${label}]:`, e.message);
         }
-        break; // only one reminder per check cycle per giveaway
+        break;
       }
+    }
+
+    // ── Auto 1-hour participant DM reminder ──
+    const ONE_HOUR = 60 * 60 * 1000;
+    const dmKey = `${gId}:1h_dm`;
+    if (timeLeft <= ONE_HOUR && !remindersSent.has(dmKey) && g.participants.size > 0) {
+      remindersSent.set(dmKey, true);
+
+      // Build sorted leaderboard for context
+      const sorted = [...g.participants.entries()]
+        .sort((a, b) => b[1].votes - a[1].votes);
+      const top3 = sorted.slice(0, 3).map(([uid, p], i) => {
+        const medal = ["🥇", "🥈", "🥉"][i];
+        const bu = botUsers.get(uid);
+        return `${medal} <b>${h(bu?.firstName || "User")}</b> — ${p.votes} votes`;
+      }).join("\n");
+
+      const minsLeft = Math.floor(timeLeft / (60 * 1000));
+      const exactLeft = minsLeft >= 60 ? `${Math.floor(minsLeft / 60)}h ${minsLeft % 60}m` : `${minsLeft} min`;
+
+      let dmSent = 0, dmFail = 0;
+      for (const [uid, p] of g.participants) {
+        // Find this user's rank
+        const rank = sorted.findIndex(([id]) => id === uid) + 1;
+        const rankEmoji = rank === 1 ? "🥇" : rank === 2 ? "🥈" : rank === 3 ? "🥉" : `#${rank}`;
+
+        const dmMsg =
+          `╔══════════════════════╗\n` +
+          `║  ⏰  <b>1 HOUR LEFT!</b>  ║\n` +
+          `╚══════════════════════╝\n\n` +
+          `📌 <b>${h(g.title)}</b>\n\n` +
+          `<blockquote>` +
+          `⏳ Time Left  » <b>${exactLeft}</b>\n` +
+          `🏅 Your Rank  » <b>${rankEmoji}</b>\n` +
+          `🗳️ Your Votes » <b>${p.votes}</b>\n` +
+          `👥 Total Part » <b>${g.participants.size}</b>` +
+          `</blockquote>\n\n` +
+          `🏆 <b>Current Top 3:</b>\n${top3}\n\n` +
+          `<i>Sirf 1 ghanta baki hai — abhi vote karo aur apni position pakki karo!</i>`;
+
+        try {
+          await bot.sendMessage(uid, dmMsg, {
+            parse_mode: "HTML",
+            reply_markup: {
+              inline_keyboard: [[
+                { text: "🗳️ Vote Now!", url: link },
+                { text: "🏆 Leaderboard", callback_data: `lb:${gId}` }
+              ]]
+            }
+          });
+          dmSent++;
+        } catch { dmFail++; }
+        await sleep(60); // rate-limit safe
+      }
+      console.log(`🔔 Auto 1h DM reminder: giveaway ${gId} — sent ${dmSent}, failed ${dmFail}`);
     }
   }
 }
