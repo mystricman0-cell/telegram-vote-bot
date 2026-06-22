@@ -384,7 +384,8 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | Command | Usage | Description |
 |---|---|---|
 | `/stats` | `/stats` | Full bot dashboard |
-| `/paystats` | `/paystats` | Pending payments + VIP + ban + maintenance status |
+| `/paystats` | `/paystats` | Pending payments (with payIds) + VIP + ban + maintenance status |
+| `/removepay` | `/removepay <payId>` | Remove any pending payment (vote or membership) by ID — notifies user |
 | `/maintenance` | `/maintenance on\|off` | Block all non-admin users during updates |
 | `/setwelcomemsg` | `/setwelcomemsg` | Set custom welcome message text (HTML supported) |
 | `/clearwelcomemsg` | `/clearwelcomemsg` | Restore default welcome message |
