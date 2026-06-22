@@ -430,6 +430,28 @@ async function animWelcomePhoto(chatId, msgId) {
   await sleep(300);
 }
 
+// 🔔 Ding-dong animation — plays before welcome photo, then deletes itself
+async function animDingDong(chatId) {
+  const frames = [
+    `🔔 <b>ᴅɪɴɢ ᴅᴏɴɢ</b>  ·`,
+    `🔔 <b>ᴅɪɴɢ ᴅᴏɴɢ</b>  · ·`,
+    `🔔 <b>ᴅɪɴɢ ᴅᴏɴɢ</b>  · · ·`,
+    `🎁 <b>𝐃𝐑𝐒</b>`,
+    `🎁 <b>𝐃𝐑𝐒 ɢɪᴠᴇ</b>`,
+    `🎁 <b>𝐃𝐑𝐒 ɢɪᴠᴇᴀᴡᴀʏ</b>`,
+    `🎁 <b>𝐃𝐑𝐒 ɢɪᴠᴇᴀᴡᴀʏ ʙᴏᴛ !</b> 🎊`,
+  ];
+  const delays = [280, 280, 280, 160, 160, 160];
+  let msg;
+  try { msg = await bot.sendMessage(chatId, frames[0], { parse_mode: "HTML" }); } catch { return null; }
+  for (let i = 1; i < frames.length; i++) {
+    await sleep(delays[i - 1] || 200);
+    try { await bot.editMessageText(frames[i], { chat_id: chatId, message_id: msg.message_id, parse_mode: "HTML" }); } catch {}
+  }
+  await sleep(500);
+  try { await bot.deleteMessage(chatId, msg.message_id); } catch {}
+}
+
 // 🔄 Loading animation — minimal spinner
 async function animLoading(chatId, msgId) {
   if (!msgId) { try { await bot.sendChatAction(chatId, "typing"); } catch {} return; }
@@ -854,6 +876,9 @@ async function sendWelcome(chatId, userId) {
     try { await bot.deleteMessage(prev.chatId, prev.msgId); } catch {}
     userLastWelcomeMsg.delete(userId);
   }
+
+  // Ding-dong animation before welcome photo
+  await animDingDong(chatId);
 
   try { await bot.sendChatAction(chatId, "typing"); } catch {}
 
@@ -3791,11 +3816,14 @@ bot.onText(/\/help/, async (msg) => {
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
     `<b>🎯 ᴀʟʟ ᴄᴏᴍᴍᴀɴᴅꜱ</b>\n` +
     `<blockquote>` +
-    `/start — ᴍᴀɪɴ ᴍᴇɴᴜ\n` +
+    `/start — ᴍᴀɪɴ ᴍᴇɴᴜ (ᴅɪɴɢ ᴅᴏɴɢ ᴀɴɪᴍᴀᴛɪᴏɴ)\n` +
     `/membership — ᴠɪᴘ ᴘʟᴀɴꜱ &amp; ᴘᴜʀᴄʜᴀꜱᴇ\n` +
     `/myplan — ʏᴏᴜʀ ᴠɪᴘ ꜱᴛᴀᴛᴜꜱ &amp; ᴇxᴘɪʀʏ\n` +
     `/leaderboard — ʟɪᴠᴇ ɢɪᴠᴇᴀᴡᴀʏ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ\n` +
     `/mystats — ʏᴏᴜʀ ᴘᴇʀꜱᴏɴᴀʟ ꜱᴛᴀᴛꜱ\n` +
+    `/botstatus — ʙᴏᴛ ʜᴇᴀʟᴛʜ &amp; ꜱᴛᴀᴛꜱ\n` +
+    `/ping — ʀᴇꜱᴘᴏɴꜱᴇ ᴛɪᴍᴇ ᴄʜᴇᴄᴋ\n` +
+    `/myid — ʏᴏᴜʀ ᴛᴇʟᴇɢʀᴀᴍ ᴜꜱᴇʀ ɪᴅ\n` +
     `/createpost — ᴘᴏꜱᴛ ᴛᴏ ʏᴏᴜʀ ᴄʜᴀɴɴᴇʟ\n` +
     `/topvoters — ᴛᴏᴘ ᴘᴀʀᴛɪᴄɪᴘᴀɴᴛꜱ ʀᴀɴᴋɪɴɢ\n` +
     `/support — ᴄᴏɴᴛᴀᴄᴛ ꜱᴜᴘᴘᴏʀᴛ` +
@@ -3890,6 +3918,155 @@ bot.onText(/\/mystats/, async (msg) => {
     `</blockquote>\n\n` +
     `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
+  );
+});
+
+// ─── /ping — Check bot response time ───
+bot.onText(/\/ping/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const chatId = msg.chat.id;
+  const t = Date.now();
+  const m = await bot.sendMessage(chatId, `🏓 <b>ᴘᴏɴɢ!</b>`, { parse_mode: "HTML" });
+  const ms = Date.now() - t;
+  await bot.editMessageText(
+    `🏓 <b>ᴘᴏɴɢ!</b>\n\n<blockquote>◈ ʀᴇꜱᴘᴏɴꜱᴇ ᴛɪᴍᴇ ▸  <b>${ms}ms</b>\n◈ ꜱᴛᴀᴛᴜꜱ ▸  ✅ ᴏɴʟɪɴᴇ</blockquote>`,
+    { chat_id: chatId, message_id: m.message_id, parse_mode: "HTML" }
+  );
+});
+
+// ─── /myid — Show own Telegram user ID ───
+bot.onText(/\/myid/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const chatId = msg.chat.id;
+  const u = msg.from;
+  await bot.sendMessage(chatId,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  🪪  <b>ʏᴏᴜʀ ɪᴅ ɪɴꜰᴏ</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>` +
+    `◈ ɴᴀᴍᴇ       ▸  <b>${h(u.first_name || "")}${u.last_name ? " " + h(u.last_name) : ""}</b>\n` +
+    `◈ ᴜꜱᴇʀɴᴀᴍᴇ  ▸  ${u.username ? `@${u.username}` : "❌ ɴᴏɴᴇ"}\n` +
+    `◈ ᴜꜱᴇʀ ɪᴅ   ▸  <code>${u.id}</code>\n` +
+    `◈ ʟᴀɴɢ      ▸  ${u.language_code || "N/A"}` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /botstatus — Quick bot health overview ───
+bot.onText(/\/botstatus/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const chatId = msg.chat.id;
+  const totalGiveaways = giveaways.size;
+  const activeGiveaways = [...giveaways.values()].filter(g => g.active).length;
+  const totalUsers = botUsers.size;
+  const totalChannels = registeredChannels.size;
+  const vipCount = [...botUsers.values()].filter(u => getMembership(u.id)).length;
+  const pendingTotal = pendingPayments.size + pendingMembershipPayments.size;
+  await bot.sendMessage(chatId,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  🤖  <b>ʙᴏᴛ ꜱᴛᴀᴛᴜꜱ</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>` +
+    `◈ ꜱᴛᴀᴛᴜꜱ         ▸  ✅ ᴏɴʟɪɴᴇ\n` +
+    `◈ ᴛᴏᴛᴀʟ ᴜꜱᴇʀꜱ    ▸  ${totalUsers}\n` +
+    `◈ ᴠɪᴘ ᴜꜱᴇʀꜱ      ▸  ${vipCount}\n` +
+    `◈ ᴛᴏᴛᴀʟ ɢɪᴠᴇᴀᴡᴀʏꜱ ▸  ${totalGiveaways}\n` +
+    `◈ ᴀᴄᴛɪᴠᴇ ɢɪᴠᴇᴀᴡᴀʏꜱ ▸  ${activeGiveaways}\n` +
+    `◈ ᴄʜᴀɴɴᴇʟꜱ       ▸  ${totalChannels}\n` +
+    `◈ ᴘᴇɴᴅɪɴɢ ᴘᴀʏꜱ   ▸  ${pendingTotal}` +
+    `</blockquote>\n\n` +
+    `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
+  );
+});
+
+// ─── /setstartimage <url> — Admin: set welcome/start image in one line ───
+bot.onText(/\/setstartimage(?:\s+(.+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const url = match[1]?.trim();
+  if (!url || (!url.startsWith("http://") && !url.startsWith("https://"))) {
+    return bot.sendMessage(chatId,
+      `<b>🖼️ Set Start Image</b>\n\nUsage:\n<code>/setstartimage https://example.com/image.jpg</code>\n\n<i>Current: ${welcomeImageUrl ? `✅ Set` : "❌ Not set"}</i>`,
+      { parse_mode: "HTML" }
+    );
+  }
+  welcomeImageUrl = url;
+  await saveConfig("welcomeImageUrl", url);
+  await bot.sendMessage(chatId,
+    `✅ <b>Start Image Updated!</b>\n\n` +
+    `<blockquote>◈ URL ▸  <code>${h(url)}</code>\n\nUsers will see this new image on /start 🎁</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /clearstates — Admin: clear all stuck user states ───
+bot.onText(/\/clearstates/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const count = userState.size;
+  userState.clear();
+  await bot.sendMessage(chatId,
+    `✅ <b>User States Cleared</b>\n\n<blockquote>◈ Stuck states removed ▸  <b>${count}</b>\n\nSab users ab fresh state mein hain.</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /gcount — Admin: quick giveaway count breakdown ───
+bot.onText(/\/gcount/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const all = [...giveaways.values()];
+  const active = all.filter(g => g.active).length;
+  const ended = all.filter(g => !g.active).length;
+  const totalPart = all.reduce((s, g) => s + (g.participants?.size || 0), 0);
+  const totalVotes = all.reduce((s, g) => {
+    if (!g.voterMap) return s;
+    let v = 0; for (const c of g.voterMap.values()) v += c; return s + v;
+  }, 0);
+  await bot.sendMessage(chatId,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  🎁  <b>GIVEAWAY COUNT</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `◈ Total Giveaways    ▸  ${all.length}\n` +
+    `◈ Active             ▸  ${active}\n` +
+    `◈ Ended              ▸  ${ended}\n` +
+    `◈ Total Participants ▸  ${totalPart}\n` +
+    `◈ Total Votes Cast   ▸  ${totalVotes}` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /topusers — Admin: top 10 users by giveaways created ───
+bot.onText(/\/topusers/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const countMap = new Map();
+  for (const g of giveaways.values()) {
+    countMap.set(g.creatorId, (countMap.get(g.creatorId) || 0) + 1);
+  }
+  const sorted = [...countMap.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10);
+  if (!sorted.length) {
+    return bot.sendMessage(chatId, `<b>No giveaways found.</b>`, { parse_mode: "HTML" });
+  }
+  const medals = ["🥇", "🥈", "🥉"];
+  let lines = "";
+  for (let i = 0; i < sorted.length; i++) {
+    const [uid, cnt] = sorted[i];
+    const u = botUsers.get(uid);
+    const name = u ? h(u.first_name || String(uid)) : String(uid);
+    const handle = u?.username ? ` (@${u.username})` : "";
+    lines += `${medals[i] || `${i + 1}.`}  <b>${name}</b>${handle}  ▸  ${cnt} giveaway${cnt > 1 ? "s" : ""}\n`;
+  }
+  await bot.sendMessage(chatId,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  🏆  <b>TOP USERS (by Giveaways)</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>${lines.trim()}</blockquote>`,
+    { parse_mode: "HTML" }
   );
 });
 
@@ -5793,14 +5970,24 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/cleandb\n  → Clean expired data from MongoDB\n\n` +
     `/adminhelp\n  → Show this panel` +
     `</blockquote>\n\n` +
+    `<b>🖼️ NEW UTILITY COMMANDS</b>\n` +
+    `<blockquote>` +
+    `/setstartimage &lt;url&gt;\n  → Set welcome/start image in one line (no wizard)\n  Example: /setstartimage https://i.imgur.com/abc.jpg\n\n` +
+    `/clearstates\n  → Clear all stuck user conversation states\n\n` +
+    `/gcount\n  → Quick giveaway count breakdown (active, ended, totals)\n\n` +
+    `/topusers\n  → Top 10 users ranked by giveaways created` +
+    `</blockquote>\n\n` +
     `<b>👤 USER COMMANDS (reference)</b>\n` +
     `<blockquote>` +
-    `/start — Main menu\n` +
+    `/start — Main menu (ding-dong animation)\n` +
     `/help — Full user guide & all commands\n` +
     `/membership — VIP plans + status\n` +
     `/myplan — Own VIP plan card\n` +
     `/leaderboard — Live leaderboard of active giveaway\n` +
     `/mystats — Personal giveaway stats\n` +
+    `/botstatus — Quick bot health & stats\n` +
+    `/ping — Check bot response time\n` +
+    `/myid — Show Telegram user ID\n` +
     `/topvoters — Top participants ranking\n` +
     `/support — Send message to admin` +
     `</blockquote>`;
@@ -5862,6 +6049,9 @@ async function main() {
         { command: "myplan",       description: "📋 Check my membership status & expiry" },
         { command: "leaderboard",  description: "🏆 Live leaderboard of your active giveaway" },
         { command: "mystats",      description: "📊 Your personal giveaway stats" },
+        { command: "botstatus",    description: "🤖 Quick bot health & stats" },
+        { command: "ping",         description: "🏓 Check bot response time" },
+        { command: "myid",         description: "🪪 Show your Telegram user ID" },
         { command: "createpost",   description: "📢 Create a post in your channel" },
         { command: "topvoters",    description: "🥇 Top participants ranking" },
         { command: "support",      description: "💬 Contact Support" }
@@ -5875,6 +6065,9 @@ async function main() {
         { command: "myplan",               description: "📋 Check my membership status" },
         { command: "leaderboard",          description: "🏆 Live leaderboard of active giveaway" },
         { command: "mystats",              description: "📊 Personal giveaway stats" },
+        { command: "botstatus",            description: "🤖 Quick bot health & stats" },
+        { command: "ping",                 description: "🏓 Check bot response time" },
+        { command: "myid",                 description: "🪪 Your Telegram user ID" },
         { command: "createpost",           description: "📢 Create a channel post" },
         { command: "topvoters",            description: "🥇 Top participants ranking" },
         { command: "support",              description: "💬 Contact Support — @drssupport" },
@@ -5931,7 +6124,11 @@ async function main() {
         { command: "allchannels",          description: "📋 List all registered channels" },
         { command: "cleandb",              description: "🧹 Clean junk/expired data" },
         { command: "removepay",            description: "🗑️ Remove a pending payment by ID" },
-        { command: "clearallpending",      description: "🗑️ Clear ALL pending payments at once" }
+        { command: "clearallpending",      description: "🗑️ Clear ALL pending payments at once" },
+        { command: "setstartimage",        description: "🖼️ Set start/welcome image URL (one-liner)" },
+        { command: "clearstates",          description: "🧹 Clear all stuck user states" },
+        { command: "gcount",               description: "🎁 Quick giveaway count breakdown" },
+        { command: "topusers",             description: "🏆 Top users by giveaways created" }
       ], { scope: { type: "chat", chat_id: MAIN_ADMIN_ID } });
 
       console.log("✅ Bot commands registered!");

@@ -318,12 +318,15 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 
 | Command | Description |
 |---|---|
-| `/start` | Open main menu |
+| `/start` | Open main menu — ding-dong animation + spoiler image |
 | `/help` | Full user guide & all commands |
 | `/membership` | View / purchase VIP membership |
 | `/myplan` | Check your own VIP status, expiry & time remaining |
 | `/leaderboard` | Live leaderboard of your active giveaway |
 | `/mystats` | Your personal giveaway stats (total giveaways, participants, votes) |
+| `/botstatus` | Quick bot health & stats (users, giveaways, channels, pending) |
+| `/ping` | Check bot response time in ms |
+| `/myid` | Show your Telegram user ID, username & language |
 | `/createpost` | Create and send a post to your registered channel |
 | `/topvoters` | View top participants in your active giveaway |
 | `/support` | Send a support message to admin (text, photo, file, video, voice) |
@@ -390,6 +393,10 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/paystats` | `/paystats` | Pending payments (with payIds) + VIP + ban + maintenance status |
 | `/removepay` | `/removepay <payId>` | Remove any pending payment (vote or membership) by ID — notifies user |
 | `/clearallpending` | `/clearallpending` | Clear ALL pending payments at once (vote + membership) — notifies all users |
+| `/setstartimage` | `/setstartimage <url>` | Set start/welcome image in one line — no wizard needed |
+| `/clearstates` | `/clearstates` | Clear all stuck user conversation states |
+| `/gcount` | `/gcount` | Quick giveaway count breakdown — active, ended, totals, participants, votes |
+| `/topusers` | `/topusers` | Top 10 users ranked by number of giveaways created |
 | `/maintenance` | `/maintenance on\|off` | Block all non-admin users during updates |
 | `/setwelcomemsg` | `/setwelcomemsg` | Set custom welcome message text (HTML supported) |
 | `/clearwelcomemsg` | `/clearwelcomemsg` | Restore default welcome message |
