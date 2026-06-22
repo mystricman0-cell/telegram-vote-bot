@@ -895,7 +895,8 @@ async function sendWelcome(chatId, userId) {
     `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
     `<blockquote>` +
     `⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/+uv1o-BJg3mE3ZmQ1">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
-    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥` +
+    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥\n` +
+    `🔗 ᴅᴇᴠ :——— <a href="https://t.me/rchiex">𝐑𝐂𝐇𝐈𝐄𝐗</a> ❤️‍🔥` +
     `</blockquote>`;
 
   // Send photo first with spoiler + first animation frame as caption
@@ -3854,7 +3855,8 @@ bot.onText(/\/help/, async (msg) => {
     `</blockquote>\n\n` +
     `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
     `<blockquote>⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/+uv1o-BJg3mE3ZmQ1">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
-    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥</blockquote>`,
+    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥\n` +
+    `🔗 ᴅᴇᴠ :——— <a href="https://t.me/rchiex">𝐑𝐂𝐇𝐈𝐄𝐗</a> ❤️‍🔥</blockquote>`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
   );
 });
