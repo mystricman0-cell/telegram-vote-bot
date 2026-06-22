@@ -869,7 +869,7 @@ async function sendWelcome(chatId, userId) {
     `🔺 ᴛᴀᴘ 📂 ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ ʙᴜᴛᴛᴏɴ ᴛᴏ ᴠɪᴇᴡ ʏᴏᴜʀ ɢɪᴠᴇᴀᴡᴀʏꜱ ⭐️\n\n` +
     `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
     `<blockquote>` +
-    `⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/+uv1o-BJg3mE3ZmQ1">𝐃𝐑𝐒</a> ɴᴇᴛᴡᴏʀᴋ ❤️‍🔥\n` +
+    `⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/+uv1o-BJg3mE3ZmQ1">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
     `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥` +
     `</blockquote>`;
 
@@ -3781,6 +3781,118 @@ bot.onText(/\/topvoters/, async (msg) => {
   );
 });
 
+// ─── /help — Full user guide with all commands ───
+bot.onText(/\/help/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const chatId = msg.chat.id;
+  await bot.sendMessage(chatId,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `   📖  <b>𝐃𝐑𝐒 𝐁𝐎𝐓 — ᴜꜱᴇʀ ɢᴜɪᴅᴇ</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<b>🎯 ᴀʟʟ ᴄᴏᴍᴍᴀɴᴅꜱ</b>\n` +
+    `<blockquote>` +
+    `/start — ᴍᴀɪɴ ᴍᴇɴᴜ\n` +
+    `/membership — ᴠɪᴘ ᴘʟᴀɴꜱ &amp; ᴘᴜʀᴄʜᴀꜱᴇ\n` +
+    `/myplan — ʏᴏᴜʀ ᴠɪᴘ ꜱᴛᴀᴛᴜꜱ &amp; ᴇxᴘɪʀʏ\n` +
+    `/leaderboard — ʟɪᴠᴇ ɢɪᴠᴇᴀᴡᴀʏ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ\n` +
+    `/mystats — ʏᴏᴜʀ ᴘᴇʀꜱᴏɴᴀʟ ꜱᴛᴀᴛꜱ\n` +
+    `/createpost — ᴘᴏꜱᴛ ᴛᴏ ʏᴏᴜʀ ᴄʜᴀɴɴᴇʟ\n` +
+    `/topvoters — ᴛᴏᴘ ᴘᴀʀᴛɪᴄɪᴘᴀɴᴛꜱ ʀᴀɴᴋɪɴɢ\n` +
+    `/support — ᴄᴏɴᴛᴀᴄᴛ ꜱᴜᴘᴘᴏʀᴛ` +
+    `</blockquote>\n\n` +
+    `<b>🎁 ɢɪᴠᴇᴀᴡᴀʏ ʙᴀɴᴀɴᴇ ᴋᴀ ᴛᴀʀɪᴋᴀ</b>\n` +
+    `<blockquote>` +
+    `1️⃣ ʙᴏᴛ ᴋᴏ ᴄʜᴀɴɴᴇʟ ᴍᴇɪɴ <b>Admin</b> ʙᴀɴᴀᴏ\n` +
+    `2️⃣ 🎁 <b>New Giveaway</b> ᴛᴀᴘ ᴋᴀʀᴏ\n` +
+    `3️⃣ ᴡɪᴢᴀʀᴅ ꜰᴏʟʟᴏᴡ ᴋᴀʀᴏ — ᴛɪᴛʟᴇ → ᴄʜᴀɴɴᴇʟ → ᴇɴᴅ ᴛɪᴍᴇ\n` +
+    `4️⃣ ᴘᴀʀᴛɪᴄɪᴘᴀᴛɪᴏɴ ʟɪɴᴋ ꜱʜᴀʀᴇ ᴋᴀʀᴏ\n` +
+    `5️⃣ ʙᴏᴛ ᴀᴜᴛᴏ ᴠᴏᴛᴇ ᴄᴀʀᴅ ᴘᴏꜱᴛ ᴋᴀʀᴇɢᴀ!` +
+    `</blockquote>\n\n` +
+    `<b>🗳️ ᴠᴏᴛɪɴɢ ᴋᴀɪꜱᴇ ᴋᴀᴍ ᴋᴀʀᴛɪ ʜᴀɪ</b>\n` +
+    `<blockquote>` +
+    `▸ ᴜꜱᴇʀꜱ ʟɪɴᴋ ꜱᴇ ᴊᴏɪɴ ᴋᴀʀᴛᴇ ʜᴀɪɴ\n` +
+    `▸ ᴠᴏᴛᴇ ᴄᴀʀᴅ ᴄʜᴀɴɴᴇʟ ᴘᴇ ᴀᴜᴛᴏ ᴘᴏꜱᴛ ʜᴏᴛᴀ ʜᴀɪ\n` +
+    `▸ ꜱɪʀꜰ ᴄʜᴀɴɴᴇʟ ᴍᴇᴍʙᴇʀ ᴠᴏᴛᴇ ᴅᴇ ꜱᴀᴋᴛᴇ ʜᴀɪɴ ⚠️\n` +
+    `▸ ᴄʜᴀɴɴᴇʟ ᴄʜᴏᴅᴏ = ᴠᴏᴛᴇꜱ ᴀᴜᴛᴏ ʀᴇᴍᴏᴠᴇ\n` +
+    `▸ ᴇxᴛʀᴀ ᴠᴏᴛᴇꜱ: INR 🇮🇳 ʏᴀ ⭐ Stars ꜱᴇ ᴋʜᴀʀɪᴅᴏ` +
+    `</blockquote>\n\n` +
+    `<b>👑 ᴠɪᴘ ʙᴇɴᴇꜰɪᴛꜱ</b>\n` +
+    `<blockquote>` +
+    `▸ ᴄᴜꜱᴛᴏᴍ ᴛʜᴜᴍʙɴᴀɪʟ ᴏɴ ᴠᴏᴛᴇ ᴘᴏꜱᴛꜱ\n` +
+    `▸ ᴀᴜᴛᴏ ᴠᴏᴛᴇ-ᴅᴇᴅᴜᴄᴛɪᴏɴ ᴏɴ ᴄʜᴀɴɴᴇʟ ʟᴇᴀᴠᴇ\n` +
+    `▸ ᴇxᴛʀᴀ ꜰᴏʀᴄᴇ-ᴊᴏɪɴ ɢᴀᴛᴇ ᴘᴇʀ ɢɪᴠᴇᴀᴡᴀʏ\n` +
+    `▸ ɢʟᴏʙᴀʟ ꜰᴏʀᴄᴇ-ᴊᴏɪɴ (7D+ ᴘʟᴀɴ)\n` +
+    `▸ ᴜɴʟɪᴍɪᴛᴇᴅ ɢɪᴠᴇᴀᴡᴀʏꜱ` +
+    `</blockquote>\n\n` +
+    `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
+    `<blockquote>⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/+uv1o-BJg3mE3ZmQ1">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
+    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥</blockquote>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
+  );
+});
+
+// ─── /leaderboard — Quick live leaderboard of user's active giveaway ───
+bot.onText(/\/leaderboard/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
+  const active = [...giveaways.entries()].filter(([, g]) =>
+    g.active && (g.creatorId === userId || isAdmin(userId))
+  );
+  if (!active.length) {
+    return bot.sendMessage(chatId,
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  🏆  <b>ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>◈ Koi active giveaway nahi mila.\n\nPehle ek giveaway create karo!</blockquote>`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🎁 ɴᴇᴡ ɢɪᴠᴇᴀᴡᴀʏ", callback_data: "new_giveaway" }]] } }
+    );
+  }
+  const buttons = active.map(([gId, g]) => [{
+    text: `🟢 ${g.title.slice(0, 28)} · ${g.participants.size} 👥`,
+    callback_data: `lb:${gId}`
+  }]);
+  await bot.sendMessage(chatId,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  🏆  <b>ʟɪᴠᴇ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>Apna active giveaway select karo:</blockquote>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } }
+  );
+});
+
+// ─── /mystats — User's personal giveaway statistics ───
+bot.onText(/\/mystats/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
+  const myG = [...giveaways.values()].filter(g => g.creatorId === userId);
+  const activeCount = myG.filter(g => g.active).length;
+  const endedCount = myG.filter(g => !g.active).length;
+  const totalPart = myG.reduce((s, g) => s + (g.participants?.size || 0), 0);
+  const totalVotes = myG.reduce((s, g) => {
+    if (!g.voterMap) return s;
+    let v = 0; for (const c of g.voterMap.values()) v += c; return s + v;
+  }, 0);
+  const m = getMembership(userId);
+  const vipLine = m ? `👑 VIP ᴀᴄᴛɪᴠᴇ — ${timeRemaining(m.expiry)} ʙᴀᴋɪ` : `❌ ꜰʀᴇᴇ ᴜꜱᴇʀ`;
+  await bot.sendMessage(chatId,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  📊  <b>ᴍʏ ꜱᴛᴀᴛꜱ</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>` +
+    `◈ ꜱᴛᴀᴛᴜꜱ          ▸  ${vipLine}\n` +
+    `◈ ᴛᴏᴛᴀʟ ɢɪᴠᴇᴀᴡᴀʏꜱ ▸  ${myG.length}\n` +
+    `◈ ᴀᴄᴛɪᴠᴇ           ▸  ${activeCount}\n` +
+    `◈ ᴇɴᴅᴇᴅ            ▸  ${endedCount}\n` +
+    `◈ ᴛᴏᴛᴀʟ ᴘᴀʀᴛɪᴄɪᴘᴀɴᴛꜱ ▸  ${totalPart}\n` +
+    `◈ ᴛᴏᴛᴀʟ ᴠᴏᴛᴇꜱ ᴄᴀꜱᴛ  ▸  ${totalVotes}` +
+    `</blockquote>\n\n` +
+    `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
+  );
+});
+
 bot.onText(/\/createpost/, async (msg) => {
   if (msg.chat.type !== "private") return;
   const userId = msg.from.id;
@@ -4865,6 +4977,55 @@ bot.onText(/\/paystats/, async (msg) => {
   );
 });
 
+// ─── /clearallpending — Admin: remove ALL pending payments at once ───
+bot.onText(/\/clearallpending/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const voteCount = pendingPayments.size;
+  const memCount = pendingMembershipPayments.size;
+  if (voteCount === 0 && memCount === 0) {
+    return bot.sendMessage(chatId, `✅ Koi pending payment nahi hai — sab clear hai!`, { parse_mode: "HTML" });
+  }
+  const notified = new Set();
+  for (const [payId, p] of pendingPayments) {
+    if (!notified.has(p.userId)) {
+      try {
+        await bot.sendMessage(p.userId,
+          `<b>❌ Payment Cleared</b>\n\nAdmin ne tumhara pending payment clear kar diya.\nPayment ID: <code>${payId}</code>\n\nKoi sawaal ho toh: <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a>`,
+          { parse_mode: "HTML" }
+        );
+      } catch {}
+      notified.add(p.userId);
+    }
+  }
+  for (const [payId, p] of pendingMembershipPayments) {
+    if (!notified.has(p.userId)) {
+      try {
+        await bot.sendMessage(p.userId,
+          `<b>❌ Payment Cleared</b>\n\nAdmin ne tumhara pending membership payment clear kar diya.\nPayment ID: <code>${payId}</code>\n\nKoi sawaal ho toh: <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a>`,
+          { parse_mode: "HTML" }
+        );
+      } catch {}
+      notified.add(p.userId);
+    }
+  }
+  pendingPayments.clear();
+  pendingMembershipPayments.clear();
+  await PendingPaymentModel.deleteMany({}).catch(() => {});
+  await PendingMembershipModel.deleteMany({}).catch(() => {});
+  await bot.sendMessage(chatId,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  🗑️  <b>ALL PENDING CLEARED</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `◈ Vote Payments Cleared      ▸  ${voteCount}\n` +
+    `◈ Membership Payments Cleared ▸  ${memCount}\n` +
+    `◈ Users Notified              ▸  ${notified.size}` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
 // ─── /removepay <payId> — Admin: remove any pending payment by ID ───
 bot.onText(/\/removepay\s+(\S+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
@@ -5626,6 +5787,7 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/stats\n  → Full bot dashboard\n\n` +
     `/paystats\n  → Pending payments + VIP + ban counts (shows payIds)\n\n` +
     `/removepay &lt;payId&gt;\n  → Remove any pending payment (vote or membership) by ID\n  Example: /removepay PAY123\n\n` +
+    `/clearallpending\n  → Clear ALL pending payments at once + notify all users\n\n` +
     `/maintenance on|off\n  → Block all non-admin users (for updates)\n\n` +
     `/allchannels\n  → List all registered channels + groups\n\n` +
     `/cleandb\n  → Clean expired data from MongoDB\n\n` +
@@ -5634,11 +5796,13 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `<b>👤 USER COMMANDS (reference)</b>\n` +
     `<blockquote>` +
     `/start — Main menu\n` +
+    `/help — Full user guide & all commands\n` +
     `/membership — VIP plans + status\n` +
     `/myplan — Own VIP plan card\n` +
-    `/topvoters — Top participants\n` +
-    `/support — Send message to admin\n` +
-    `/help — Full user guide` +
+    `/leaderboard — Live leaderboard of active giveaway\n` +
+    `/mystats — Personal giveaway stats\n` +
+    `/topvoters — Top participants ranking\n` +
+    `/support — Send message to admin` +
     `</blockquote>`;
 
   await bot.sendMessage(msg.chat.id, part1, { parse_mode: "HTML" });
@@ -5692,21 +5856,27 @@ async function main() {
     try {
       // Register user-facing commands for ALL users (shows in bot menu for everyone)
       await bot.setMyCommands([
-        { command: "start",       description: "🎁 Open DRS Giveaway Bot" },
-        { command: "membership",  description: "👑 Get VIP Membership" },
-        { command: "myplan",      description: "📋 Check my membership status & expiry" },
-        { command: "createpost",  description: "📢 Create a post in your channel" },
-        { command: "topvoters",   description: "🏆 Top participants in your giveaway" },
-        { command: "support",     description: "💬 Contact Support" }
+        { command: "start",        description: "🎁 Open DRS Giveaway Bot" },
+        { command: "help",         description: "📖 Full user guide & all commands" },
+        { command: "membership",   description: "👑 Get VIP Membership" },
+        { command: "myplan",       description: "📋 Check my membership status & expiry" },
+        { command: "leaderboard",  description: "🏆 Live leaderboard of your active giveaway" },
+        { command: "mystats",      description: "📊 Your personal giveaway stats" },
+        { command: "createpost",   description: "📢 Create a post in your channel" },
+        { command: "topvoters",    description: "🥇 Top participants ranking" },
+        { command: "support",      description: "💬 Contact Support" }
       ]);
 
       // Register full admin command list — visible only in admin's private chat
       await bot.setMyCommands([
         { command: "start",                description: "🎁 Open DRS Giveaway Bot" },
+        { command: "help",                 description: "📖 Full user guide & all commands" },
         { command: "membership",           description: "👑 Get Premium Membership" },
         { command: "myplan",               description: "📋 Check my membership status" },
+        { command: "leaderboard",          description: "🏆 Live leaderboard of active giveaway" },
+        { command: "mystats",              description: "📊 Personal giveaway stats" },
         { command: "createpost",           description: "📢 Create a channel post" },
-        { command: "topvoters",            description: "🏆 Top participants in your giveaway" },
+        { command: "topvoters",            description: "🥇 Top participants ranking" },
         { command: "support",              description: "💬 Contact Support — @drssupport" },
         { command: "adminhelp",            description: "👑 Admin command list" },
         { command: "stats",                description: "📊 Bot statistics dashboard" },
@@ -5760,7 +5930,8 @@ async function main() {
         { command: "setperms",             description: "🔐 Set a specific permission" },
         { command: "allchannels",          description: "📋 List all registered channels" },
         { command: "cleandb",              description: "🧹 Clean junk/expired data" },
-        { command: "removepay",            description: "🗑️ Remove any pending payment by ID" }
+        { command: "removepay",            description: "🗑️ Remove a pending payment by ID" },
+        { command: "clearallpending",      description: "🗑️ Clear ALL pending payments at once" }
       ], { scope: { type: "chat", chat_id: MAIN_ADMIN_ID } });
 
       console.log("✅ Bot commands registered!");
