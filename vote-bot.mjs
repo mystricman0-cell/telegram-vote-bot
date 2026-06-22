@@ -895,8 +895,7 @@ async function sendWelcome(chatId, userId) {
     `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
     `<blockquote>` +
     `⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/+uv1o-BJg3mE3ZmQ1">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
-    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥\n` +
-    `🔗 ᴅᴇᴠ :——— <a href="https://t.me/rchiex">𝐑𝐂𝐇𝐈𝐄𝐗</a> ❤️‍🔥` +
+    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥` +
     `</blockquote>`;
 
   // Send photo first with spoiler + first animation frame as caption
@@ -1222,11 +1221,20 @@ bot.on("callback_query", async (query) => {
     userState.delete(userId);
     try { await bot.deleteMessage(chatId, msgId); } catch {}
     const targetLabel = { users: "👥 Users", channels: "📢 Channels", groups: "🏘️ Groups", all: "🌐 All" }[target];
-    await bot.sendMessage(chatId,
-      `⏳ <b>Broadcasting to ${targetLabel}...</b>\n<i>Please wait...</i>`,
+    const progressMsg = await bot.sendMessage(chatId,
+      `╔══════════════════════╗\n` +
+      `║  📢  <b>BROADCASTING</b>  ║\n` +
+      `╠══════════════════════╣\n` +
+      `<blockquote>` +
+      `🎯 Target  » ${targetLabel}\n` +
+      `📊 Progress » <code>[░░░░░░░░░░]  0%</code>\n` +
+      `✅ Sent     » 0\n` +
+      `❌ Failed   » 0` +
+      `</blockquote>\n` +
+      `╚══════════════════════╝`,
       { parse_mode: "HTML" }
     );
-    await doBroadcast(chatId, state.adminMsg, state.text, state.silent, target, state.composeMsg || null);
+    await doBroadcast(chatId, state.adminMsg, state.text, state.silent, target, state.composeMsg || null, progressMsg.message_id);
     return;
   }
 
@@ -3855,8 +3863,7 @@ bot.onText(/\/help/, async (msg) => {
     `</blockquote>\n\n` +
     `✈️━━━━<a href="https://t.me/+uv1o-BJg3mE3ZmQ1">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
     `<blockquote>⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/+uv1o-BJg3mE3ZmQ1">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
-    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥\n` +
-    `🔗 ᴅᴇᴠ :——— <a href="https://t.me/rchiex">𝐑𝐂𝐇𝐈𝐄𝐗</a> ❤️‍🔥</blockquote>`,
+    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥</blockquote>`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
   );
 });
@@ -4113,9 +4120,15 @@ bot.onText(/\/createpost/, async (msg) => {
 // MAIN ADMIN COMMANDS
 // ============================================================
 
+// ── Broadcast progress bar helper ──
+function buildProgressBar(pct) {
+  const filled = Math.round(pct / 10);
+  return `[${"█".repeat(filled)}${"░".repeat(10 - filled)}] ${pct}%`;
+}
+
 // ── Broadcast helper ──
 // target: "users" | "channels" | "groups" | "all"
-async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = "all", composeMsg = null) {
+async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = "all", composeMsg = null, progressMsgId = null) {
   const channelIds = [...registeredChannels.entries()]
     .filter(([, c]) => c.type === "channel")
     .map(([id]) => id);
@@ -4130,23 +4143,47 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
   else if (target === "groups")   targets = groupIds;
   else targets = [...new Set([...channelIds, ...groupIds, ...userIds])];
 
+  const targetLabel = { users: "👥 Users", channels: "📢 Channels", groups: "🏘️ Groups", all: "🌐 All" }[target];
   const replyTo = adminMsg?.reply_to_message;
   let sent = 0, failed = 0;
+  const total = targets.length;
+  let lastPct = -1;
 
-  for (const id of targets) {
+  const updateProgress = async (done) => {
+    if (!progressMsgId) return;
+    const pct = total === 0 ? 100 : Math.floor((done / total) * 100);
+    const rounded = Math.floor(pct / 10) * 10;
+    if (rounded === lastPct) return;
+    lastPct = rounded;
+    try {
+      await bot.editMessageText(
+        `╔══════════════════════╗\n` +
+        `║  📢  <b>BROADCASTING</b>  ║\n` +
+        `╠══════════════════════╣\n` +
+        `<blockquote>` +
+        `🎯 Target  » ${targetLabel}\n` +
+        `📊 Progress » <code>${buildProgressBar(rounded)}</code>\n` +
+        `✅ Sent     » ${sent}\n` +
+        `❌ Failed   » ${failed}` +
+        `</blockquote>\n` +
+        `╚══════════════════════╝`,
+        { chat_id: adminChatId, message_id: progressMsgId, parse_mode: "HTML" }
+      );
+    } catch {}
+  };
+
+  for (let i = 0; i < targets.length; i++) {
+    const id = targets[i];
     try {
       if (composeMsg) {
-        // Admin composed content (photo/doc/video/text with caption)
         await bot.copyMessage(id, composeMsg.chat.id, composeMsg.message_id, {
           disable_notification: silent
         });
       } else if (replyTo) {
-        // Admin replied to an existing message
         await bot.copyMessage(id, adminMsg.chat.id, replyTo.message_id, {
           disable_notification: silent
         });
       } else {
-        // Text-only: send styled broadcast card
         const caption =
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
           `  📢  <b>DRS BROADCAST</b>\n` +
@@ -4160,19 +4197,39 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
       sent++;
     } catch { failed++; }
     await sleep(50);
+    await updateProgress(i + 1);
   }
 
-  const targetLabel = { users: "👥 Users", channels: "📢 Channels", groups: "👥 Groups", all: "🌐 All" }[target];
+  // Final progress update — 100%
+  if (progressMsgId) {
+    try {
+      await bot.editMessageText(
+        `╔══════════════════════╗\n` +
+        `║  ✅  <b>BROADCAST DONE</b>  ║\n` +
+        `╠══════════════════════╣\n` +
+        `<blockquote>` +
+        `🎯 Target  » ${targetLabel}\n` +
+        `📊 Progress » <code>${buildProgressBar(100)}</code>\n` +
+        `✅ Sent     » ${sent}\n` +
+        `❌ Failed   » ${failed}\n` +
+        `📦 Total    » ${total}` +
+        `</blockquote>\n` +
+        `╚══════════════════════╝`,
+        { chat_id: adminChatId, message_id: progressMsgId, parse_mode: "HTML" }
+      );
+    } catch {}
+  }
+
   const modeStr = composeMsg ? "📎 Composed" : replyTo ? "📋 Message-Copy" : "🖼️ Image+Text";
   const notif = silent ? "🔕 Silent" : "🔔 LOUD";
   await bot.sendMessage(adminChatId,
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
-    `  ${silent ? "📢" : "🔔"}  <b>BROADCAST DONE</b>\n` +
+    `  ${silent ? "📢" : "🔔"}  <b>BROADCAST REPORT</b>\n` +
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
     `<blockquote>` +
     `◈ Target   ▸  ${targetLabel}\n` +
     `◈ Mode     ▸  ${notif} ${modeStr}\n` +
-    `◈ Total    ▸  ${targets.length}\n` +
+    `◈ Total    ▸  ${total}\n` +
     `◈ Sent     ▸  ✅ ${sent}\n` +
     `◈ Failed   ▸  ❌ ${failed}` +
     `</blockquote>`,
