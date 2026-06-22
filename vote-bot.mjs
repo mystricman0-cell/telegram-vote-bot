@@ -5888,6 +5888,174 @@ bot.onText(/\/endgiveaway\s+(\S+)/, async (msg, match) => {
   );
 });
 
+// ─── /winners <gId> — Show styled winners card for any giveaway ───
+bot.onText(/\/winners(?:\s+(\S+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private") return;
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  const gId = match[1]?.trim();
+
+  // If no gId given, show user's most recent ended giveaway
+  let g, resolvedId;
+  if (gId) {
+    g = giveaways.get(gId);
+    resolvedId = gId;
+    if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${h(gId)}</code> nahi mila.`, { parse_mode: "HTML" });
+    if (!isAdmin(userId) && g.creatorId !== userId)
+      return bot.sendMessage(chatId, `❌ Sirf apne giveaways ke winners dekh sakte ho.`, { parse_mode: "HTML" });
+  } else {
+    const myEnded = [...giveaways.entries()]
+      .filter(([, gv]) => !gv.active && gv.creatorId === userId)
+      .sort((a, b) => (b[1].createdAt || 0) - (a[1].createdAt || 0));
+    if (!myEnded.length)
+      return bot.sendMessage(chatId, `ℹ️ Koi ended giveaway nahi mila.\n\n<i>Use: /winners &lt;giveawayId&gt;</i>`, { parse_mode: "HTML" });
+    [resolvedId, g] = myEnded[0];
+  }
+
+  const parts = [...g.participants.values()].sort((a, b) => b.votes - a.votes);
+  const totalVotes = parts.reduce((s, p) => s + p.votes, 0);
+  const medals = ["🥇", "🥈", "🥉"];
+  const top = parts.slice(0, Math.min(g.winnersCount || 3, parts.length, 10));
+
+  const podium = top.length
+    ? top.map((p, i) => {
+        const medal = medals[i] || `  <b>${i + 1}.</b>`;
+        return `${medal} <b>${h(p.name)}</b> — <code>${p.votes}</code> votes`;
+      }).join("\n")
+    : `<i>No participants yet</i>`;
+
+  const status = g.active ? `🟢 Active` : `🔴 Ended`;
+  const endedAt = !g.active
+    ? new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })
+    : `Still running`;
+
+  await bot.sendMessage(chatId,
+    `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  🏆  <b>GIVEAWAY WINNERS</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `📌 <b>${h(g.title)}</b>\n` +
+    `🆔 <code>${resolvedId}</code>  ·  ${status}\n\n` +
+    `━━━◈ 🥇 TOP WINNERS ◈━━━\n\n` +
+    `${podium}\n\n` +
+    `━━━◈━━━━━━━━━━━━━━━━━◈━━━\n` +
+    `<blockquote>` +
+    `👥 Participants  ▸  <b>${g.participants.size}</b>\n` +
+    `🗳️ Total Votes   ▸  <b>${totalVotes}</b>\n` +
+    `📅 Status        ▸  ${endedAt}` +
+    `</blockquote>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Home", callback_data: "main_menu" }]] } }
+  );
+});
+
+// ─── /glink <gId> — Get participation link for a giveaway ───
+bot.onText(/\/glink(?:\s+(\S+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private") return;
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  const gId = match[1]?.trim();
+
+  let g, resolvedId;
+  if (gId) {
+    g = giveaways.get(gId);
+    resolvedId = gId;
+    if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${h(gId)}</code> nahi mila.`, { parse_mode: "HTML" });
+    if (!isAdmin(userId) && g.creatorId !== userId)
+      return bot.sendMessage(chatId, `❌ Sirf apne giveaways ka link dekh sakte ho.`, { parse_mode: "HTML" });
+  } else {
+    const myActive = [...giveaways.entries()]
+      .filter(([, gv]) => gv.active && gv.creatorId === userId);
+    if (!myActive.length)
+      return bot.sendMessage(chatId, `ℹ️ Koi active giveaway nahi mila.\n\n<i>Use: /glink &lt;giveawayId&gt;</i>`, { parse_mode: "HTML" });
+    [resolvedId, g] = myActive[0];
+  }
+
+  const link = `https://t.me/${BOT_USERNAME}?start=${resolvedId}`;
+  await bot.sendMessage(chatId,
+    `🔗 <b>Giveaway Participation Link</b>\n\n` +
+    `📌 <b>${h(g.title)}</b>\n` +
+    `🆔 <code>${resolvedId}</code>\n\n` +
+    `<blockquote>` +
+    `👥 Participants ▸  <b>${g.participants.size}</b>\n` +
+    `🟢 Status       ▸  ${g.active ? "Active" : "Ended"}` +
+    `</blockquote>\n\n` +
+    `🔗 <b>Link:</b>\n${link}\n\n` +
+    `<i>Is link ko share karo — log seedha participate kar sakte hain!</i>`,
+    { parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[{ text: "🔗 Open Link", url: link }]] }
+    }
+  );
+});
+
+// ─── /active — List all currently live giveaways ───
+bot.onText(/\/active/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  const running = [...giveaways.entries()].filter(([, g]) => g.active);
+  if (!running.length)
+    return bot.sendMessage(chatId, `ℹ️ <b>Abhi koi active giveaway nahi hai.</b>`, { parse_mode: "HTML" });
+
+  const lines = running.map(([gId, g]) => {
+    const timeLeft = g.endTime ? timeRemaining(g.endTime) : "Manual end";
+    const votes = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
+    const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
+    return (
+      `🟢 <b>${h(g.title)}</b>\n` +
+      `   🆔 <code>${gId}</code>  ·  👥 ${g.participants.size}  ·  🗳️ ${votes}\n` +
+      `   ⏳ ${timeLeft}  ·  <a href="${link}">Join</a>`
+    );
+  }).join("\n\n");
+
+  await bot.sendMessage(chatId,
+    `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  🟢  <b>ACTIVE GIVEAWAYS (${running.length})</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `${lines}`,
+    { parse_mode: "HTML", disable_web_page_preview: true,
+      reply_markup: { inline_keyboard: [[{ text: "🏠 Home", callback_data: "main_menu" }]] }
+    }
+  );
+});
+
+// ─── /cancelgiveaway <gId> — Admin: cancel without announcing winners ───
+bot.onText(/\/cancelgiveaway\s+(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const g = getGiveaway(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${h(gId)}</code> nahi mila.`, { parse_mode: "HTML" });
+  if (!g.active) return bot.sendMessage(chatId, `ℹ️ Yeh giveaway pehle se end ho chuka hai.`, { parse_mode: "HTML" });
+
+  g.active = false;
+  g.participationOpen = false;
+  g.paidVotesActive = false;
+  await saveGiveaway(g);
+
+  // Notify channel silently
+  if (g.channelId) {
+    try {
+      await bot.sendMessage(g.channelId,
+        `🚫 <b>Giveaway Cancelled</b>\n\n` +
+        `📌 <b>${h(g.title)}</b>\n\n` +
+        `<i>Yeh giveaway admin dwara cancel kar diya gaya hai. Participation ke liye shukriya.</i>`,
+        { parse_mode: "HTML" }
+      );
+    } catch {}
+  }
+
+  await bot.sendMessage(chatId,
+    `✅ <b>Giveaway Cancelled!</b>\n\n` +
+    `<blockquote>` +
+    `◈ Title        ▸  <b>${h(g.title)}</b>\n` +
+    `◈ ID           ▸  <code>${gId}</code>\n` +
+    `◈ Participants ▸  <b>${g.participants.size}</b>\n` +
+    `◈ No winners announced` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
 // ─── /resetvotes <giveawayId> ───
 bot.onText(/\/resetvotes\s+(\S+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
@@ -6113,6 +6281,9 @@ async function main() {
         { command: "myid",         description: "🪪 Show your Telegram user ID" },
         { command: "createpost",   description: "📢 Create a post in your channel" },
         { command: "topvoters",    description: "🥇 Top participants ranking" },
+        { command: "active",       description: "🟢 Show all live giveaways" },
+        { command: "winners",      description: "🏆 View winners of your giveaway" },
+        { command: "glink",        description: "🔗 Get participation link" },
         { command: "support",      description: "💬 Contact Support" }
       ]);
 
@@ -6129,6 +6300,9 @@ async function main() {
         { command: "myid",                 description: "🪪 Your Telegram user ID" },
         { command: "createpost",           description: "📢 Create a channel post" },
         { command: "topvoters",            description: "🥇 Top participants ranking" },
+        { command: "active",               description: "🟢 Show all live giveaways" },
+        { command: "winners",              description: "🏆 View winners of a giveaway" },
+        { command: "glink",                description: "🔗 Get participation link" },
         { command: "support",              description: "💬 Contact Support — @drssupport" },
         { command: "adminhelp",            description: "👑 Admin command list" },
         { command: "stats",                description: "📊 Bot statistics dashboard" },
@@ -6152,7 +6326,8 @@ async function main() {
         { command: "dm",                   description: "📩 Direct message any user" },
         { command: "addvotes",             description: "➕ Manually add votes to participant" },
         { command: "removevotes",          description: "➖ Remove votes from participant" },
-        { command: "endgiveaway",          description: "🏁 Force-close a giveaway" },
+        { command: "endgiveaway",          description: "🏁 Force-close a giveaway + announce winners" },
+        { command: "cancelgiveaway",       description: "🚫 Cancel giveaway silently (no winners)" },
         { command: "resetvotes",           description: "🔄 Reset all votes in a giveaway" },
         { command: "setwinner",            description: "🏆 Set winner count for giveaway" },
         { command: "clonegiveaway",        description: "📋 Clone a giveaway" },
