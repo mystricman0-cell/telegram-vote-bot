@@ -64,6 +64,7 @@ const pendingPaymentSchema = new mongoose.Schema({
   payId: { type: String, required: true, unique: true },
   userId: Number,
   giveawayId: String,
+  creatorId: Number,
   screenshotFileId: String,
   timestamp: { type: Date, default: Date.now }
 });
@@ -219,6 +220,7 @@ async function loadStateFromDB() {
   for (const p of allPending) {
     pendingPayments.set(p.payId, {
       userId: p.userId, giveawayId: p.giveawayId,
+      creatorId: p.creatorId || null,
       screenshotFileId: p.screenshotFileId, timestamp: p.timestamp
     });
   }
@@ -2528,29 +2530,35 @@ bot.on("callback_query", async (query) => {
     return;
   }
 
-  // ─── Admin: Approve INR payment ───
+  // ─── Giveaway Owner / Admin: Approve INR payment ───
   if (data.startsWith("approve_pay:")) {
-    if (!isAdmin(userId)) return;
     const payId = data.split(":")[1];
     const payment = pendingPayments.get(payId);
     if (!payment) {
       return bot.answerCallbackQuery(query.id, { text: "❌ Payment record not found!", show_alert: true }).catch(() => {});
     }
-    userState.set(userId, { step: "approve_votes", paymentId: payId });
+    const isOwner = payment.creatorId && userId === payment.creatorId;
+    if (!isAdmin(userId) && !isOwner) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ Sirf giveaway owner ya admin approve kar sakta hai!", show_alert: true }).catch(() => {});
+    }
+    userState.set(userId, { step: "approve_votes", paymentId: payId, approverChatId: chatId });
     await bot.answerCallbackQuery(query.id).catch(() => {});
-    await bot.sendMessage(MAIN_ADMIN_ID,
-      `How many votes to add for user <code>${payment.userId}</code>? (send a number)`,
+    await bot.sendMessage(chatId,
+      `✅ <b>Approve Payment</b>\n\n<blockquote>Giveaway: <b>${payment.giveawayId}</b>\nUser ID: <code>${payment.userId}</code>\n\nKitne votes add karein? (number type karo)</blockquote>`,
       { parse_mode: "HTML" }
     );
     return;
   }
 
-  // ─── Admin: Reject INR payment ───
+  // ─── Giveaway Owner / Admin: Reject INR payment ───
   if (data.startsWith("reject_pay:")) {
-    if (!isAdmin(userId)) return;
     const payId = data.split(":")[1];
     const payment = pendingPayments.get(payId);
     if (!payment) return;
+    const isOwner = payment.creatorId && userId === payment.creatorId;
+    if (!isAdmin(userId) && !isOwner) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ Sirf giveaway owner ya admin reject kar sakta hai!", show_alert: true }).catch(() => {});
+    }
     pendingPayments.delete(payId);
     await PendingPaymentModel.deleteOne({ payId });
     await bot.answerCallbackQuery(query.id, { text: "Payment rejected!" }).catch(() => {});
@@ -3148,7 +3156,7 @@ bot.on("message", async (msg) => {
       if (!g) return;
 
       const payId = String(paymentCounter++);
-      const payData = { userId, giveawayId: gId, screenshotFileId: fileId, timestamp: new Date() };
+      const payData = { userId, giveawayId: gId, creatorId: g.creatorId || null, screenshotFileId: fileId, timestamp: new Date() };
       pendingPayments.set(payId, payData);
       try {
         await PendingPaymentModel.create({ payId, ...payData });
@@ -3167,32 +3175,39 @@ bot.on("message", async (msg) => {
         { parse_mode: "HTML" }
       );
 
-      try {
-        await bot.sendPhoto(MAIN_ADMIN_ID, fileId, {
-          caption: (() => {
-            const pu = botUsers.get(userId);
-            const puName = pu?.firstName ? h(pu.firstName) : "Unknown";
-            const puHandle = pu?.username ? `@${pu.username}` : `ID: ${userId}`;
-            return `<b>💰 New INR Payment Request</b>\n\n` +
-              `<blockquote>` +
-              `◈ Name     ▸  <b>${puName}</b> (${puHandle})\n` +
-              `◈ User ID  ▸  <code>${userId}</code>\n` +
-              `◈ Giveaway ▸  <b>${h(g.title)}</b> (<code>${gId}</code>)\n` +
-              `◈ Pay ID   ▸  <code>${payId}</code>` +
-              `</blockquote>\n\n` +
-              `Kitne votes approve karein?`;
-          })(),
-          parse_mode: "HTML",
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: "✅ Approve", callback_data: `approve_pay:${payId}` },
-                { text: "❌ Reject", callback_data: `reject_pay:${payId}` }
-              ]
-            ]
-          }
-        });
-      } catch (e) { console.error("Admin notify error:", e.message); }
+      // Send screenshot proof to giveaway owner (and main admin if different)
+      const notifyTargets = new Set([g.creatorId]);
+      if (isAdmin(g.creatorId)) notifyTargets.add(MAIN_ADMIN_ID);
+      else notifyTargets.add(MAIN_ADMIN_ID);
+
+      const pu = botUsers.get(userId);
+      const puName = pu?.firstName ? h(pu.firstName) : "Unknown";
+      const puHandle = pu?.username ? `@${pu.username}` : `ID: ${userId}`;
+      const notifCaption =
+        `<b>💰 New INR Payment Request</b>\n\n` +
+        `<blockquote>` +
+        `◈ Name     ▸  <b>${puName}</b> (${puHandle})\n` +
+        `◈ User ID  ▸  <code>${userId}</code>\n` +
+        `◈ Giveaway ▸  <b>${h(g.title)}</b> (<code>${gId}</code>)\n` +
+        `◈ Pay ID   ▸  <code>${payId}</code>` +
+        `</blockquote>\n\n` +
+        `Kitne votes approve karein?`;
+      const notifMarkup = {
+        inline_keyboard: [[
+          { text: "✅ Approve", callback_data: `approve_pay:${payId}` },
+          { text: "❌ Reject", callback_data: `reject_pay:${payId}` }
+        ]]
+      };
+
+      for (const target of notifyTargets) {
+        try {
+          await bot.sendPhoto(target, fileId, {
+            caption: notifCaption,
+            parse_mode: "HTML",
+            reply_markup: notifMarkup
+          });
+        } catch (e) { console.error(`Notify ${target} error:`, e.message); }
+      }
       return;
     }
     return;
@@ -3233,19 +3248,19 @@ bot.on("message", async (msg) => {
   }
 
   // ─── Admin approving vote count ───
-  if (userId === MAIN_ADMIN_ID && state.step === "approve_votes") {
+  if (state.step === "approve_votes" && (isAdmin(userId) || (pendingPayments.get(state.paymentId)?.creatorId === userId))) {
     const votes = parseInt(text, 10);
     if (isNaN(votes) || votes < 1) {
-      await bot.sendMessage(MAIN_ADMIN_ID, "❌ Please enter a valid number.");
+      await bot.sendMessage(chatId, "❌ Please enter a valid number.");
       return;
     }
     const payId = state.paymentId;
     const payment = pendingPayments.get(payId);
     if (!payment) {
-      userState.delete(MAIN_ADMIN_ID);
-      return bot.sendMessage(MAIN_ADMIN_ID, "❌ Payment record not found!");
+      userState.delete(userId);
+      return bot.sendMessage(chatId, "❌ Payment record not found!");
     }
-    userState.delete(MAIN_ADMIN_ID);
+    userState.delete(userId);
     pendingPayments.delete(payId);
     await PendingPaymentModel.deleteOne({ payId });
 
@@ -3263,7 +3278,7 @@ bot.on("message", async (msg) => {
     await saveGiveaway(g);
     await updateChannelPost(g, participant);
 
-    await bot.sendMessage(MAIN_ADMIN_ID, `✅ ${votes} votes added for user ${payment.userId}!`);
+    await bot.sendMessage(chatId, `✅ <b>${votes} votes</b> add ho gaye user <code>${payment.userId}</code> ke liye!`, { parse_mode: "HTML" });
     try {
       await bot.sendMessage(payment.userId,
         `<b>✅ Payment Approved!</b>\n\n` +
