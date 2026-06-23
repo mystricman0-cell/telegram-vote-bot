@@ -40,6 +40,8 @@ const giveawaySchema = new mongoose.Schema({
   votesPerStar: { type: Number, default: 5 },
   extraForceJoin: { type: mongoose.Schema.Types.Mixed, default: null },
   customPhotoId: { type: String, default: null },
+  panelThreshold: { type: Number, default: 15 },
+  panelWindowSecs: { type: Number, default: 90 },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -1826,8 +1828,8 @@ bot.on("callback_query", async (query) => {
     // ── Vote panel / rapid-vote detection ──
     {
       const velKey = `${gId}:${participantUserId}`;
-      const PANEL_THRESHOLD = 15;  // votes within window
-      const PANEL_WINDOW_MS = 90 * 1000; // 90 seconds
+      const PANEL_THRESHOLD = g.panelThreshold || 15;
+      const PANEL_WINDOW_MS = (g.panelWindowSecs || 90) * 1000;
       const now = Date.now();
       let vel = voteVelocity.get(velKey) || { count: 0, windowStart: now, alerted: false };
       if (now - vel.windowStart > PANEL_WINDOW_MS) {
@@ -5299,6 +5301,63 @@ bot.onText(/\/setinr\s+(\S+)\s+(\d+)/, async (msg, match) => {
   );
 });
 
+// /setpanelthreshold — Owner/Admin: Set vote panel detection threshold per giveaway
+bot.onText(/\/setpanelthreshold(?:\s+(.+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
+  const args = (match[1] || "").trim().split(/\s+/);
+
+  // Usage: /setpanelthreshold <gId> <votes> [seconds]
+  if (args.length < 2 || !args[0] || !args[1]) {
+    return bot.sendMessage(chatId,
+      `🚨 <b>Set Panel Detection Threshold</b>\n\n` +
+      `<blockquote>Usage:\n` +
+      `<code>/setpanelthreshold &lt;giveawayId&gt; &lt;votes&gt; [seconds]</code>\n\n` +
+      `◈ <b>votes</b>   — Kitne votes in window pe alert trigger ho (default: 15)\n` +
+      `◈ <b>seconds</b> — Time window in seconds (default: 90)\n\n` +
+      `Example:\n` +
+      `<code>/setpanelthreshold ABC123 20 60</code>\n` +
+      `→ 20 votes in 60 seconds pe alert\n\n` +
+      `<code>/setpanelthreshold ABC123 30</code>\n` +
+      `→ 30 votes in 90 seconds (default window) pe alert</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  const gId = args[0];
+  const votes = parseInt(args[1], 10);
+  const secs = args[2] ? parseInt(args[2], 10) : null;
+
+  if (isNaN(votes) || votes < 1) {
+    return bot.sendMessage(chatId, "❌ <b>Votes</b> ek valid number hona chahiye (minimum 1).", { parse_mode: "HTML" });
+  }
+  if (secs !== null && (isNaN(secs) || secs < 10)) {
+    return bot.sendMessage(chatId, "❌ <b>Seconds</b> minimum 10 hone chahiye.", { parse_mode: "HTML" });
+  }
+
+  const g = getGiveaway(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${gId}</code> nahi mila.`, { parse_mode: "HTML" });
+
+  const isOwner = g.creatorId === userId;
+  if (!isAdmin(userId) && !isOwner) {
+    return bot.sendMessage(chatId, "❌ Sirf giveaway owner ya admin ye set kar sakta hai.", { parse_mode: "HTML" });
+  }
+
+  g.panelThreshold = votes;
+  if (secs !== null) g.panelWindowSecs = secs;
+  await saveGiveaway(g);
+
+  await bot.sendMessage(chatId,
+    `✅ <b>Panel Threshold Updated!</b>\n\n` +
+    `<blockquote>` +
+    `◈ Giveaway  ▸  <b>${h(g.title)}</b> (<code>${gId}</code>)\n` +
+    `◈ Trigger   ▸  <b>${g.panelThreshold} votes</b> in <b>${g.panelWindowSecs}s</b>\n\n` +
+    `Ab agar koi <b>${g.panelThreshold}+ votes</b> in <b>${g.panelWindowSecs} seconds</b> kisi ek participant ko deta hai,\ntoh tume turant alert milega! 🚨</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
 // /cleandb — Admin: Remove old ended giveaways and expired data
 bot.onText(/\/cleandb/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
@@ -6490,7 +6549,8 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/remindvote &lt;gId&gt;\n  → Send vote reminder + top 3 to all participants\n\n` +
     `/voteleaderboard\n  → Global top 20 voters across all giveaways\n\n` +
     `/setstar &lt;gId&gt; &lt;votes&gt;\n  → Votes per ⭐ Star\n\n` +
-    `/setinr &lt;gId&gt; &lt;votes&gt;\n  → Votes per ₹1 INR` +
+    `/setinr &lt;gId&gt; &lt;votes&gt;\n  → Votes per ₹1 INR\n\n` +
+    `/setpanelthreshold &lt;gId&gt; &lt;votes&gt; [seconds]\n  → Vote panel alert threshold\n  Default: 15 votes / 90s\n  Example: /setpanelthreshold ABC123 20 60` +
     `</blockquote>\n\n` +
     `<b>📢 BROADCAST</b>\n` +
     `<blockquote>` +
@@ -6679,6 +6739,7 @@ async function main() {
         { command: "giveawayreport",       description: "📄 Download giveaway report .txt" },
         { command: "setstar",              description: "⭐ Set votes per Telegram Star" },
         { command: "setinr",               description: "₹ Set votes per INR paid" },
+        { command: "setpanelthreshold",    description: "🚨 Set vote panel alert threshold per giveaway" },
         { command: "schedule",             description: "⏰ Schedule a broadcast at IST time" },
         { command: "schedulelist",         description: "📋 View pending scheduled broadcasts" },
         { command: "cancelschedule",       description: "❌ Cancel a scheduled broadcast" },
