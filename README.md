@@ -54,12 +54,23 @@
 - **Participation open/close** toggle in real time
 - Auto-expiry with scheduled reminders (30min · 10min · 5min before end)
 - Free tier — limited giveaways for non-VIP users
+- Wizard asks Stars paid voting option even when INR-only is selected
 
 ### 🗳️ &nbsp;Voting System
 - Live vote cards posted directly to your channel
 - **Paid votes** — INR/UPI or Telegram Stars
 - Auto vote-deduction when a user leaves the channel *(VIP)*
 - Only channel members can vote — enforced automatically
+
+### 🚨 &nbsp;Anti-Panel / Anti-Cheat System *(NEW)*
+- **Automatic vote panel detection** — if 15+ votes arrive within 90 seconds for one participant, giveaway owner + admin are instantly alerted
+- One-tap action buttons sent to owner/admin:
+  - **➖ Votes Minus** — deduct any number of votes
+  - **🗑️ Remove Participant** — remove from giveaway + notify user
+  - **🚫 Ban + Remove** — ban user from bot + remove from giveaway
+  - **⚠️ Warn** — send a warning DM to the participant
+  - **✅ Dismiss** — ignore alert (legitimate votes)
+- Detection window resets after 90 seconds (catches repeated panel bursts)
 
 ### 🏆 &nbsp;Leaderboard & Results
 - Live leaderboard viewable anytime during a giveaway
@@ -69,9 +80,10 @@
 - Results card posted to channel + private card to creator
 
 ### 💳 &nbsp;Payment System
-- **INR / UPI** — user pays, uploads screenshot, admin approves
+- **INR / UPI** — user pays, uploads screenshot, giveaway owner OR admin approves
 - **Telegram Stars** — fully automated payment flow
-- Admin approval queue with one-tap approve/reject buttons
+- Giveaway owner receives payment screenshot directly (not just admin)
+- Approval/rejection available to giveaway owner and admin
 - Payment IDs for full audit trail
 
 ### 👑 &nbsp;VIP Membership

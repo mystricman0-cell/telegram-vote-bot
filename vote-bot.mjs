@@ -117,6 +117,7 @@ let scheduleCounter = 1;
 let paymentCounter = 1;
 let membershipPayCounter = 1;
 let welcomeImageUrl = null;
+const voteVelocity = new Map(); // "gId:partId" → { count, windowStart, alerted }
 let membershipQrFileId = null;
 let forceJoinChannels = [];
 let membershipPlans = {
@@ -1822,6 +1823,58 @@ bot.on("callback_query", async (query) => {
       `Total votes: <b>${participant.votes}</b>`
     );
 
+    // ── Vote panel / rapid-vote detection ──
+    {
+      const velKey = `${gId}:${participantUserId}`;
+      const PANEL_THRESHOLD = 15;  // votes within window
+      const PANEL_WINDOW_MS = 90 * 1000; // 90 seconds
+      const now = Date.now();
+      let vel = voteVelocity.get(velKey) || { count: 0, windowStart: now, alerted: false };
+      if (now - vel.windowStart > PANEL_WINDOW_MS) {
+        vel = { count: 1, windowStart: now, alerted: false };
+      } else {
+        vel.count += 1;
+      }
+      voteVelocity.set(velKey, vel);
+
+      if (vel.count >= PANEL_THRESHOLD && !vel.alerted) {
+        vel.alerted = true;
+        voteVelocity.set(velKey, vel);
+
+        const alertText =
+          `🚨 <b>VOTE PANEL DETECTED!</b>\n\n` +
+          `<blockquote>` +
+          `◈ Giveaway   ▸  <b>${h(g.title)}</b> (<code>${gId}</code>)\n` +
+          `◈ Participant ▸  <b>${h(participant.name)}</b> (<code>${participantUserId}</code>)\n` +
+          `◈ Votes Now  ▸  <b>${participant.votes}</b>\n` +
+          `◈ Last 90s   ▸  +<b>${vel.count} votes</b> (suspicious spike!)\n\n` +
+          `Koi vote panel/service use kar raha hai. Action lo:` +
+          `</blockquote>`;
+
+        const alertMarkup = {
+          inline_keyboard: [
+            [
+              { text: "➖ Votes Minus Karo", callback_data: `panel_minus:${gId}:${participantUserId}` },
+              { text: "🗑️ Hatao Participant", callback_data: `panel_remove:${gId}:${participantUserId}` }
+            ],
+            [
+              { text: "🚫 Ban + Remove", callback_data: `panel_ban:${gId}:${participantUserId}` },
+              { text: "⚠️ Warn Karo", callback_data: `panel_warn:${gId}:${participantUserId}` }
+            ],
+            [{ text: "✅ Dismiss (Ignore)", callback_data: `panel_dismiss:${gId}:${participantUserId}` }]
+          ]
+        };
+
+        const notifySet = new Set([MAIN_ADMIN_ID]);
+        if (g.creatorId) notifySet.add(g.creatorId);
+        for (const target of notifySet) {
+          try {
+            await bot.sendMessage(target, alertText, { parse_mode: "HTML", reply_markup: alertMarkup });
+          } catch (e) { console.error(`Panel alert to ${target}:`, e.message); }
+        }
+      }
+    }
+
     await bot.answerCallbackQuery(query.id, {
       text:
         `◈ VOTE CAST ◈\n` +
@@ -2526,6 +2579,132 @@ bot.on("callback_query", async (query) => {
         `<blockquote>How many votes per 1 Telegram Star?\n\nExample: <code>10</code> → 1 Star = 10 votes</blockquote>`,
         { parse_mode: "HTML", reply_markup: backKeyboard("cancel_flow") }
       );
+    }
+    return;
+  }
+
+  // ─── Stars optional after INR-only wizard ───
+  if (data === "add_stars_yes" || data === "add_stars_no") {
+    const state = userState.get(userId);
+    if (!state || state.step !== "ask_stars_paid") return;
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+    if (data === "add_stars_yes") {
+      state.currency = "both";
+      state.step = "stars_rate";
+      userState.set(userId, state);
+      await bot.sendMessage(chatId,
+        `⭐ <b>SET STARS VOTE RATE</b>\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `<blockquote>How many votes per 1 Telegram Star?\n\nExample: <code>5</code> → 1 ⭐ = 5 votes</blockquote>`,
+        { parse_mode: "HTML", reply_markup: backKeyboard("cancel_flow") }
+      );
+    } else {
+      await bot.sendMessage(chatId, "✅ <b>Rates recorded!</b>", { parse_mode: "HTML" });
+      await askCustomPhotoOrFinish(userId, chatId, state.qrFileId);
+    }
+    return;
+  }
+
+  // ─── Panel anti-cheat actions ───
+  if (data.startsWith("panel_")) {
+    const [action, gId, partIdStr] = data.split(":");
+    const partId = Number(partIdStr);
+    const g = getGiveaway(gId);
+    const isOwner = g?.creatorId === userId;
+    if (!isAdmin(userId) && !isOwner) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ Permission denied!", show_alert: true }).catch(() => {});
+    }
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+
+    if (action === "panel_dismiss") {
+      await bot.editMessageText(
+        `✅ <b>Alert dismissed.</b>\n\nGiveaway: <code>${gId}</code> | Participant: <code>${partId}</code>`,
+        { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+      ).catch(() => {});
+      return;
+    }
+
+    if (action === "panel_warn") {
+      try {
+        await bot.sendMessage(partId,
+          `⚠️ <b>Vote Panel Alert</b>\n\n` +
+          `<blockquote>Hum ne notice kiya ki tumhare giveaway mein suspicious vote activity aayi hai.\n\n` +
+          `Agar vote panel/service use ki gayi hai toh tumhara participation <b>cancel</b> kiya ja sakta hai.\n\n` +
+          `Fair play follow karo! 🙏</blockquote>`,
+          { parse_mode: "HTML" }
+        );
+        await bot.editMessageText(
+          `✅ <b>Warning sent</b> to user <code>${partId}</code>.`,
+          { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+        ).catch(() => {});
+      } catch {
+        await bot.sendMessage(chatId, `❌ Warning bhej nahi paya — user ne bot block kiya hoga.`);
+      }
+      return;
+    }
+
+    if (action === "panel_minus") {
+      userState.set(userId, { step: "panel_minus_votes", giveawayId: gId, partId, approverChatId: chatId });
+      await bot.sendMessage(chatId,
+        `➖ <b>Votes Deduct</b>\n\n` +
+        `<blockquote>Participant: <code>${partId}</code>\nGiveaway: <code>${gId}</code>\n\nKitne votes deduct karein? (number bhejo)</blockquote>`,
+        { parse_mode: "HTML" }
+      );
+      return;
+    }
+
+    if (!g) {
+      await bot.sendMessage(chatId, "❌ Giveaway not found."); return;
+    }
+
+    if (action === "panel_remove") {
+      const participant = g.participants.get(partId);
+      const name = participant?.name || String(partId);
+      g.participants.delete(partId);
+      if (g.voterMap) {
+        for (const [vId, vPartId] of g.voterMap.entries()) {
+          if (vPartId === partId) g.voterMap.delete(vId);
+        }
+      }
+      await saveGiveaway(g);
+      await bot.editMessageText(
+        `🗑️ <b>Participant Removed</b>\n\n<blockquote><b>${h(name)}</b> (<code>${partId}</code>) ko giveaway se hata diya gaya.</blockquote>`,
+        { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+      ).catch(() => {});
+      try {
+        await bot.sendMessage(partId,
+          `⛔ <b>Giveaway Se Hataya Gaya</b>\n\n` +
+          `<blockquote>Suspicious vote activity ke karan aapko <b>${h(g.title)}</b> giveaway se remove kar diya gaya hai.\n\nKoi sawaal ho toh support se contact karein.</blockquote>`,
+          { parse_mode: "HTML" }
+        );
+      } catch {}
+      return;
+    }
+
+    if (action === "panel_ban") {
+      bannedUsers.add(partId);
+      await saveConfig("bannedUsers", [...bannedUsers]);
+      const participant = g.participants.get(partId);
+      const name = participant?.name || String(partId);
+      g.participants.delete(partId);
+      if (g.voterMap) {
+        for (const [vId, vPartId] of g.voterMap.entries()) {
+          if (vPartId === partId) g.voterMap.delete(vId);
+        }
+      }
+      await saveGiveaway(g);
+      await bot.editMessageText(
+        `🚫 <b>User Banned + Removed</b>\n\n<blockquote><b>${h(name)}</b> (<code>${partId}</code>) ko bot se ban kar diya gaya aur giveaway se remove kar diya gaya.</blockquote>`,
+        { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+      ).catch(() => {});
+      try {
+        await bot.sendMessage(partId,
+          `🚫 <b>Bot Se Ban Kiya Gaya</b>\n\n` +
+          `<blockquote>Vote panel/cheating ke karan aapko is bot se permanently ban kar diya gaya hai.</blockquote>`,
+          { parse_mode: "HTML" }
+        );
+      } catch {}
+      return;
     }
     return;
   }
@@ -3248,6 +3427,33 @@ bot.on("message", async (msg) => {
   }
 
   // ─── Admin approving vote count ───
+  // ─── Panel: deduct votes from participant ───
+  if (state.step === "panel_minus_votes" && (isAdmin(userId) || state.approverChatId === chatId)) {
+    const deduct = parseInt(text, 10);
+    if (isNaN(deduct) || deduct < 1) {
+      await bot.sendMessage(chatId, "❌ Valid number bhejo (minimum 1).");
+      return;
+    }
+    const g = getGiveaway(state.giveawayId);
+    if (!g) { userState.delete(userId); return bot.sendMessage(chatId, "❌ Giveaway nahi mila."); }
+    const participant = g.participants.get(state.partId);
+    if (!participant) { userState.delete(userId); return bot.sendMessage(chatId, "❌ Participant nahi mila."); }
+    const before = participant.votes;
+    participant.votes = Math.max(0, participant.votes - deduct);
+    await saveGiveaway(g);
+    await updateChannelPost(g, participant);
+    userState.delete(userId);
+    await bot.sendMessage(chatId,
+      `✅ <b>Votes Deducted!</b>\n\n` +
+      `<blockquote>◈ Participant  ▸  <b>${h(participant.name)}</b>\n` +
+      `◈ Before       ▸  <b>${before}</b>\n` +
+      `◈ Deducted     ▸  -<b>${deduct}</b>\n` +
+      `◈ After        ▸  <b>${participant.votes}</b></blockquote>`,
+      { parse_mode: "HTML" }
+    );
+    return;
+  }
+
   if (state.step === "approve_votes" && (isAdmin(userId) || (pendingPayments.get(state.paymentId)?.creatorId === userId))) {
     const votes = parseInt(text, 10);
     if (isNaN(votes) || votes < 1) {
@@ -3480,8 +3686,26 @@ bot.on("message", async (msg) => {
         { parse_mode: "HTML", reply_markup: backKeyboard("cancel_flow") }
       );
     } else {
-      await bot.sendMessage(chatId, "✅ <b>Rates recorded!</b>", { parse_mode: "HTML" });
-      await askCustomPhotoOrFinish(userId, chatId, state.qrFileId);
+      // Ask if Stars voting should also be enabled
+      state.step = "ask_stars_paid";
+      userState.set(userId, state);
+      await bot.sendMessage(chatId,
+        `✅ <b>INR Rate Set!</b>\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `<blockquote>⭐ Kya aap <b>Telegram Stars</b> se bhi paid votes enable karna chahte ho?\n\n` +
+        `Stars se voting fully automatic hoti hai — koi approval nahi chahiye.</blockquote>`,
+        {
+          parse_mode: "HTML",
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: "⭐ Haan, Stars bhi add karo", callback_data: "add_stars_yes" },
+                { text: "❌ Nahi, skip karo", callback_data: "add_stars_no" }
+              ]
+            ]
+          }
+        }
+      );
     }
     return;
   }
