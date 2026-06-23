@@ -447,6 +447,61 @@ const bot = new TelegramBot(BOT_TOKEN, {
 let BOT_USERNAME = "";
 
 // ============================================================
+// GLOBAL SECURITY INTERCEPTOR — fires before ALL handlers
+// Overrides processUpdate so shadow ban / mute / emergency lock
+// block BOTH bot.onText() commands AND callback_query clicks.
+// ============================================================
+const _origProcessUpdate = bot.processUpdate.bind(bot);
+bot.processUpdate = function(update) {
+  // ── Message guard ──
+  const msg = update.message || update.edited_message;
+  if (msg && msg.from) {
+    const uid = msg.from.id;
+    if (!isAdmin(uid)) {
+      // Emergency lock — notify once then drop
+      if (emergencyLocked) {
+        bot.sendMessage(msg.chat.id,
+          `🔒 <b>ʙᴏᴛ ʟᴏᴄᴋᴇᴅ</b>\n<blockquote>Admin ne temporarily bot lock kiya hai. Thodi der mein wapas aayein.</blockquote>`,
+          { parse_mode: "HTML" }
+        ).catch(() => {});
+        return;
+      }
+      // Shadow ban — completely silent, no response at all
+      if (shadowBanned.has(uid)) return;
+      // Mute — completely silent
+      if (mutedUsers.has(uid)) return;
+      // Hard ban (existing bannedUsers set)
+      if (bannedUsers.has(uid)) return;
+    }
+  }
+  // ── Callback query guard ──
+  const cq = update.callback_query;
+  if (cq && cq.from) {
+    const uid = cq.from.id;
+    if (!isAdmin(uid)) {
+      if (emergencyLocked) {
+        bot.answerCallbackQuery(cq.id, { text: "🔒 Bot abhi locked hai. Baad mein aayein.", show_alert: true }).catch(() => {});
+        return;
+      }
+      if (shadowBanned.has(uid)) {
+        // silent — just answer with empty so Telegram doesn't spin
+        bot.answerCallbackQuery(cq.id).catch(() => {});
+        return;
+      }
+      if (mutedUsers.has(uid)) {
+        bot.answerCallbackQuery(cq.id, { text: "🔇 Aap muted hain.", show_alert: true }).catch(() => {});
+        return;
+      }
+      if (bannedUsers.has(uid)) {
+        bot.answerCallbackQuery(cq.id, { text: "🚫 Aap banned hain.", show_alert: true }).catch(() => {});
+        return;
+      }
+    }
+  }
+  return _origProcessUpdate(update);
+};
+
+// ============================================================
 // SLEEP HELPER
 // ============================================================
 
@@ -3302,17 +3357,9 @@ bot.on("message", async (msg) => {
   }
 
   // ─── SECURITY MIDDLEWARE ───
-  // Emergency lock
-  if (emergencyLocked && !isAdmin(userId)) {
-    await bot.sendMessage(chatId,
-      `🔒 <b>ʙᴏᴛ ʟᴏᴄᴋᴇᴅ</b>\n<blockquote>Admin ne temporarily bot lock kiya hai. Thodi der mein wapas aayein.</blockquote>`,
-      { parse_mode: "HTML" }
-    ).catch(() => {}); return;
-  }
-  // Muted user — silent drop
-  if (mutedUsers.has(userId)) return;
-  // Shadow ban — fake-OK, no response
-  if (shadowBanned.has(userId)) return;
+  // NOTE: emergencyLock / shadowBan / mute / hardBan are intercepted
+  // at processUpdate level (see GLOBAL SECURITY INTERCEPTOR above).
+  // This block handles rate-limiting, blocked words, honeypot & history only.
   // Rate limit
   if (antispamEnabled && !isAdmin(userId) && !trustedUsers.has(userId) && securityMode !== "off") {
     const now = Date.now(); const windowMs = 10_000;
