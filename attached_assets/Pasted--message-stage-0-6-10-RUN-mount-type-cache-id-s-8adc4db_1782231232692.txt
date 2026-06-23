@@ -1,0 +1,91 @@
+
+  "message": "[stage-0  6/10] RUN --mount=type=cache,id=s/8adc4db2-b341-491b-a35c-336e4959fa61-/root/npm,target=/root/.npm npm ci",
+  "timestamp": "2026-06-23T16:08:34.808940484Z",
+  "severity": "error",
+  "children": [
+    {
+      "message": "npm warn config production Use `--omit=dev` instead.\n",
+      "timestamp": "2026-06-23T16:08:35.403847325Z"
+    },
+    {
+      "message": "npm error Exit handler never called!\n",
+      "timestamp": "2026-06-23T16:09:46.062039535Z"
+    },
+    {
+      "message": "npm error This is an error with npm itself. Please report this error at:\n",
+      "timestamp": "2026-06-23T16:09:46.062457733Z"
+    },
+    {
+      "message": "npm error   <https://github.com/npm/cli/issues>\n",
+      "timestamp": "2026-06-23T16:09:46.062526226Z"
+    },
+    {
+      "message": "npm error A complete log of this run can be found in: /root/.npm/_logs/2026-06-23T16_08_35_376Z-debug-0.log\n",
+      "timestamp": "2026-06-23T16:09:46.063277864Z"
+    }
+  ]
+}
+{
+  "message": "SecretsUsedInArgOrEnv: Do not use ARG or ENV instructions for sensitive data (ARG \"TELEGRAM_BOT_TOKEN\") (line 11)(https://docs.docker.com/go/dockerfile/rule/secrets-used-in-arg-or-env/)\n details: Sensitive data should not be used in the ARG or ENV commands\n",
+  "timestamp": "2026-06-23T16:08:34.802171842Z",
+  "severity": "warn",
+  "tags": {
+    "serviceId": "8adc4db2-b341-491b-a35c-336e4959fa61",
+    "deploymentId": "4c1878f6-3fa7-469f-8cae-eee8f9f133d5",
+    "deploymentInstanceId": null
+  },
+  "attributes": {
+    "source": "buildkit",
+    "type": "warn",
+    "sourceInfo": {
+      "filename": "Dockerfile",
+      "data": "RlJPTSBnaGNyLmlvL3JhaWx3YXlhcHAvbml4cGFja3M6dWJ1bnR1LTE3NDU4ODUwNjcKCkVOVFJZUE9JTlQgWyIvYmluL2Jhc2giLCAiLWwiLCAiLWMiXQpXT1JLRElSIC9hcHAvCgoKQ09QWSAubml4cGFja3Mvbml4cGtncy0yM2Y5MTY5YzRjY2NlNTIxMzc5ZTYwMmNjODJlZDg3M2ExZjFiNTJiLm5peCAubml4cGFja3Mvbml4cGtncy0yM2Y5MTY5YzRjY2NlNTIxMzc5ZTYwMmNjODJlZDg3M2ExZjFiNTJiLm5peApSVU4gbml4LWVudiAtaWYgLm5peHBhY2tzL25peHBrZ3MtMjNmOTE2OWM0Y2NjZTUyMTM3OWU2MDJjYzgyZWQ4NzNhMWYxYjUyYi5uaXggJiYgbml4LWNvbGxlY3QtZ2FyYmFnZSAtZAoKCkFSRyBBRE1JTl9JRCBDSSBNT05HT0RCX1VSSSBOSVhQQUNLU19NRVRBREFUQSBOT0RFX0VOViBOUE1fQ09ORklHX1BST0RVQ1RJT04gUkFJTFdBWV9FTlZJUk9OTUVOVCBSQUlMV0FZX0VOVklST05NRU5UX0lEIFJBSUxXQVlfRU5WSVJPTk1FTlRfTkFNRSBSQUlMV0FZX0dJVF9BVVRIT1IgUkFJTFdBWV9HSVRfQlJBTkNIIFJBSUxXQVlfR0lUX0NPTU1JVF9NRVNTQUdFIFJBSUxXQVlfR0lUX0NPTU1JVF9TSEEgUkFJTFdBWV9HSVRfUkVQT19OQU1FIFJBSUxXQVlfR0lUX1JFUE9fT1dORVIgUkFJTFdBWV9QUklWQVRFX0RPTUFJTiBSQUlMV0FZX1BST0pFQ1RfSUQgUkFJTFdBWV9QUk9KRUNUX05BTUUgUkFJTFdBWV9TRVJWSUNFX0lEIFJBSUxXQVlfU0VSVklDRV9OQU1FIFRFTEVHUkFNX0JPVF9UT0tFTgpFTlYgQURNSU5fSUQ9JEFETUlOX0lEIENJPSRDSSBNT05HT0RCX1VSST0kTU9OR09EQl9VUkkgTklYUEFDS1NfTUVUQURBVEE9JE5JWFBBQ0tTX01FVEFEQVRBIE5PREVfRU5WPSROT0RFX0VOViBOUE1fQ09ORklHX1BST0RVQ1RJT049JE5QTV9DT05GSUdfUFJPRFVDVElPTiBSQUlMV0FZX0VOVklST05NRU5UPSRSQUlMV0FZX0VOVklST05NRU5UIFJBSUxXQVlfRU5WSVJPTk1FTlRfSUQ9JFJBSUxXQVlfRU5WSVJPTk1FTlRfSUQgUkFJTFdBWV9FTlZJUk9OTUVOVF9OQU1FPSRSQUlMV0FZX0VOVklST05NRU5UX05BTUUgUkFJTFdBWV9HSVRfQVVUSE9SPSRSQUlMV0FZX0dJVF9BVVRIT1IgUkFJTFdBWV9HSVRfQlJBTkNIPSRSQUlMV0FZX0dJVF9CUkFOQ0ggUkFJTFdBWV9HSVRfQ09NTUlUX01FU1NBR0U9JFJBSUxXQVlfR0lUX0NPTU1JVF9NRVNTQUdFIFJBSUxXQVlfR0lUX0NPTU1JVF9TSEE9JFJBSUxXQVlfR0lUX0NPTU1JVF9TSEEgUkFJTFdBWV9HSVRfUkVQT19OQU1FPSRSQUlMV0FZX0dJVF9SRVBPX05BTUUgUkFJTFdBWV9HSVRfUkVQT19PV05FUj0kUkFJTFdBWV9HSVRfUkVQT19PV05FUiBSQUlMV0FZX1BSSVZBVEVfRE9NQUlOPSRSQUlMV0FZX1BSSVZBVEVfRE9NQUlOIFJBSUxXQVlfUFJPSkVDVF9JRD0kUkFJTFdBWV9QUk9KRUNUX0lEIFJBSUxXQVlfUFJPSkVDVF9OQU1FPSRSQUlMV0FZX1BST0pFQ1RfTkFNRSBSQUlMV0FZX1NFUlZJQ0VfSUQ9JFJBSUxXQVlfU0VSVklDRV9JRCBSQUlMV0FZX1NFUlZJQ0VfTkFNRT0kUkFJTFdBWV9TRVJWSUNFX05BTUUgVEVMRUdSQU1fQk9UX1RPS0VOPSRURUxFR1JBTV9CT1RfVE9LRU4KCiMgc2V0dXAgcGhhc2UKIyBub29wCgojIGluc3RhbGwgcGhhc2UKRU5WIE5JWFBBQ0tTX1BBVEg9L2FwcC9ub2RlX21vZHVsZXMvLmJpbjokTklYUEFDS1NfUEFUSApDT1BZIC4gL2FwcC8uClJVTiAtLW1vdW50PXR5cGU9Y2FjaGUsaWQ9cy84YWRjNGRiMi1iMzQxLTQ5MWItYTM1Yy0zMzZlNDk1OWZhNjEtL3Jvb3QvbnBtLHRhcmdldD0vcm9vdC8ubnBtIG5wbSBjaQoKIyBidWlsZCBwaGFzZQpDT1BZIC4gL2FwcC8uClJVTiAtLW1vdW50PXR5cGU9Y2FjaGUsaWQ9cy84YWRjNGRiMi1iMzQxLTQ5MWItYTM1Yy0zMzZlNDk1OWZhNjEtbm9kZV9tb2R1bGVzL2NhY2hlLHRhcmdldD0vYXBwL25vZGVfbW9kdWxlcy8uY2FjaGUgbnBtIGluc3RhbGwKCgpSVU4gcHJpbnRmICdcblBBVEg9L2FwcC9ub2RlX21vZHVsZXMvLmJpbjokUEFUSCcgPj4gL3Jvb3QvLnByb2ZpbGUKCgojIHN0YXJ0CkNPUFkgLiAvYXBwCgpDTUQgWyJub2RlIHZvdGUtYm90Lm1qcyJdCgo=",
+      "definition": {
+        "def": [
+          "WgAaxQEKEmxvY2FsOi8vZG9ja2VyZmlsZRIUCgxsb2NhbC5kaWZmZXISBG5vbmUSSgoRbG9jYWwuZm9sbG93cGF0aHMSNVsiRG9ja2VyZmlsZSIsIkRvY2tlcmZpbGUuZG9ja2VyaWdub3JlIiwiZG9ja2VyZmlsZSJdEioKDWxvY2FsLnNlc3Npb24SGWhqZXJ3MXk5bmZ2M2NtNjZiamlweGQyejQSIQoTbG9jYWwuc2hhcmVka2V5aGludBIKZG9ja2VyZmlsZQ==",
+          "CkkKR3NoYTI1Njo1YWM4ZDc3Yzg1YWMwMzQ3MGIyM2EyMzg3NzAxNDFhYmNkYjYxZjVjYjgxYWNkNDg3YTIwZWZkZDAyNzBhMTcy"
+        ],
+        "metadata": {
+          "sha256:5ac8d77c85ac03470b23a238770141abcdb61f5cb81acd487a20efdd0270a172": {
+            "description": {
+              "llb.customname": "[internal] load build definition from Dockerfile"
+            },
+            "caps": {
+              "source.local": true,
+              "source.local.followpaths": true,
+              "source.local.sessionid": true,
+              "source.local.sharedkeyhint": true
+            }
+          },
+          "sha256:b2d4cfdddf65087e3610a949dfaee8e9b301e9c87465d50d562cbe13e03a9cf0": {
+            "caps": {
+              "constraints": true,
+              "meta.description": true,
+              "platform": true
+            }
+          }
+        },
+        "Source": {
+          "locations": {
+            "sha256:5ac8d77c85ac03470b23a238770141abcdb61f5cb81acd487a20efdd0270a172": {}
+          }
+        }
+      },
+      "language": "Dockerfile"
+    },
+    "level": "warn",
+    "vertex": "sha256:5ac8d77c85ac03470b23a238770141abcdb61f5cb81acd487a20efdd0270a172",
+    "range": [
+      {
+        "start": {
+          "line": 11
+        },
+        "end": {
+          "line": 11
+        }
+      }
+    ]
+  }
+}
+
+Suno bhai mera bot railway pe hoga deployment okay toh isko fix kro tum bas changes apply krke push kro okay or GitHub pe push kro or koi secrets env replit ya omitdev nahi hona cahhiye or haa  koi replit omit dev secret nahi hona cahhiye jis se error aaye or haa npm ci install ka abar baar error aa rha hai sab sahi krke GitHub pe push kro or koi error crash sab nahi aan cahhiye 
