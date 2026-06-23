@@ -1,3 +1,5 @@
 - [DRS Bot Architecture](drs-bot-arch.md) — MongoDB + in-memory Map hybrid; always save to both on write.
 - [Force Join System](force-join.md) — Private invite links need channel IDs set via /setforcejoin; IDs stored in BotConfig collection.
 - [Image Spoiler](image-spoiler.md) — Welcome image taken as URL (/setwelcomeimageurl), sent with has_spoiler:true; no file upload for welcome image.
+- [Telegram setMyCommands Limit](telegram-limits.md) — Max 100 commands per scope; admin scope must be counted carefully to avoid BOT_COMMANDS_TOO_MUCH error.
+- [Security System](security-system.md) — Full security engine added: honeypot, warnings, shadow ban, mute, trust, flag, rate-limit, word filter, emergency lock, audit log, security report.

@@ -99,6 +99,36 @@ const PendingMembershipModel = mongoose.model("PendingMembership", pendingMember
 const BotConfigModel = mongoose.model("BotConfig", botConfigSchema);
 const BotUserModel = mongoose.model("BotUser", botUserSchema);
 
+// ─── Security Schemas ───
+const securityLogSchema = new mongoose.Schema({
+  userId: Number, username: String, action: String, detail: String,
+  timestamp: { type: Date, default: Date.now }
+});
+const warningSchema = new mongoose.Schema({
+  userId: { type: Number, required: true, unique: true },
+  count: { type: Number, default: 0 }, reasons: [String],
+  lastWarnAt: { type: Date, default: Date.now }
+});
+const shadowBanSchema = new mongoose.Schema({
+  userId: { type: Number, required: true, unique: true },
+  reason: String, at: { type: Date, default: Date.now }
+});
+const trustedUserSchema = new mongoose.Schema({
+  userId: { type: Number, required: true, unique: true }, addedAt: { type: Date, default: Date.now }
+});
+const blockedWordSchema = new mongoose.Schema({
+  word: { type: String, required: true, unique: true }, addedAt: { type: Date, default: Date.now }
+});
+const honeypotTrapSchema = new mongoose.Schema({
+  command: { type: String, required: true, unique: true }, addedAt: { type: Date, default: Date.now }
+});
+const SecurityLogModel = mongoose.model("SecurityLog", securityLogSchema);
+const WarningModel     = mongoose.model("Warning",     warningSchema);
+const ShadowBanModel   = mongoose.model("ShadowBan",   shadowBanSchema);
+const TrustedUserModel = mongoose.model("TrustedUser", trustedUserSchema);
+const BlockedWordModel = mongoose.model("BlockedWord", blockedWordSchema);
+const HoneypotTrapModel = mongoose.model("HoneypotTrap", honeypotTrapSchema);
+
 // ============================================================
 // IN-MEMORY STATE (fast access, synced to Mongo)
 // ============================================================
@@ -120,6 +150,26 @@ let paymentCounter = 1;
 let membershipPayCounter = 1;
 let welcomeImageUrl = null;
 const voteVelocity = new Map(); // "gId:partId" → { count, windowStart, alerted }
+
+// ─── Security state ───
+const userWarnings      = new Map();   // userId → { count, reasons, lastWarnAt }
+const shadowBanned      = new Set();   // userIds
+const trustedUsers      = new Set();   // userIds
+const blockedWords      = new Set();   // word strings
+const honeypotTraps     = new Set();   // fake command strings
+const honeypotTripped   = new Map();   // userId → [{ command, at }]
+const flaggedUsers      = new Map();   // userId → { reason, at }
+const mutedUsers        = new Set();   // userIds
+const securityLog       = [];          // last 500 events (in-memory)
+const commandRateLimit  = new Map();   // userId → { count, windowStart }
+const userCommandHistory = new Map();  // userId → [{ cmd, at }]
+let securityMode        = "normal";    // "strict"|"normal"|"off"
+let antispamEnabled     = true;
+let honeypotEnabled     = true;
+let maxWarnings         = 3;
+let autobanEnabled      = true;
+let emergencyLocked     = false;
+const botStartTime      = Date.now();
 let membershipQrFileId = null;
 let forceJoinChannels = [];
 let membershipPlans = {
@@ -299,6 +349,29 @@ async function loadStateFromDB() {
   if (maintCfg?.value) maintenanceMode = true;
   const cwCfg = await BotConfigModel.findOne({ key: "customWelcomeText" });
   if (cwCfg?.value) customWelcomeText = cwCfg.value;
+
+  // ─── Load Security Data ───
+  const allWarnings = await WarningModel.find({});
+  for (const w of allWarnings) userWarnings.set(w.userId, { count: w.count, reasons: w.reasons || [], lastWarnAt: w.lastWarnAt });
+  const allShadowBans = await ShadowBanModel.find({});
+  for (const s of allShadowBans) shadowBanned.add(s.userId);
+  const allTrusted = await TrustedUserModel.find({});
+  for (const t of allTrusted) trustedUsers.add(t.userId);
+  const allBlockedWords = await BlockedWordModel.find({});
+  for (const b of allBlockedWords) blockedWords.add(b.word);
+  const allHoneypotTraps = await HoneypotTrapModel.find({});
+  for (const h of allHoneypotTraps) honeypotTraps.add(h.command);
+  const secConfig = await BotConfigModel.findOne({ key: "securityConfig" });
+  if (secConfig?.value) {
+    if (secConfig.value.securityMode) securityMode = secConfig.value.securityMode;
+    if (secConfig.value.antispamEnabled !== undefined) antispamEnabled = secConfig.value.antispamEnabled;
+    if (secConfig.value.honeypotEnabled !== undefined) honeypotEnabled = secConfig.value.honeypotEnabled;
+    if (secConfig.value.maxWarnings) maxWarnings = secConfig.value.maxWarnings;
+    if (secConfig.value.autobanEnabled !== undefined) autobanEnabled = secConfig.value.autobanEnabled;
+    if (secConfig.value.emergencyLocked !== undefined) emergencyLocked = secConfig.value.emergencyLocked;
+  }
+  const recentSecLogs = await SecurityLogModel.find({}).sort({ timestamp: -1 }).limit(200).lean();
+  for (const l of recentSecLogs.reverse()) securityLog.push(l);
 
   console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users`);
 }
@@ -674,6 +747,45 @@ function h(t) {
 
 function getGiveaway(id) { return giveaways.get(String(id)); }
 function isAdmin(uid) { return uid === MAIN_ADMIN_ID; }
+
+// ─── Security helper functions (used by middleware + commands) ───
+function _secLog(userId, username, action, detail) {
+  const entry = { userId, username: username || "unknown", action, detail, timestamp: new Date() };
+  securityLog.unshift(entry);
+  if (securityLog.length > 500) securityLog.pop();
+  SecurityLogModel.create(entry).catch(() => {});
+}
+
+async function _addWarn(userId, username, reason, notifyChatId) {
+  let warn = userWarnings.get(userId) || { count: 0, reasons: [], lastWarnAt: new Date() };
+  warn.count++;
+  warn.reasons.push(reason);
+  warn.lastWarnAt = new Date();
+  userWarnings.set(userId, warn);
+  await WarningModel.findOneAndUpdate({ userId }, { $set: { count: warn.count, reasons: warn.reasons, lastWarnAt: warn.lastWarnAt } }, { upsert: true }).catch(() => {});
+  _secLog(userId, username, "WARN", reason);
+  if (notifyChatId) {
+    await bot.sendMessage(notifyChatId,
+      `⚠️━━━━━━━━━━━━━━━━━━━━━━⚠️\n   🛡️  <b>ꜱᴇᴄᴜʀɪᴛʏ ᴡᴀʀɴɪɴɢ</b>\n⚠️━━━━━━━━━━━━━━━━━━━━━━⚠️\n\n` +
+      `<blockquote>◈ ᴡᴀʀɴɪɴɢ  ▸  <b>${warn.count}/${maxWarnings}</b>\n◈ ʀᴇᴀꜱᴏɴ   ▸  ${reason}\n\n` +
+      `${warn.count >= maxWarnings ? "🚫 <b>Auto-ban limit reached!</b>" : "⚠️ Agle violation par ban ho sakta hai!"}</blockquote>`,
+      { parse_mode: "HTML" }
+    ).catch(() => {});
+  }
+  if (autobanEnabled && warn.count >= maxWarnings && !bannedUsers.has(userId)) {
+    bannedUsers.add(userId);
+    await saveConfig("bannedUsers", [...bannedUsers]);
+    _secLog(userId, username, "AUTO-BAN", `${warn.count} warnings`);
+    bot.sendMessage(MAIN_ADMIN_ID,
+      `🚫 <b>ᴀᴜᴛᴏ-ʙᴀɴ ᴛʀɪɢɢᴇʀᴇᴅ</b>\n\n<blockquote>◈ ɪᴅ      ▸  <code>${userId}</code>\n◈ ᴜꜱᴇʀ    ▸  @${username || "N/A"}\n◈ ᴡᴀʀɴꜱ   ▸  ${warn.count}\n◈ ʀᴇᴀꜱᴏɴ  ▸  ${reason}</blockquote>`,
+      { parse_mode: "HTML" }
+    ).catch(() => {});
+  }
+}
+
+async function _saveSecConfig() {
+  await saveConfig("securityConfig", { securityMode, antispamEnabled, honeypotEnabled, maxWarnings, autobanEnabled, emergencyLocked });
+}
 
 function getMembership(uid) {
   const d = vipUsers.get(uid);
@@ -1193,6 +1305,70 @@ bot.on("callback_query", async (query) => {
     userState.delete(userId);
     try { await bot.deleteMessage(chatId, msgId); } catch {}
     await sendWelcome(chatId, userId);
+    return;
+  }
+
+  // ─── cleandb: callback handlers ───
+  if (data.startsWith("cleandb:")) {
+    if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!" }).catch(() => {});
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+    const action = data.split(":")[1];
+    if (action === "cancel") {
+      await bot.editMessageText("❌ <b>Cleanup cancelled.</b>", { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }).catch(() => {});
+      return;
+    }
+    const cutoff30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const cutoff7d  = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const cutoff3d  = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    let rG = 0, rP = 0, rM = 0, rV = 0, rS = 0;
+    const doGiveaways = action === "giveaways" || action === "all";
+    const doPayments  = action === "payments"  || action === "all";
+    const doMemberships = action === "memberships" || action === "all";
+    const doVip       = action === "vip"       || action === "all";
+    const doSecLogs   = action === "seclogs"   || action === "all";
+    if (doGiveaways) {
+      for (const [id, g] of giveaways) {
+        if (!g.active && g.createdAt && new Date(g.createdAt) < cutoff30d) {
+          giveaways.delete(id); await GiveawayModel.deleteOne({ id }).catch(() => {}); rG++;
+        }
+      }
+    }
+    if (doPayments) {
+      for (const [payId, p] of pendingPayments) {
+        if (new Date(p.timestamp) < cutoff7d) {
+          pendingPayments.delete(payId); await PendingPaymentModel.deleteOne({ payId }).catch(() => {}); rP++;
+        }
+      }
+    }
+    if (doMemberships) {
+      for (const [payId, m] of pendingMembershipPayments) {
+        if (new Date(m.timestamp) < cutoff3d) {
+          pendingMembershipPayments.delete(payId); await PendingMembershipModel.deleteOne({ payId }).catch(() => {}); rM++;
+        }
+      }
+    }
+    if (doVip) {
+      for (const [uid, v] of vipUsers) {
+        if (v.vip && v.expiry && new Date(v.expiry) < new Date()) {
+          v.vip = false; await VipModel.findOneAndUpdate({ userId: uid }, { vip: false }).catch(() => {}); rV++;
+        }
+      }
+    }
+    if (doSecLogs) {
+      await SecurityLogModel.deleteMany({ timestamp: { $lt: cutoff7d } }).catch(() => {});
+      rS = await SecurityLogModel.countDocuments().catch(() => 0);
+    }
+    const resultLines = [
+      doGiveaways   ? `🗑️ Ended Giveaways  ▸  <b>${rG}</b> removed` : null,
+      doPayments    ? `💸 Pending Payments  ▸  <b>${rP}</b> removed` : null,
+      doMemberships ? `💳 Membership Claims ▸  <b>${rM}</b> removed` : null,
+      doVip         ? `👑 Expired VIP       ▸  <b>${rV}</b> updated` : null,
+      doSecLogs     ? `🛡️ Security Logs     ▸  <b>old entries removed</b>` : null,
+    ].filter(Boolean).join("\n");
+    await bot.editMessageText(
+      `✅ <b>Cleanup Done!</b>\n\n<blockquote>${resultLines}\n\n⚡ Active data safe hai.</blockquote>`,
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+    ).catch(() => {});
     return;
   }
 
@@ -3124,6 +3300,73 @@ bot.on("message", async (msg) => {
     ).catch(() => {});
     return;
   }
+
+  // ─── SECURITY MIDDLEWARE ───
+  // Emergency lock
+  if (emergencyLocked && !isAdmin(userId)) {
+    await bot.sendMessage(chatId,
+      `🔒 <b>ʙᴏᴛ ʟᴏᴄᴋᴇᴅ</b>\n<blockquote>Admin ne temporarily bot lock kiya hai. Thodi der mein wapas aayein.</blockquote>`,
+      { parse_mode: "HTML" }
+    ).catch(() => {}); return;
+  }
+  // Muted user — silent drop
+  if (mutedUsers.has(userId)) return;
+  // Shadow ban — fake-OK, no response
+  if (shadowBanned.has(userId)) return;
+  // Rate limit
+  if (antispamEnabled && !isAdmin(userId) && !trustedUsers.has(userId) && securityMode !== "off") {
+    const now = Date.now(); const windowMs = 10_000;
+    const maxCmds = securityMode === "strict" ? 4 : 12;
+    const r = commandRateLimit.get(userId) || { count: 0, windowStart: now };
+    if (now - r.windowStart > windowMs) { commandRateLimit.set(userId, { count: 1, windowStart: now }); }
+    else {
+      r.count++; commandRateLimit.set(userId, r);
+      if (r.count > maxCmds) {
+        await bot.sendMessage(chatId,
+          `⚡ <b>ʀᴀᴛᴇ ʟɪᴍɪᴛ</b>\n<blockquote>Bahut fast commands aa rahe hain. 10 second ruko!</blockquote>`,
+          { parse_mode: "HTML" }
+        ).catch(() => {});
+        _secLog(userId, msg.from.username, "RATE_LIMIT", "Too many commands"); return;
+      }
+    }
+  }
+  // Blocked words
+  if (!isAdmin(userId) && msg.text) {
+    const lower = msg.text.toLowerCase();
+    for (const w of blockedWords) {
+      if (lower.includes(w.toLowerCase())) {
+        await bot.sendMessage(chatId, `🚫 <b>Blocked content detected.</b>`, { parse_mode: "HTML" }).catch(() => {});
+        _secLog(userId, msg.from.username, "BLOCKED_WORD", w);
+        await _addWarn(userId, msg.from.username, `Blocked word: "${w}"`, chatId);
+        return;
+      }
+    }
+  }
+  // Honeypot trap
+  if (honeypotEnabled && msg.text?.startsWith("/")) {
+    const hCmd = msg.text.split(" ")[0].split("@")[0].slice(1).toLowerCase();
+    if (honeypotTraps.has(hCmd)) {
+      const traps = honeypotTripped.get(userId) || [];
+      traps.push({ command: hCmd, at: new Date() });
+      honeypotTripped.set(userId, traps);
+      _secLog(userId, msg.from.username, "HONEYPOT", `Triggered: /${hCmd}`);
+      bot.sendMessage(MAIN_ADMIN_ID,
+        `🍯 <b>ʜᴏɴᴇʏᴘᴏᴛ ᴛʀɪɢɢᴇʀᴇᴅ</b>\n\n<blockquote>◈ ᴜꜱᴇʀ    ▸  <a href="tg://user?id=${userId}">${msg.from.first_name}</a> (<code>${userId}</code>)\n◈ ᴄᴏᴍᴍᴀɴᴅ ▸  /${hCmd}\n◈ ᴛᴏᴛᴀʟ   ▸  ${traps.length} trap(s)\n◈ ᴛɪᴍᴇ    ▸  ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</blockquote>`,
+        { parse_mode: "HTML" }
+      ).catch(() => {});
+      await _addWarn(userId, msg.from.username, `Honeypot: /${hCmd}`, chatId);
+      return;
+    }
+  }
+  // Track command history
+  if (msg.text?.startsWith("/")) {
+    const hc = msg.text.split(" ")[0].split("@")[0];
+    const hist = userCommandHistory.get(userId) || [];
+    hist.unshift({ cmd: hc, at: new Date() });
+    if (hist.length > 50) hist.pop();
+    userCommandHistory.set(userId, hist);
+  }
+
   const text = msg.text?.trim() || "";
   const state = userState.get(userId);
 
@@ -4160,7 +4403,19 @@ bot.onText(/\/help/, async (msg) => {
     `/active — ᴀʟʟ ʟɪᴠᴇ ɢɪᴠᴇᴀᴡᴀʏꜱ\n` +
     `/winners — ʟᴀꜱᴛ ɢɪᴠᴇᴀᴡᴀʏ ᴡɪɴɴᴇʀꜱ\n` +
     `/glink — ɢᴇᴛ ɢɪᴠᴇᴀᴡᴀʏ ᴊᴏɪɴ ʟɪɴᴋ\n` +
-    `/support — ᴄᴏɴᴛᴀᴄᴛ ꜱᴜᴘᴘᴏʀᴛ` +
+    `/support — ᴄᴏɴᴛᴀᴄᴛ ꜱᴜᴘᴘᴏʀᴛ\n` +
+    `/about — ᴀʙᴏᴜᴛ ᴛʜɪꜱ ʙᴏᴛ\n` +
+    `/version — ʙᴏᴛ ᴠᴇʀꜱɪᴏɴ &amp; ᴜᴘᴛɪᴍᴇ\n` +
+    `/uptime — ʙᴏᴛ ᴜᴘᴛɪᴍᴇ\n` +
+    `/rules — ʙᴏᴛ ʀᴜʟᴇꜱ\n` +
+    `/faq — ꜰʀᴇǫᴜᴇɴᴛʟʏ ᴀꜱᴋᴇᴅ ǫᴜᴇꜱᴛɪᴏɴꜱ\n` +
+    `/terms — ᴛᴇʀᴍꜱ ᴏꜰ ꜱᴇʀᴠɪᴄᴇ\n` +
+    `/countdown — ɢɪᴠᴇᴀᴡᴀʏ ᴄᴏᴜɴᴛᴅᴏᴡɴ\n` +
+    `/rank — ʏᴏᴜʀ ɢʟᴏʙᴀʟ ʀᴀɴᴋ\n` +
+    `/invite — ʜᴏᴡ ᴛᴏ ɪɴᴠɪᴛᴇ ʙᴏᴛ\n` +
+    `/notify — ɴᴏᴛɪꜰɪᴄᴀᴛɪᴏɴꜱ ɪɴꜰᴏ\n` +
+    `/refer — ʏᴏᴜʀ ʀᴇꜰᴇʀʀᴀʟ ʟɪɴᴋ\n` +
+    `/feedback — ꜱᴇɴᴅ ꜰᴇᴇᴅʙᴀᴄᴋ` +
     `</blockquote>\n\n` +
     `<b>🎁 ɢɪᴠᴇᴀᴡᴀʏ ʙᴀɴᴀɴᴇ ᴋᴀ ᴛᴀʀɪᴋᴀ</b>\n` +
     `<blockquote>` +
@@ -5358,68 +5613,39 @@ bot.onText(/\/setpanelthreshold(?:\s+(.+))?/, async (msg, match) => {
   );
 });
 
-// /cleandb — Admin: Remove old ended giveaways and expired data
-bot.onText(/\/cleandb/, async (msg) => {
+// /cleandb — Admin: Interactive selective MongoDB cleanup
+bot.onText(/\/cleandb$/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const chatId = msg.chat.id;
 
-  try { await bot.sendChatAction(chatId, "typing"); } catch {}
-  await bot.sendMessage(chatId, "🧹 <b>Cleaning database...</b>", { parse_mode: "HTML" });
+  // Count what's cleanable
+  const cutoff30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const cutoff7d  = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const cutoff3d  = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
 
-  let removedGiveaways = 0;
-  let removedPayments = 0;
-  let removedMemberships = 0;
-  let removedVip = 0;
+  const oldGiveaways = [...giveaways.values()].filter(g => !g.active && g.createdAt && new Date(g.createdAt) < cutoff30d).length;
+  const oldPayments  = [...pendingPayments.values()].filter(p => new Date(p.timestamp) < cutoff7d).length;
+  const oldMemberships = [...pendingMembershipPayments.values()].filter(m => new Date(m.timestamp) < cutoff3d).length;
+  const expiredVip   = [...vipUsers.values()].filter(v => v.vip && v.expiry && new Date(v.expiry) < new Date()).length;
+  const oldSecLogs   = Math.max(0, securityLog.length - 100);
+  const oldSecLogDB  = await SecurityLogModel.countDocuments({ timestamp: { $lt: cutoff7d } }).catch(() => 0);
 
-  // Remove ended giveaways older than 30 days
-  const cutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-  for (const [id, g] of giveaways) {
-    if (!g.active && g.createdAt && new Date(g.createdAt) < cutoff) {
-      giveaways.delete(id);
-      await GiveawayModel.deleteOne({ id });
-      removedGiveaways++;
-    }
-  }
-
-  // Remove old pending payments (older than 7 days)
-  const paymentCutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  for (const [payId, p] of pendingPayments) {
-    if (new Date(p.timestamp) < paymentCutoff) {
-      pendingPayments.delete(payId);
-      await PendingPaymentModel.deleteOne({ payId });
-      removedPayments++;
-    }
-  }
-
-  // Remove old pending memberships (older than 3 days)
-  const memCutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-  for (const [payId, m] of pendingMembershipPayments) {
-    if (new Date(m.timestamp) < memCutoff) {
-      pendingMembershipPayments.delete(payId);
-      await PendingMembershipModel.deleteOne({ payId });
-      removedMemberships++;
-    }
-  }
-
-  // Mark expired VIP users as inactive (do NOT delete — preserves history and allows renewal)
-  for (const [uid, v] of vipUsers) {
-    if (v.vip && v.expiry && new Date(v.expiry) < new Date()) {
-      v.vip = false;
-      await VipModel.findOneAndUpdate({ userId: uid }, { vip: false });
-      removedVip++;
-    }
-  }
-
+  const keyboard = {
+    inline_keyboard: [
+      [{ text: `🗑️ Ended Giveaways 30d+ (${oldGiveaways})`, callback_data: "cleandb:giveaways" }],
+      [{ text: `💸 Old Pending Payments 7d+ (${oldPayments})`, callback_data: "cleandb:payments" }],
+      [{ text: `💳 Old Membership Claims 3d+ (${oldMemberships})`, callback_data: "cleandb:memberships" }],
+      [{ text: `👑 Mark Expired VIP Inactive (${expiredVip})`, callback_data: "cleandb:vip" }],
+      [{ text: `🛡️ Old Security Logs 7d+ (${oldSecLogDB})`, callback_data: "cleandb:seclogs" }],
+      [{ text: `🧹 CLEAN ALL ABOVE`, callback_data: "cleandb:all" }],
+      [{ text: "❌ Cancel", callback_data: "cleandb:cancel" }]
+    ]
+  };
   await bot.sendMessage(chatId,
-    `✅ <b>Database Cleaned!</b>\n\n` +
-    `<blockquote>` +
-    `🗑️ Ended Giveaways (30d+)  ▸  <b>${removedGiveaways}</b> removed\n` +
-    `💸 Old Pending Payments (7d+) ▸  <b>${removedPayments}</b> removed\n` +
-    `💳 Old Membership Claims (3d+) ▸  <b>${removedMemberships}</b> removed\n` +
-    `👑 Expired VIP Users  ▸  <b>${removedVip}</b> removed` +
-    `</blockquote>\n\n` +
-    `<i>Active data safe hai.</i>`,
-    { parse_mode: "HTML" }
+    `🧹━━━━━━━━━━━━━━━━━━━━━━🧹\n   <b>𝐌𝐎𝐍𝐆𝐎𝐃𝐁 𝐂𝐋𝐄𝐀𝐍𝐔𝐏</b>\n🧹━━━━━━━━━━━━━━━━━━━━━━🧹\n\n` +
+    `<blockquote>Kya clean karna hai? Select karo:\n\n` +
+    `⚠️ Active giveaways, current votes, VIP data SAFE rahega.\nSirf junk/expired data hata.\n\nHar item independently select kar sakte ho ya sab ek saath.</blockquote>`,
+    { parse_mode: "HTML", reply_markup: keyboard }
   );
 });
 
@@ -6618,12 +6844,760 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/ping — Check bot response time\n` +
     `/myid — Show Telegram user ID\n` +
     `/topvoters — Top participants ranking\n` +
-    `/support — Send message to admin` +
+    `/support — Send message to admin\n` +
+    `/about — About this bot\n` +
+    `/version — Bot version & uptime\n` +
+    `/uptime — Bot uptime\n` +
+    `/rules — Bot usage rules\n` +
+    `/faq — Frequently asked questions\n` +
+    `/terms — Terms of service\n` +
+    `/countdown — Active giveaway countdown\n` +
+    `/rank — Your global rank\n` +
+    `/invite — How to invite bot to channel\n` +
+    `/notify — Notification info\n` +
+    `/refer — Your referral link\n` +
+    `/feedback — Send feedback to admin` +
     `</blockquote>`;
+
+  const part4 =
+    `🔐━━━━━━━━━━━━━━━━━━━━━━🔐\n` +
+    `   🛡️  <b>SECURITY & PROTECTION</b>\n` +
+    `🔐━━━━━━━━━━━━━━━━━━━━━━🔐\n\n` +
+    `<blockquote>` +
+    `📖 Full security reference: /securityhelp\n\n` +
+    `<b>🍯 Honeypot</b>\n` +
+    `/honeypot on|off — Enable/disable honeypot\n` +
+    `/honeytrap &lt;cmd&gt; — Add fake trap command\n` +
+    `/removetrap &lt;cmd&gt; — Remove trap\n` +
+    `/listtraps — All active traps\n` +
+    `/honeypotlist — Users who triggered traps\n` +
+    `/cleanhoneypot — Clear triggered list\n\n` +
+    `<b>⚠️ Warnings</b>\n` +
+    `/warnuser &lt;id&gt; [reason] — Warn user\n` +
+    `/warnings &lt;id&gt; — Check warnings\n` +
+    `/clearwarnings &lt;id&gt; — Clear warnings\n` +
+    `/setmaxwarns &lt;n&gt; — Auto-ban threshold\n` +
+    `/autoban on|off — Toggle auto-ban\n\n` +
+    `<b>🔇 Mute / Shadow</b>\n` +
+    `/muteuser &lt;id&gt; — Mute\n` +
+    `/unmuteuser &lt;id&gt; — Unmute\n` +
+    `/mutedlist — List muted\n` +
+    `/shadowban &lt;id&gt; — Ghost ban (silent)\n` +
+    `/unshadowban &lt;id&gt; — Remove ghost ban\n` +
+    `/shadowlist — List shadow banned\n\n` +
+    `<b>✅ Trust / Flag</b>\n` +
+    `/trustuser &lt;id&gt; — Whitelist user\n` +
+    `/untrustuser &lt;id&gt; — Remove whitelist\n` +
+    `/trustedlist — Trusted users\n` +
+    `/flaguser &lt;id&gt; [reason] — Flag suspicious\n` +
+    `/unflaguser &lt;id&gt; — Remove flag\n` +
+    `/flaggedlist — Flagged users\n\n` +
+    `<b>🌐 Modes</b>\n` +
+    `/securitymode strict|normal|off\n` +
+    `/antispam on|off\n` +
+    `/emergencylock — Lock all users\n` +
+    `/emergencyunlock — Restore access\n\n` +
+    `<b>📊 Stats / Logs</b>\n` +
+    `/securitystats — Full dashboard\n` +
+    `/suspicious — Last 20 events\n` +
+    `/auditlog — Last 30 entries\n` +
+    `/clearaudit — Clear logs\n` +
+    `/userhistory &lt;id&gt; — Command history\n` +
+    `/securityreport — Download .txt report\n` +
+    `/ratelimitreset &lt;id&gt; — Reset rate limit\n\n` +
+    `<b>🚫 Word Filter</b>\n` +
+    `/blockword &lt;word&gt; — Block word\n` +
+    `/unblockword &lt;word&gt; — Unblock\n` +
+    `/blockedwords — List all blocked` +
+    `</blockquote>\n\n` +
+    `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
+    `<blockquote>🛡️ DRS Security Engine v1.0 — Active Protection</blockquote>`;
 
   await bot.sendMessage(msg.chat.id, part1, { parse_mode: "HTML" });
   await bot.sendMessage(msg.chat.id, part2, { parse_mode: "HTML" });
   await bot.sendMessage(msg.chat.id, part3, { parse_mode: "HTML" });
+  await bot.sendMessage(msg.chat.id, part4, { parse_mode: "HTML" });
+});
+
+// ============================================================
+// SECURITY, PROTECTION & HONEYPOT COMMANDS
+// ============================================================
+
+// ─── /securityhelp — Full 40-command security reference (600+ words) ───
+bot.onText(/\/securityhelp/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const sec1 =
+    `🔐━━━━━━━━━━━━━━━━━━━━━━🔐\n` +
+    `   🛡️  <b>𝐃𝐑𝐒 𝐁𝐎𝐓 — 𝐒𝐄𝐂𝐔𝐑𝐈𝐓𝐘 𝐏𝐀𝐍𝐄𝐋</b>\n` +
+    `🔐━━━━━━━━━━━━━━━━━━━━━━🔐\n\n` +
+    `<b>🍯 HONEYPOT SYSTEM</b>\n` +
+    `<blockquote>` +
+    `/honeypot on|off\n  → Honeypot system enable/disable karo\n  Agar on: fake commands ke traps active hote hain\n  Agar off: saare traps bypass ho jate hain\n  Example: /honeypot on\n\n` +
+    `/honeytrap &lt;command&gt;\n  → Ek fake command add karo as trap\n  Koi bhi user yeh command use kare → admin ko instant alert\n  + user ko automatic warning milti hai\n  Example: /honeytrap adminpanel\n  Example: /honeytrap hackbot\n\n` +
+    `/removetrap &lt;command&gt;\n  → Ek honeypot command remove karo\n  Example: /removetrap adminpanel\n\n` +
+    `/listtraps\n  → Saare active honeypot commands dekho\n\n` +
+    `/honeypotlist\n  → Kin users ne honeypot trigger kiya — full log with commands & timestamps\n\n` +
+    `/cleanhoneypot\n  → Honeypot triggered users ki memory list clear karo` +
+    `</blockquote>\n\n` +
+    `<b>⚠️ WARNING SYSTEM</b>\n` +
+    `<blockquote>` +
+    `/warnuser &lt;userId&gt; [reason]\n  → User ko manual warning do\n  Warning count track hoti hai MongoDB mein\n  maxWarnings tak pahunche → auto-ban (agar enabled)\n  Example: /warnuser 123456 vote manipulation kar raha tha\n\n` +
+    `/warnings &lt;userId&gt;\n  → User ki warnings check karo: total count + har reason\n  Example: /warnings 123456\n\n` +
+    `/clearwarnings &lt;userId&gt;\n  → User ki saari warnings hata do (slate clean)\n  Example: /clearwarnings 123456\n\n` +
+    `/setmaxwarns &lt;number&gt;\n  → Auto-ban trigger hone ke liye kitni warnings chahiye (1-20)\n  Default: 3 warnings\n  Example: /setmaxwarns 5\n\n` +
+    `/autoban on|off\n  → Auto-ban toggle: warning limit pe automatically ban ho\n  Example: /autoban on` +
+    `</blockquote>`;
+
+  const sec2 =
+    `<b>🔇 MUTE & SHADOW BAN</b>\n` +
+    `<blockquote>` +
+    `/muteuser &lt;userId&gt;\n  → User mute karo: bot unke messages par koi response nahi deta\n  User ko pata chalta hai par kuch kar nahi sakta\n  Example: /muteuser 123456\n\n` +
+    `/unmuteuser &lt;userId&gt;\n  → Mute hatao, user phir se interact kar sakta hai\n  Example: /unmuteuser 123456\n\n` +
+    `/mutedlist\n  → Saare muted users ki list dekho\n\n` +
+    `/shadowban &lt;userId&gt;\n  → Ghost ban: user sochega bot chal raha hai\n  Actually koi bhi response nahi milta — completely silent\n  User ko bilkul pata nahi chalta ki woh shadow-banned hai!\n  ⚡ Hackers aur abusers ke liye best tool\n  Example: /shadowban 123456\n\n` +
+    `/unshadowban &lt;userId&gt;\n  → Shadow ban hatao, user normal ho jata hai\n  Example: /unshadowban 123456\n\n` +
+    `/shadowlist\n  → Saare shadow banned users ki list` +
+    `</blockquote>\n\n` +
+    `<b>✅ TRUSTED USERS (Whitelist)</b>\n` +
+    `<blockquote>` +
+    `/trustuser &lt;userId&gt;\n  → User ko trusted whitelist mein dalo\n  Trusted users: rate limiting bypass + honeypot ignore\n  Apne co-admins ya verified users ke liye use karo\n  Example: /trustuser 123456\n\n` +
+    `/untrustuser &lt;userId&gt;\n  → Trusted list se hatao\n  Example: /untrustuser 123456\n\n` +
+    `/trustedlist\n  → Saare trusted users dekho` +
+    `</blockquote>\n\n` +
+    `<b>🚩 FLAG / SUSPICIOUS USERS</b>\n` +
+    `<blockquote>` +
+    `/flaguser &lt;userId&gt; [reason]\n  → User ko suspicious flag karo (admin monitoring)\n  Flag = koi action nahi, bas monitoring label\n  Example: /flaguser 123456 vote manipulation suspicion\n\n` +
+    `/unflaguser &lt;userId&gt;\n  → Flag hatao\n  Example: /unflaguser 123456\n\n` +
+    `/flaggedlist\n  → Saare flagged users aur unke reasons dekho` +
+    `</blockquote>`;
+
+  const sec3 =
+    `<b>🌐 SECURITY MODES & CONTROLS</b>\n` +
+    `<blockquote>` +
+    `/securitymode strict|normal|off\n  → Bot ka security level set karo\n  • strict → 4 commands/10s, max protection\n  • normal → 12 commands/10s (default balanced)\n  • off    → Rate limiting completely off\n  Example: /securitymode strict\n\n` +
+    `/antispam on|off\n  → Spam/flood protection toggle karo\n  On = rate limiting active, Off = no rate limiting\n  Example: /antispam on\n\n` +
+    `/emergencylock\n  → INSTANT: Saare non-admin users ko block karo\n  Bot sirf admin ke liye kaam karega\n  ⚠️ Use karo jab bot exploit ho raha ho ya hacking attempt ho\n\n` +
+    `/emergencyunlock\n  → Emergency lock hatao, bot normal operation par wapas` +
+    `</blockquote>\n\n` +
+    `<b>📊 SECURITY STATS & LOGS</b>\n` +
+    `<blockquote>` +
+    `/securitystats\n  → Full security dashboard: mode, anti-spam, honeypot, auto-ban,\n  emergency lock, trap count, warnings, shadow bans, mutes, etc.\n\n` +
+    `/suspicious\n  → Last 20 security events: rate limits, honeypots, blocked words, warnings\n\n` +
+    `/auditlog\n  → Last 30 detailed bot activity log entries with timestamps\n\n` +
+    `/clearaudit\n  → Security + audit log saaf karo (in-memory + MongoDB)\n\n` +
+    `/userhistory &lt;userId&gt;\n  → Kisi user ne last 30 commands kya bheje (history)\n  Example: /userhistory 123456\n\n` +
+    `/securityreport\n  → Complete security report .txt download karo\n  Includes: config, traps, warnings, shadow bans, flagged, blocked words, full log\n\n` +
+    `/ratelimitreset &lt;userId&gt;\n  → Kisi user ka rate limit counter reset karo (manual override)` +
+    `</blockquote>\n\n` +
+    `<b>🚫 BLOCKED WORDS FILTER</b>\n` +
+    `<blockquote>` +
+    `/blockword &lt;word|phrase&gt;\n  → Yeh word/phrase block karo\n  Koi bhi message mein yeh hoga → reject + warning\n  Example: /blockword badword\n  Example: /blockword scam link\n\n` +
+    `/unblockword &lt;word&gt;\n  → Word/phrase unblock karo\n  Example: /unblockword badword\n\n` +
+    `/blockedwords\n  → Saare blocked words/phrases ki list dekho` +
+    `</blockquote>\n\n` +
+    `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
+    `<blockquote>🛡️ DRS Security Engine v1.0\nHoneypot · Rate Limit · Shadow Ban · Auto-Ban · Word Filter · Emergency Lock · Audit Log</blockquote>`;
+
+  await bot.sendMessage(msg.chat.id, sec1, { parse_mode: "HTML" });
+  await bot.sendMessage(msg.chat.id, sec2, { parse_mode: "HTML" });
+  await bot.sendMessage(msg.chat.id, sec3, { parse_mode: "HTML" });
+});
+
+// ─── /honeypot on|off ───
+bot.onText(/\/honeypot (on|off)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  honeypotEnabled = match[1] === "on";
+  await _saveSecConfig();
+  await bot.sendMessage(msg.chat.id, `🍯 <b>Honeypot ${honeypotEnabled ? "ENABLED ✅" : "DISABLED ❌"}</b>\n<blockquote>${honeypotEnabled ? "Fake commands par trap active." : "Honeypot traps bypass ho rahe hain."}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /honeytrap <command> ───
+bot.onText(/\/honeytrap (.+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const cmd = match[1].trim().toLowerCase().replace(/^\//, "");
+  honeypotTraps.add(cmd);
+  await HoneypotTrapModel.findOneAndUpdate({ command: cmd }, { command: cmd }, { upsert: true }).catch(() => {});
+  await bot.sendMessage(msg.chat.id,
+    `🍯 <b>Honeypot Trap Added</b>\n<blockquote>◈ Command ▸ <code>/${cmd}</code>\n◈ Effect  ▸ Koi bhi use kare → instant admin alert + warning!</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /removetrap <command> ───
+bot.onText(/\/removetrap (.+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const cmd = match[1].trim().toLowerCase().replace(/^\//, "");
+  honeypotTraps.delete(cmd);
+  await HoneypotTrapModel.deleteOne({ command: cmd }).catch(() => {});
+  await bot.sendMessage(msg.chat.id, `✅ <b>Trap removed:</b> <code>/${cmd}</code>`, { parse_mode: "HTML" });
+});
+
+// ─── /listtraps ───
+bot.onText(/\/listtraps/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  if (!honeypotTraps.size) return bot.sendMessage(msg.chat.id, `🍯 <b>No honeypot traps set.</b>\n<blockquote>Use /honeytrap &lt;command&gt; to add one.</blockquote>`, { parse_mode: "HTML" });
+  const list = [...honeypotTraps].map((c, i) => `${i + 1}. <code>/${c}</code>`).join("\n");
+  await bot.sendMessage(msg.chat.id, `🍯 <b>Active Honeypot Traps (${honeypotTraps.size})</b>\n<blockquote>${list}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /honeypotlist ───
+bot.onText(/\/honeypotlist/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  if (!honeypotTripped.size) return bot.sendMessage(msg.chat.id, `🍯 <b>No users have triggered honeypots yet.</b>`, { parse_mode: "HTML" });
+  let lines = "";
+  for (const [uid, traps] of honeypotTripped) {
+    const u = botUsers.get(uid);
+    lines += `▸ <code>${uid}</code> @${u?.username || "N/A"} — <b>${traps.length}</b> trap(s)\n`;
+    lines += traps.slice(0, 3).map(t => `  └ /${t.command} · ${new Date(t.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`).join("\n") + "\n\n";
+  }
+  await bot.sendMessage(msg.chat.id, `🍯 <b>Honeypot Triggered (${honeypotTripped.size} users)</b>\n<blockquote>${lines.trim()}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /cleanhoneypot ───
+bot.onText(/\/cleanhoneypot/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  honeypotTripped.clear();
+  await bot.sendMessage(msg.chat.id, `🧹 <b>Honeypot triggered list cleared.</b>`, { parse_mode: "HTML" });
+});
+
+// ─── /warnuser <userId> [reason] ───
+bot.onText(/\/warnuser (.+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const parts = match[1].trim().split(" ");
+  const targetId = Number(parts[0]);
+  const reason = parts.slice(1).join(" ") || "Admin warning";
+  if (!targetId) return bot.sendMessage(msg.chat.id, `Usage: /warnuser &lt;userId&gt; [reason]`, { parse_mode: "HTML" });
+  const u = botUsers.get(targetId);
+  await _addWarn(targetId, u?.username, reason, targetId);
+  const warn = userWarnings.get(targetId);
+  await bot.sendMessage(msg.chat.id,
+    `⚠️ <b>Warning Issued</b>\n<blockquote>◈ User   ▸ <code>${targetId}</code> @${u?.username || "N/A"}\n◈ Reason ▸ ${reason}\n◈ Total  ▸ ${warn?.count || 1}/${maxWarnings}</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /warnings <userId> ───
+bot.onText(/\/warnings (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const warn = userWarnings.get(targetId);
+  if (!warn || warn.count === 0) return bot.sendMessage(msg.chat.id, `✅ <b>No warnings</b> for <code>${targetId}</code>`, { parse_mode: "HTML" });
+  const reasons = warn.reasons.map((r, i) => `${i + 1}. ${r}`).join("\n");
+  await bot.sendMessage(msg.chat.id,
+    `⚠️ <b>Warnings: <code>${targetId}</code></b>\n<blockquote>◈ Count  ▸ <b>${warn.count}/${maxWarnings}</b>\n◈ Last   ▸ ${new Date(warn.lastWarnAt).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}\n\n${reasons}</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /clearwarnings <userId> ───
+bot.onText(/\/clearwarnings (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  userWarnings.delete(targetId);
+  await WarningModel.deleteOne({ userId: targetId }).catch(() => {});
+  await bot.sendMessage(msg.chat.id, `✅ <b>Warnings cleared</b> for <code>${targetId}</code>`, { parse_mode: "HTML" });
+});
+
+// ─── /muteuser <userId> ───
+bot.onText(/\/muteuser (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  mutedUsers.add(targetId);
+  _secLog(targetId, botUsers.get(targetId)?.username, "MUTE", "Admin muted");
+  await bot.sendMessage(msg.chat.id, `🔇 <b>User muted: <code>${targetId}</code></b>\n<blockquote>Bot unke messages ka response nahi dega.</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /unmuteuser <userId> ───
+bot.onText(/\/unmuteuser (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  mutedUsers.delete(Number(match[1]));
+  await bot.sendMessage(msg.chat.id, `🔊 <b>User unmuted: <code>${match[1]}</code></b>`, { parse_mode: "HTML" });
+});
+
+// ─── /mutedlist ───
+bot.onText(/\/mutedlist/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  if (!mutedUsers.size) return bot.sendMessage(msg.chat.id, `🔇 <b>No muted users.</b>`, { parse_mode: "HTML" });
+  const list = [...mutedUsers].map((id, i) => `${i + 1}. <code>${id}</code> @${botUsers.get(id)?.username || "N/A"}`).join("\n");
+  await bot.sendMessage(msg.chat.id, `🔇 <b>Muted Users (${mutedUsers.size})</b>\n<blockquote>${list}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /shadowban <userId> ───
+bot.onText(/\/shadowban (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  shadowBanned.add(targetId);
+  await ShadowBanModel.findOneAndUpdate({ userId: targetId }, { userId: targetId, reason: "Admin", at: new Date() }, { upsert: true }).catch(() => {});
+  _secLog(targetId, botUsers.get(targetId)?.username, "SHADOWBAN", "Admin shadow-banned");
+  await bot.sendMessage(msg.chat.id,
+    `👻 <b>Shadow Ban Applied</b>\n<blockquote>◈ User   ▸ <code>${targetId}</code>\n◈ Effect ▸ Koi response nahi milega — user ko pata nahi chalta!\n◈ Hackers ke liye best tool 🛡️</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /unshadowban <userId> ───
+bot.onText(/\/unshadowban (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  shadowBanned.delete(targetId);
+  await ShadowBanModel.deleteOne({ userId: targetId }).catch(() => {});
+  await bot.sendMessage(msg.chat.id, `👻 <b>Shadow ban removed: <code>${targetId}</code></b>`, { parse_mode: "HTML" });
+});
+
+// ─── /shadowlist ───
+bot.onText(/\/shadowlist/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  if (!shadowBanned.size) return bot.sendMessage(msg.chat.id, `👻 <b>No shadow banned users.</b>`, { parse_mode: "HTML" });
+  const list = [...shadowBanned].map((id, i) => `${i + 1}. <code>${id}</code> @${botUsers.get(id)?.username || "N/A"}`).join("\n");
+  await bot.sendMessage(msg.chat.id, `👻 <b>Shadow Banned (${shadowBanned.size})</b>\n<blockquote>${list}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /trustuser <userId> ───
+bot.onText(/\/trustuser (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  trustedUsers.add(targetId);
+  await TrustedUserModel.findOneAndUpdate({ userId: targetId }, { userId: targetId, addedAt: new Date() }, { upsert: true }).catch(() => {});
+  await bot.sendMessage(msg.chat.id, `✅ <b>User Trusted: <code>${targetId}</code></b>\n<blockquote>Rate limit + honeypot bypass active.</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /untrustuser <userId> ───
+bot.onText(/\/untrustuser (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  trustedUsers.delete(targetId);
+  await TrustedUserModel.deleteOne({ userId: targetId }).catch(() => {});
+  await bot.sendMessage(msg.chat.id, `✅ <b>Removed from trusted: <code>${targetId}</code></b>`, { parse_mode: "HTML" });
+});
+
+// ─── /trustedlist ───
+bot.onText(/\/trustedlist/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  if (!trustedUsers.size) return bot.sendMessage(msg.chat.id, `✅ <b>No trusted users.</b>`, { parse_mode: "HTML" });
+  const list = [...trustedUsers].map((id, i) => `${i + 1}. <code>${id}</code> @${botUsers.get(id)?.username || "N/A"}`).join("\n");
+  await bot.sendMessage(msg.chat.id, `✅ <b>Trusted Users (${trustedUsers.size})</b>\n<blockquote>${list}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /flaguser <userId> [reason] ───
+bot.onText(/\/flaguser (.+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const parts = match[1].trim().split(" ");
+  const targetId = Number(parts[0]);
+  const reason = parts.slice(1).join(" ") || "Suspicious activity";
+  if (!targetId) return bot.sendMessage(msg.chat.id, `Usage: /flaguser &lt;userId&gt; [reason]`, { parse_mode: "HTML" });
+  flaggedUsers.set(targetId, { reason, at: new Date() });
+  _secLog(targetId, botUsers.get(targetId)?.username, "FLAGGED", reason);
+  await bot.sendMessage(msg.chat.id, `🚩 <b>User Flagged</b>\n<blockquote>◈ ID     ▸ <code>${targetId}</code>\n◈ Reason ▸ ${reason}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /unflaguser <userId> ───
+bot.onText(/\/unflaguser (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  flaggedUsers.delete(Number(match[1]));
+  await bot.sendMessage(msg.chat.id, `🚩 <b>Flag removed: <code>${match[1]}</code></b>`, { parse_mode: "HTML" });
+});
+
+// ─── /flaggedlist ───
+bot.onText(/\/flaggedlist/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  if (!flaggedUsers.size) return bot.sendMessage(msg.chat.id, `🚩 <b>No flagged users.</b>`, { parse_mode: "HTML" });
+  let lines = "";
+  for (const [id, f] of flaggedUsers) {
+    const u = botUsers.get(id);
+    lines += `▸ <code>${id}</code> @${u?.username || "N/A"} — ${f.reason}\n`;
+  }
+  await bot.sendMessage(msg.chat.id, `🚩 <b>Flagged Users (${flaggedUsers.size})</b>\n<blockquote>${lines.trim()}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /autoban on|off ───
+bot.onText(/\/autoban (on|off)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  autobanEnabled = match[1] === "on";
+  await _saveSecConfig();
+  await bot.sendMessage(msg.chat.id, `🚫 <b>Auto-ban ${autobanEnabled ? "ENABLED ✅" : "DISABLED ❌"}</b>\n<blockquote>${autobanEnabled ? `${maxWarnings} warnings = auto-ban` : "Auto-ban off."}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /setmaxwarns <number> ───
+bot.onText(/\/setmaxwarns (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const n = Number(match[1]);
+  if (n < 1 || n > 20) return bot.sendMessage(msg.chat.id, `❌ 1 se 20 ke beech value do.`);
+  maxWarnings = n;
+  await _saveSecConfig();
+  await bot.sendMessage(msg.chat.id, `⚠️ <b>Max Warnings → ${n}</b>\n<blockquote>${n} warnings ke baad auto-ban trigger hoga.</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /securitymode strict|normal|off ───
+bot.onText(/\/securitymode (strict|normal|off)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  securityMode = match[1];
+  await _saveSecConfig();
+  const desc = securityMode === "strict" ? "4 cmds/10s, maximum protection" : securityMode === "normal" ? "12 cmds/10s, balanced (default)" : "Rate limiting completely off";
+  await bot.sendMessage(msg.chat.id, `🌐 <b>Security Mode: ${securityMode.toUpperCase()}</b>\n<blockquote>${desc}</blockquote>`, { parse_mode: "HTML" });
+});
+
+bot.onText(/\/securitymode$/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  await bot.sendMessage(msg.chat.id,
+    `🌐 <b>Current Security Mode: ${securityMode.toUpperCase()}</b>\n<blockquote>Usage: /securitymode strict|normal|off</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /antispam on|off ───
+bot.onText(/\/antispam (on|off)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  antispamEnabled = match[1] === "on";
+  await _saveSecConfig();
+  await bot.sendMessage(msg.chat.id, `⚡ <b>Anti-Spam ${antispamEnabled ? "ENABLED ✅" : "DISABLED ❌"}</b>`, { parse_mode: "HTML" });
+});
+
+// ─── /emergencylock ───
+bot.onText(/\/emergencylock/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  emergencyLocked = true;
+  await _saveSecConfig();
+  await bot.sendMessage(msg.chat.id,
+    `🔒━━━━━━━━━━━━━━━━━━━━━━🔒\n   🚨  <b>EMERGENCY LOCK ACTIVE</b>\n🔒━━━━━━━━━━━━━━━━━━━━━━🔒\n\n` +
+    `<blockquote>⚠️ Saare non-admin users BLOCKED!\nSirf aap (admin) bot use kar sakte ho.\nUse /emergencyunlock to restore.</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /emergencyunlock ───
+bot.onText(/\/emergencyunlock/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  emergencyLocked = false;
+  await _saveSecConfig();
+  await bot.sendMessage(msg.chat.id, `🔓 <b>Emergency Lock REMOVED</b>\n<blockquote>Bot normal operation mein wapas aa gaya.</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /securitystats ───
+bot.onText(/\/securitystats/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  const totalWarned = userWarnings.size;
+  const totalWarnings = [...userWarnings.values()].reduce((s, w) => s + w.count, 0);
+  const uptime = Math.floor((Date.now() - botStartTime) / 1000);
+  const uptimeStr = `${Math.floor(uptime/3600)}h ${Math.floor((uptime%3600)/60)}m ${uptime%60}s`;
+  await bot.sendMessage(msg.chat.id,
+    `🛡️━━━━━━━━━━━━━━━━━━━━━━🛡️\n   📊  <b>ꜱᴇᴄᴜʀɪᴛʏ ᴅᴀꜱʜʙᴏᴀʀᴅ</b>\n🛡️━━━━━━━━━━━━━━━━━━━━━━🛡️\n\n` +
+    `<blockquote>` +
+    `◈ ꜱᴇᴄᴜʀɪᴛʏ ᴍᴏᴅᴇ   ▸  <b>${securityMode.toUpperCase()}</b>\n` +
+    `◈ ᴀɴᴛɪ-ꜱᴘᴀᴍ      ▸  <b>${antispamEnabled ? "✅ ON" : "❌ OFF"}</b>\n` +
+    `◈ ʜᴏɴᴇʏᴘᴏᴛ       ▸  <b>${honeypotEnabled ? "✅ ON" : "❌ OFF"}</b>\n` +
+    `◈ ᴀᴜᴛᴏ-ʙᴀɴ       ▸  <b>${autobanEnabled ? "✅ ON" : "❌ OFF"}</b>\n` +
+    `◈ ᴇᴍᴇʀɢᴇɴᴄʏ ʟᴏᴄᴋ  ▸  <b>${emergencyLocked ? "🔒 ACTIVE" : "🔓 OFF"}</b>\n\n` +
+    `◈ ʜᴏɴᴇʏᴘᴏᴛ ᴛʀᴀᴘꜱ  ▸  ${honeypotTraps.size}\n` +
+    `◈ ᴛʀɪᴘᴘᴇᴅ ᴜꜱᴇʀꜱ   ▸  ${honeypotTripped.size}\n` +
+    `◈ ᴡᴀʀɴᴇᴅ ᴜꜱᴇʀꜱ    ▸  ${totalWarned} users (${totalWarnings} total)\n` +
+    `◈ ꜱʜᴀᴅᴏᴡ ʙᴀɴɴᴇᴅ   ▸  ${shadowBanned.size}\n` +
+    `◈ ᴍᴜᴛᴇᴅ ᴜꜱᴇʀꜱ     ▸  ${mutedUsers.size}\n` +
+    `◈ ᴛʀᴜꜱᴛᴇᴅ ᴜꜱᴇʀꜱ   ▸  ${trustedUsers.size}\n` +
+    `◈ ꜰʟᴀɢɢᴇᴅ ᴜꜱᴇʀꜱ   ▸  ${flaggedUsers.size}\n` +
+    `◈ ʙʟᴏᴄᴋᴇᴅ ᴡᴏʀᴅꜱ   ▸  ${blockedWords.size}\n` +
+    `◈ ꜱᴇᴄ ʟᴏɢ ᴇɴᴛʀɪᴇꜱ  ▸  ${securityLog.length}\n` +
+    `◈ ᴍᴀx ᴡᴀʀɴɪɴɢꜱ    ▸  ${maxWarnings}\n` +
+    `◈ ᴜᴘᴛɪᴍᴇ          ▸  ${uptimeStr}` +
+    `</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /suspicious — Recent security log ───
+bot.onText(/\/suspicious/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  if (!securityLog.length) return bot.sendMessage(msg.chat.id, `🛡️ <b>Security log empty.</b>`, { parse_mode: "HTML" });
+  const recent = securityLog.slice(0, 20);
+  const lines = recent.map(e =>
+    `▸ <code>${e.userId}</code> · <b>${e.action}</b> · ${String(e.detail || "").slice(0, 40)}\n  <i>${new Date(e.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</i>`
+  ).join("\n\n");
+  await bot.sendMessage(msg.chat.id, `🛡️ <b>Security Log (last ${recent.length})</b>\n\n<blockquote>${lines}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /auditlog ───
+bot.onText(/\/auditlog/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  if (!securityLog.length) return bot.sendMessage(msg.chat.id, `📋 <b>Audit log empty.</b>`, { parse_mode: "HTML" });
+  const recent = securityLog.slice(0, 30);
+  const lines = recent.map((e, i) =>
+    `${i + 1}. [<b>${e.action}</b>] <code>${e.userId}</code> @${e.username || "N/A"}\n  └ ${String(e.detail || "").slice(0, 50)} · <i>${new Date(e.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</i>`
+  ).join("\n");
+  await bot.sendMessage(msg.chat.id, `📋 <b>Audit Log (last 30)</b>\n\n<blockquote>${lines}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /clearaudit ───
+bot.onText(/\/clearaudit/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  securityLog.length = 0;
+  await SecurityLogModel.deleteMany({}).catch(() => {});
+  await bot.sendMessage(msg.chat.id, `🧹 <b>Security/Audit log cleared.</b>`, { parse_mode: "HTML" });
+});
+
+// ─── /userhistory <userId> ───
+bot.onText(/\/userhistory (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const targetId = Number(match[1]);
+  const hist = userCommandHistory.get(targetId);
+  if (!hist?.length) return bot.sendMessage(msg.chat.id, `📋 <b>No command history for <code>${targetId}</code></b>`, { parse_mode: "HTML" });
+  const u = botUsers.get(targetId);
+  const lines = hist.slice(0, 30).map((h, i) =>
+    `${i + 1}. <code>${h.cmd}</code> · <i>${new Date(h.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</i>`
+  ).join("\n");
+  await bot.sendMessage(msg.chat.id,
+    `📋 <b>Command History</b>\n<blockquote>◈ User ▸ <code>${targetId}</code> @${u?.username || "N/A"}\n\n${lines}</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /blockword <word> ───
+bot.onText(/\/blockword (.+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const word = match[1].trim().toLowerCase();
+  blockedWords.add(word);
+  await BlockedWordModel.findOneAndUpdate({ word }, { word }, { upsert: true }).catch(() => {});
+  await bot.sendMessage(msg.chat.id, `🚫 <b>Word blocked:</b> <code>${word}</code>`, { parse_mode: "HTML" });
+});
+
+// ─── /unblockword <word> ───
+bot.onText(/\/unblockword (.+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  const word = match[1].trim().toLowerCase();
+  blockedWords.delete(word);
+  await BlockedWordModel.deleteOne({ word }).catch(() => {});
+  await bot.sendMessage(msg.chat.id, `✅ <b>Word unblocked:</b> <code>${word}</code>`, { parse_mode: "HTML" });
+});
+
+// ─── /blockedwords ───
+bot.onText(/\/blockedwords/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  if (!blockedWords.size) return bot.sendMessage(msg.chat.id, `✅ <b>No blocked words.</b>`, { parse_mode: "HTML" });
+  const list = [...blockedWords].map((w, i) => `${i + 1}. <code>${w}</code>`).join("\n");
+  await bot.sendMessage(msg.chat.id, `🚫 <b>Blocked Words (${blockedWords.size})</b>\n<blockquote>${list}</blockquote>`, { parse_mode: "HTML" });
+});
+
+// ─── /ratelimitreset <userId> ───
+bot.onText(/\/ratelimitreset (\d+)/, async (msg, match) => {
+  if (!isAdmin(msg.from.id)) return;
+  commandRateLimit.delete(Number(match[1]));
+  await bot.sendMessage(msg.chat.id, `✅ <b>Rate limit reset for <code>${match[1]}</code></b>`, { parse_mode: "HTML" });
+});
+
+// ─── /securityreport ───
+bot.onText(/\/securityreport/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  await bot.sendChatAction(chatId, "upload_document").catch(() => {});
+  const now = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+  let report = `DRS BOT — SECURITY REPORT\nGenerated: ${now}\n${"=".repeat(60)}\n\n`;
+  report += `SECURITY CONFIG\n${"-".repeat(40)}\nMode: ${securityMode}\nAnti-Spam: ${antispamEnabled}\nHoneypot: ${honeypotEnabled}\nAuto-Ban: ${autobanEnabled}\nEmergency Lock: ${emergencyLocked}\nMax Warnings: ${maxWarnings}\n\n`;
+  report += `HONEYPOT TRAPS (${honeypotTraps.size})\n${"-".repeat(40)}\n${[...honeypotTraps].join(", ") || "None"}\n\n`;
+  report += `HONEYPOT TRIGGERED (${honeypotTripped.size} users)\n${"-".repeat(40)}\n`;
+  for (const [uid, traps] of honeypotTripped) {
+    const u = botUsers.get(uid);
+    report += `User ${uid} @${u?.username || "N/A"}: ${traps.length} trap(s)\n`;
+    traps.forEach(t => { report += `  - /${t.command} at ${new Date(t.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}\n`; });
+  }
+  report += `\nWARNED USERS (${userWarnings.size})\n${"-".repeat(40)}\n`;
+  for (const [uid, w] of userWarnings) {
+    const u = botUsers.get(uid);
+    report += `User ${uid} @${u?.username || "N/A"}: ${w.count} warnings\n`;
+    (w.reasons || []).forEach(r => { report += `  - ${r}\n`; });
+  }
+  report += `\nSHADOW BANNED (${shadowBanned.size})\n${"-".repeat(40)}\n${[...shadowBanned].join(", ") || "None"}\n`;
+  report += `\nFLAGGED USERS (${flaggedUsers.size})\n${"-".repeat(40)}\n`;
+  for (const [uid, f] of flaggedUsers) {
+    const u = botUsers.get(uid);
+    report += `User ${uid} @${u?.username || "N/A"}: ${f.reason}\n`;
+  }
+  report += `\nBLOCKED WORDS (${blockedWords.size})\n${"-".repeat(40)}\n${[...blockedWords].join(", ") || "None"}\n`;
+  report += `\nSECURITY LOG (last 100)\n${"-".repeat(40)}\n`;
+  securityLog.slice(0, 100).forEach(e => {
+    report += `[${new Date(e.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] ${e.action} | User ${e.userId} @${e.username || "N/A"} | ${e.detail}\n`;
+  });
+  const buf = Buffer.from(report, "utf8");
+  await bot.sendDocument(chatId, buf, {}, { filename: `drs_security_report_${Date.now()}.txt`, contentType: "text/plain" });
+});
+
+// ============================================================
+// NEW USER COMMANDS
+// ============================================================
+
+// ─── /about ───
+bot.onText(/\/about/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  await bot.sendMessage(msg.chat.id,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n   ℹ️  <b>𝐀𝐁𝐎𝐔𝐓 𝐃𝐑𝐒 𝐁𝐎𝐓</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>◈ ɴᴀᴍᴇ     ▸  <b>DRS Giveaway Bot</b>\n◈ ᴠᴇʀꜱɪᴏɴ  ▸  <b>v3.0</b>\n◈ ɴᴇᴛᴡᴏʀᴋ  ▸  <a href="https://t.me/rchiex">DRS Network</a>\n◈ ꜱᴜᴘᴘᴏʀᴛ  ▸  <a href="https://t.me/drssupport">@drssupport</a>\n◈ ʙᴀꜱᴇ    ▸  MongoDB · Node.js · Telegram API\n◈ ꜰᴇᴀᴛᴜʀᴇꜱ ▸  Giveaway · Voting · VIP · Anti-Cheat · Security Engine</blockquote>\n\n✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } });
+});
+
+// ─── /version ───
+bot.onText(/\/version/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const uptime = Math.floor((Date.now() - botStartTime) / 1000);
+  const uptimeStr = `${Math.floor(uptime/3600)}h ${Math.floor((uptime%3600)/60)}m ${uptime%60}s`;
+  await bot.sendMessage(msg.chat.id,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n   🔢  <b>ʙᴏᴛ ᴠᴇʀꜱɪᴏɴ</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>◈ ᴠᴇʀꜱɪᴏɴ  ▸  <b>v3.0</b>\n◈ ᴜᴘᴛɪᴍᴇ   ▸  ${uptimeStr}\n◈ ᴅʙ       ▸  MongoDB\n◈ ʀᴜɴᴛɪᴍᴇ  ▸  Node.js 18+\n◈ ꜰʀᴀᴍᴇᴡᴏʀᴋ ▸  node-telegram-bot-api</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /uptime ───
+bot.onText(/\/uptime/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const uptime = Math.floor((Date.now() - botStartTime) / 1000);
+  const d = Math.floor(uptime / 86400), h = Math.floor((uptime % 86400) / 3600), m = Math.floor((uptime % 3600) / 60), s = uptime % 60;
+  await bot.sendMessage(msg.chat.id,
+    `⏱️ <b>ʙᴏᴛ ᴜᴘᴛɪᴍᴇ</b>\n<blockquote>${d}d ${h}h ${m}m ${s}s\n\n⚡ Powered by DRS Network</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /rules ───
+bot.onText(/\/rules/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  await bot.sendMessage(msg.chat.id,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n   📜  <b>ʙᴏᴛ ʀᴜʟᴇꜱ</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>1️⃣ <b>Fair Play</b> — Vote manipulation strictly banned\n\n2️⃣ <b>No Spam</b> — Repeated commands = auto-rate-limit + warning\n\n3️⃣ <b>No Hacking</b> — API exploit / bot hack attempt = permanent ban\n\n4️⃣ <b>Payments</b> — Sirf verified screenshots accepted, fake = ban\n\n5️⃣ <b>Channel Membership</b> — Channel chhoda = votes auto-deduct\n\n6️⃣ <b>Respect</b> — Abusive language = warning + ban\n\n7️⃣ <b>VIP Features</b> — Premium features ke liye VIP plan chahiye\n\n⚠️ <i>Rules tod ne par warning aur phir ban — no notice.</i></blockquote>\n\n✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } });
+});
+
+// ─── /faq ───
+bot.onText(/\/faq/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  await bot.sendMessage(msg.chat.id,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n   ❓  <b>ꜰᴀQ</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote><b>Q: Giveaway kaise banate hain?</b>\n▸ /start → 🎁 New Giveaway → wizard follow karo\n\n<b>Q: Vote kaise milte hain?</b>\n▸ Free: Channel member bano aur vote karo\n▸ Extra: INR ya ⭐ Stars se kharido\n\n<b>Q: VIP ke kya fayde hain?</b>\n▸ Custom thumbnail, unlimited giveaways, extra force-join gate\n\n<b>Q: Vote kyu cut hue?</b>\n▸ Channel chhoda → votes auto-deduct hote hain\n\n<b>Q: Payment verify nahi hui?</b>\n▸ /support se admin ko screenshot bhejo\n\n<b>Q: Bot respond nahi kar raha?</b>\n▸ /start karo, ya /support se contact karo\n\n<b>Q: Winner kaise decide hota hai?</b>\n▸ Top vote wale participants auto-selected hote hain</blockquote>\n\n✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } });
+});
+
+// ─── /terms ───
+bot.onText(/\/terms/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  await bot.sendMessage(msg.chat.id,
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n   📄  <b>ᴛᴇʀᴍꜱ ᴏꜰ ꜱᴇʀᴠɪᴄᴇ</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `<blockquote>▸ Bot use karna = yeh terms accept karna\n▸ Payments non-refundable hain\n▸ Fake payments/screenshots = permanent ban\n▸ DRS Network kisi bhi time rules change kar sakta hai\n▸ Giveaway winners bot algorithm se decide hote hain\n▸ API abuse ya bot hack attempt → legal action possible\n▸ Admin ka decision final hoga</blockquote>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } });
+});
+
+// ─── /countdown ───
+bot.onText(/\/countdown(.*)/, async (msg, match) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  const chatId = msg.chat.id;
+  const candidates = [...giveaways.values()].filter(g =>
+    g.active && g.autoEnd && g.endTime && (g.creatorId === userId || isAdmin(userId))
+  );
+  if (!candidates.length) return bot.sendMessage(chatId,
+    `⏳ <b>ᴄᴏᴜɴᴛᴅᴏᴡɴ</b>\n<blockquote>Koi active auto-end giveaway nahi mila.</blockquote>`,
+    { parse_mode: "HTML" });
+  let text = `⏳━━━━━━━━━━━━━━━━━━━━━━⏳\n   ⏰  <b>ɢɪᴠᴇᴀᴡᴀʏ ᴄᴏᴜɴᴛᴅᴏᴡɴ</b>\n⏳━━━━━━━━━━━━━━━━━━━━━━⏳\n\n<blockquote>`;
+  for (const g of candidates.slice(0, 5)) {
+    const remaining = new Date(g.endTime).getTime() - Date.now();
+    const h = Math.max(0, Math.floor(remaining / 3600000));
+    const m = Math.max(0, Math.floor((remaining % 3600000) / 60000));
+    const s = Math.max(0, Math.floor((remaining % 60000) / 1000));
+    text += `🎁 <b>${g.title.slice(0, 30)}</b>\n   └ ⏱️ ${remaining > 0 ? `${h}h ${m}m ${s}s remaining` : "⌛ Ending soon..."}\n\n`;
+  }
+  text += `</blockquote>`;
+  await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
+});
+
+// ─── /rank ───
+bot.onText(/\/rank/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  const allCreators = {};
+  for (const g of giveaways.values()) allCreators[g.creatorId] = (allCreators[g.creatorId] || 0) + 1;
+  const sorted = Object.entries(allCreators).sort((a, b) => b[1] - a[1]);
+  const rank = sorted.findIndex(([id]) => Number(id) === userId) + 1;
+  const count = allCreators[userId] || 0;
+  const u = botUsers.get(userId);
+  await bot.sendMessage(msg.chat.id,
+    `🏅━━━━━━━━━━━━━━━━━━━━━━🏅\n   <b>ᴜꜱᴇʀ ʀᴀɴᴋ</b>\n🏅━━━━━━━━━━━━━━━━━━━━━━🏅\n\n` +
+    `<blockquote>◈ ɴᴀᴍᴇ       ▸  ${u?.firstName || "User"}\n◈ ɢɪᴠᴇᴀᴡᴀʏꜱ  ▸  ${count}\n◈ ɢʟᴏʙᴀʟ ʀᴀɴᴋ ▸  ${rank > 0 ? "#" + rank : "Unranked"}\n◈ ᴛᴏᴛᴀʟ ᴜꜱᴇʀꜱ  ▸  ${sorted.length}</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /invite ───
+bot.onText(/\/invite/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  let botUsername = "";
+  try { const me = await bot.getMe(); botUsername = me.username; } catch {}
+  await bot.sendMessage(msg.chat.id,
+    `🔗━━━━━━━━━━━━━━━━━━━━━━🔗\n   <b>ɪɴᴠɪᴛᴇ ʙᴏᴛ ᴛᴏ ᴄʜᴀɴɴᴇʟ</b>\n🔗━━━━━━━━━━━━━━━━━━━━━━🔗\n\n` +
+    `<blockquote>Apne channel mein bot admin banao:\n\n1️⃣ Channel Settings → Administrators\n2️⃣ Add Admin → @${botUsername}\n3️⃣ Post Messages ✅ do\n4️⃣ /start → New Giveaway banao!</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /notify ───
+bot.onText(/\/notify/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  await bot.sendMessage(msg.chat.id,
+    `🔔 <b>ɴᴏᴛɪꜰɪᴄᴀᴛɪᴏɴꜱ</b>\n<blockquote>DRS Bot aapko in events pe notify karta hai:\n\n▸ Giveaway winners announce\n▸ VIP expiry warning (1 day pehle)\n▸ Payment approved/rejected\n▸ Support reply from admin\n▸ Vote panel alerts\n\nNotifications always on hain. Issue ho toh /support pe contact karo.</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /refer ───
+bot.onText(/\/refer/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  let botUsername = "";
+  try { const me = await bot.getMe(); botUsername = me.username; } catch {}
+  const userId = msg.from.id;
+  await bot.sendMessage(msg.chat.id,
+    `🎁━━━━━━━━━━━━━━━━━━━━━━🎁\n   <b>ʀᴇꜰᴇʀʀᴀʟ ʟɪɴᴋ</b>\n🎁━━━━━━━━━━━━━━━━━━━━━━🎁\n\n` +
+    `<blockquote>Apna referral link share karo:\n\n<code>https://t.me/${botUsername}?start=ref_${userId}</code>\n\nFriends ko DRS Bot invite karo aur network badhao! 🚀</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// ─── /feedback ───
+bot.onText(/\/feedback/, async (msg) => {
+  if (msg.chat.type !== "private") return;
+  const userId = msg.from.id;
+  userState.set(userId, { step: "awaiting_support_message" });
+  await bot.sendMessage(msg.chat.id,
+    `💬━━━━━━━━━━━━━━━━━━━━━━💬\n   <b>ꜱᴇɴᴅ ꜰᴇᴇᴅʙᴀᴄᴋ</b>\n💬━━━━━━━━━━━━━━━━━━━━━━💬\n\n` +
+    `<blockquote>Apna feedback bhejo — improvements, bugs, suggestions sab welcome hain!\n\nAdmin dekh lega aur reply karega. 🙏</blockquote>`,
+    { parse_mode: "HTML", reply_markup: cancelKeyboard() });
+});
+
+// ============================================================
+// CLEANDB CALLBACK HANDLER
+// ============================================================
+
+// Handled inside the main callback query handler via data.startsWith("cleandb:")
+// Added below alongside existing callback handlers
+
+// ============================================================
+// UNKNOWN COMMAND HANDLER
+// ============================================================
+
+const KNOWN_COMMANDS = new Set([
+  "start","help","membership","myplan","leaderboard","mystats","botstatus","ping","myid",
+  "createpost","topvoters","active","winners","glink","support","adminhelp","stats",
+  "broadcast","loud","send","sendloud","pin","allchannels","allgiveaways",
+  "givemem","removemem","extendmem","deductmem","listmem","meminfo","setplan",
+  "ban","unban","userinfo","listusers","dm","reply","exportusers",
+  "addvotes","removevotes","setwinner","endgiveaway","cancelgiveaway","resetvotes",
+  "clonegiveaway","giveawayreport","announce","remindvote","voteleaderboard",
+  "setstar","setinr","setpanelthreshold","schedule","schedulelist","cancelschedule",
+  "setwelcomemsg","clearwelcomemsg","setwelcomeimageurl","clearwelcomeimage",
+  "setmembershipqr","imageinfo","setforcejoin","forcejoininfo","setfreelimit",
+  "perms","viewperms","setperms","paystats","removepay","clearallpending","maintenance",
+  "cleandb","setstartimage","clearstates","gcount","topusers",
+  "securityhelp","honeypot","honeytrap","removetrap","listtraps","honeypotlist","cleanhoneypot",
+  "warnuser","warnings","clearwarnings","muteuser","unmuteuser","mutedlist",
+  "shadowban","unshadowban","shadowlist","trustuser","untrustuser","trustedlist",
+  "flaguser","unflaguser","flaggedlist","autoban","setmaxwarns","securitymode",
+  "antispam","emergencylock","emergencyunlock","securitystats","suspicious","auditlog",
+  "clearaudit","userhistory","blockword","unblockword","blockedwords","ratelimitreset","securityreport",
+  "about","version","uptime","rules","faq","terms","countdown","rank","invite","notify","refer","feedback"
+]);
+
+bot.on("message", async (msg) => {
+  try {
+    if (msg.chat.type !== "private") return;
+    if (!msg.text?.startsWith("/")) return;
+    const cmd = msg.text.split(" ")[0].split("@")[0].slice(1).toLowerCase();
+    if (KNOWN_COMMANDS.has(cmd)) return;
+    const userId = msg.from.id;
+    await bot.sendMessage(msg.chat.id,
+      `❓━━━━━━━━━━━━━━━━━━━━━━❓\n   <b>ᴜɴᴋɴᴏᴡɴ ᴄᴏᴍᴍᴀɴᴅ</b>\n❓━━━━━━━━━━━━━━━━━━━━━━❓\n\n` +
+      `<blockquote>◈ Command <code>/${cmd}</code> exist nahi karta.\n\n📖 Saare commands:\n/help — User commands\n${isAdmin(userId) ? "/adminhelp — Admin commands\n/securityhelp — Security commands" : ""}\n\n💡 Koi problem ho toh /support karo.</blockquote>`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "📖 ʜᴇʟᴘ", callback_data: "show_help" }, { text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
+    ).catch(() => {});
+  } catch (e) { console.error("unknown_cmd handler error:", e.message); }
 });
 
 // ============================================================
@@ -6689,83 +7663,116 @@ async function main() {
         { command: "support",      description: "💬 Contact Support" }
       ]);
 
-      // Register full admin command list — visible only in admin's private chat
+      // Register admin command list — exactly 100 commands (Telegram limit)
       await bot.setMyCommands([
-        { command: "start",                description: "🎁 Open DRS Giveaway Bot" },
-        { command: "help",                 description: "📖 Full user guide & all commands" },
-        { command: "membership",           description: "👑 Get Premium Membership" },
-        { command: "myplan",               description: "📋 Check my membership status" },
-        { command: "leaderboard",          description: "🏆 Live leaderboard of active giveaway" },
-        { command: "mystats",              description: "📊 Personal giveaway stats" },
-        { command: "botstatus",            description: "🤖 Quick bot health & stats" },
-        { command: "ping",                 description: "🏓 Check bot response time" },
-        { command: "myid",                 description: "🪪 Your Telegram user ID" },
-        { command: "createpost",           description: "📢 Create a channel post" },
-        { command: "topvoters",            description: "🥇 Top participants ranking" },
-        { command: "active",               description: "🟢 Show all live giveaways" },
-        { command: "winners",              description: "🏆 View winners of a giveaway" },
-        { command: "glink",                description: "🔗 Get participation link" },
-        { command: "support",              description: "💬 Contact Support — @drssupport" },
-        { command: "adminhelp",            description: "👑 Admin command list" },
-        { command: "stats",                description: "📊 Bot statistics dashboard" },
-        { command: "broadcast",            description: "📢 Silent broadcast — Users/Channels/Groups/All" },
-        { command: "loud",                 description: "🔊 LOUD broadcast — Users/Channels/Groups/All" },
-        { command: "send",                 description: "📩 Send message to specific chat" },
-        { command: "sendloud",             description: "🔊 LOUD send to specific chat" },
-        { command: "pin",                  description: "📌 Send & pin in channel" },
-        { command: "allchannels",          description: "📋 List all registered channels" },
-        { command: "allgiveaways",         description: "🎁 List all giveaways" },
-        { command: "givemem",              description: "💳 Give membership to user" },
-        { command: "removemem",            description: "🗑️ Revoke user membership" },
-        { command: "extendmem",            description: "➕ Extend user membership" },
-        { command: "listmem",              description: "📋 List all active VIP members" },
-        { command: "meminfo",              description: "ℹ️ Check any user's membership" },
-        { command: "setplan",              description: "💰 Update plan pricing" },
-        { command: "ban",                  description: "🚫 Ban a user" },
-        { command: "unban",                description: "✅ Unban a user" },
-        { command: "userinfo",             description: "👤 Full user profile" },
-        { command: "listusers",            description: "👥 Paginated list of all users" },
-        { command: "dm",                   description: "📩 Direct message any user" },
-        { command: "addvotes",             description: "➕ Manually add votes to participant" },
-        { command: "removevotes",          description: "➖ Remove votes from participant" },
-        { command: "endgiveaway",          description: "🏁 Force-close a giveaway + announce winners" },
-        { command: "cancelgiveaway",       description: "🚫 Cancel giveaway silently (no winners)" },
-        { command: "resetvotes",           description: "🔄 Reset all votes in a giveaway" },
-        { command: "setwinner",            description: "🏆 Set winner count for giveaway" },
-        { command: "clonegiveaway",        description: "📋 Clone a giveaway" },
-        { command: "announce",             description: "📢 Message all giveaway participants" },
-        { command: "remindvote",           description: "🔔 Send vote reminder to participants" },
-        { command: "voteleaderboard",      description: "🌍 Global top 20 voters" },
-        { command: "giveawayreport",       description: "📄 Download giveaway report .txt" },
-        { command: "setstar",              description: "⭐ Set votes per Telegram Star" },
-        { command: "setinr",               description: "₹ Set votes per INR paid" },
-        { command: "setpanelthreshold",    description: "🚨 Set vote panel alert threshold per giveaway" },
-        { command: "schedule",             description: "⏰ Schedule a broadcast at IST time" },
-        { command: "schedulelist",         description: "📋 View pending scheduled broadcasts" },
-        { command: "cancelschedule",       description: "❌ Cancel a scheduled broadcast" },
-        { command: "paystats",             description: "💰 Pending payments dashboard" },
-        { command: "exportusers",          description: "📁 Download all users as .txt" },
-        { command: "maintenance",          description: "🔧 Toggle maintenance mode on/off" },
-        { command: "setwelcomemsg",        description: "✏️ Set custom welcome message" },
-        { command: "clearwelcomemsg",      description: "🗑️ Restore default welcome message" },
-        { command: "setwelcomeimageurl",   description: "🖼️ Set welcome image via URL (spoiler)" },
-        { command: "clearwelcomeimage",    description: "🗑️ Remove welcome banner" },
-        { command: "setmembershipqr",      description: "📸 Upload membership QR code" },
-        { command: "imageinfo",            description: "ℹ️ Check image status" },
-        { command: "setforcejoin",         description: "📢 Configure force join channel" },
-        { command: "forcejoininfo",        description: "ℹ️ View force join config" },
-        { command: "setfreelimit",         description: "🆓 Set free giveaway quota" },
-        { command: "perms",                description: "🔐 Toggle user permissions" },
-        { command: "viewperms",            description: "🔐 View user permissions" },
-        { command: "setperms",             description: "🔐 Set a specific permission" },
-        { command: "allchannels",          description: "📋 List all registered channels" },
-        { command: "cleandb",              description: "🧹 Clean junk/expired data" },
-        { command: "removepay",            description: "🗑️ Remove a pending payment by ID" },
-        { command: "clearallpending",      description: "🗑️ Clear ALL pending payments at once" },
-        { command: "setstartimage",        description: "🖼️ Set start/welcome image URL (one-liner)" },
-        { command: "clearstates",          description: "🧹 Clear all stuck user states" },
-        { command: "gcount",               description: "🎁 Quick giveaway count breakdown" },
-        { command: "topusers",             description: "🏆 Top users by giveaways created" }
+        // ── User commands (15) ──
+        { command: "start",             description: "🎁 Open DRS Giveaway Bot" },
+        { command: "help",              description: "📖 Full user guide & all commands" },
+        { command: "membership",        description: "👑 Get Premium Membership" },
+        { command: "myplan",            description: "📋 Check my membership status" },
+        { command: "leaderboard",       description: "🏆 Live leaderboard of active giveaway" },
+        { command: "mystats",           description: "📊 Personal giveaway stats" },
+        { command: "botstatus",         description: "🤖 Quick bot health & stats" },
+        { command: "ping",              description: "🏓 Check bot response time" },
+        { command: "myid",              description: "🪪 Your Telegram user ID" },
+        { command: "createpost",        description: "📢 Create a channel post" },
+        { command: "topvoters",         description: "🥇 Top participants ranking" },
+        { command: "active",            description: "🟢 Show all live giveaways" },
+        { command: "winners",           description: "🏆 View winners of a giveaway" },
+        { command: "glink",             description: "🔗 Get participation link" },
+        { command: "support",           description: "💬 Contact Support — @drssupport" },
+        // ── Admin core (6) ──
+        { command: "adminhelp",         description: "👑 Admin command list (4 parts + security)" },
+        { command: "stats",             description: "📊 Bot statistics dashboard" },
+        { command: "broadcast",         description: "📢 Silent broadcast — Users/Channels/All" },
+        { command: "loud",              description: "🔊 LOUD broadcast — Users/Channels/All" },
+        { command: "send",              description: "📩 Send message to specific chat" },
+        { command: "pin",               description: "📌 Send & pin in channel" },
+        // ── Giveaway management (13) ──
+        { command: "allgiveaways",      description: "🎁 List all giveaways" },
+        { command: "addvotes",          description: "➕ Manually add votes to participant" },
+        { command: "removevotes",       description: "➖ Remove votes from participant" },
+        { command: "endgiveaway",       description: "🏁 Force-close a giveaway + announce winners" },
+        { command: "cancelgiveaway",    description: "🚫 Cancel giveaway silently (no winners)" },
+        { command: "resetvotes",        description: "🔄 Reset all votes in a giveaway" },
+        { command: "setwinner",         description: "🏆 Set winner count for giveaway" },
+        { command: "clonegiveaway",     description: "📋 Clone a giveaway" },
+        { command: "announce",          description: "📢 Message all giveaway participants" },
+        { command: "remindvote",        description: "🔔 Send vote reminder to participants" },
+        { command: "voteleaderboard",   description: "🌍 Global top 20 voters" },
+        { command: "giveawayreport",    description: "📄 Download giveaway report .txt" },
+        { command: "setpanelthreshold", description: "🚨 Set vote panel alert threshold" },
+        // ── Membership (7) ──
+        { command: "givemem",           description: "💳 Give membership to user" },
+        { command: "removemem",         description: "🗑️ Revoke user membership" },
+        { command: "extendmem",         description: "➕ Extend user membership" },
+        { command: "listmem",           description: "📋 List all active VIP members" },
+        { command: "meminfo",           description: "ℹ️ Check any user's membership" },
+        { command: "setplan",           description: "💰 Update plan pricing" },
+        { command: "setstar",           description: "⭐ Set votes per Telegram Star" },
+        // ── User management (7) ──
+        { command: "ban",               description: "🚫 Ban a user" },
+        { command: "unban",             description: "✅ Unban a user" },
+        { command: "userinfo",          description: "👤 Full user profile" },
+        { command: "listusers",         description: "👥 Paginated list of all users" },
+        { command: "dm",                description: "📩 Direct message any user" },
+        { command: "reply",             description: "↩️ Reply to a support ticket" },
+        { command: "exportusers",       description: "📁 Download all users as .txt" },
+        // ── Config & channels (11) ──
+        { command: "allchannels",       description: "📋 List all registered channels" },
+        { command: "setinr",            description: "₹ Set votes per INR paid" },
+        { command: "schedule",          description: "⏰ Schedule a broadcast at IST time" },
+        { command: "schedulelist",      description: "📋 View pending scheduled broadcasts" },
+        { command: "cancelschedule",    description: "❌ Cancel a scheduled broadcast" },
+        { command: "paystats",          description: "💰 Pending payments dashboard" },
+        { command: "maintenance",       description: "🔧 Toggle maintenance mode on/off" },
+        { command: "setwelcomemsg",     description: "✏️ Set custom welcome message" },
+        { command: "clearwelcomemsg",   description: "🗑️ Restore default welcome message" },
+        { command: "setwelcomeimageurl",description: "🖼️ Set welcome image via URL (spoiler)" },
+        { command: "setmembershipqr",   description: "📸 Upload membership QR code" },
+        // ── DB & utility (8) ──
+        { command: "setforcejoin",      description: "📢 Configure force join channel" },
+        { command: "setfreelimit",      description: "🆓 Set free giveaway quota" },
+        { command: "perms",             description: "🔐 Toggle user permissions" },
+        { command: "cleandb",           description: "🧹 Interactive selective DB cleanup" },
+        { command: "removepay",         description: "🗑️ Remove a pending payment by ID" },
+        { command: "clearallpending",   description: "🗑️ Clear ALL pending payments at once" },
+        { command: "gcount",            description: "🎁 Quick giveaway count breakdown" },
+        { command: "topusers",          description: "🏆 Top users by giveaways created" },
+        // ── Security — 33 commands ──
+        { command: "securityhelp",      description: "🛡️ Full 40-cmd security reference" },
+        { command: "securitystats",     description: "📊 Full security dashboard" },
+        { command: "emergencylock",     description: "🔒 Emergency lock — block all users" },
+        { command: "emergencyunlock",   description: "🔓 Remove emergency lock" },
+        { command: "securitymode",      description: "🌐 Set security mode (strict/normal/off)" },
+        { command: "antispam",          description: "⚡ Toggle anti-spam protection" },
+        { command: "honeypot",          description: "🍯 Enable/disable honeypot traps" },
+        { command: "honeytrap",         description: "🍯 Add a honeypot trap command" },
+        { command: "removetrap",        description: "🗑️ Remove a honeypot trap" },
+        { command: "listtraps",         description: "📋 List all active traps" },
+        { command: "honeypotlist",      description: "🍯 Users who triggered honeypot traps" },
+        { command: "warnuser",          description: "⚠️ Warn a user (tracked in DB)" },
+        { command: "warnings",          description: "⚠️ Check user warning count + reasons" },
+        { command: "clearwarnings",     description: "✅ Clear all warnings for a user" },
+        { command: "autoban",           description: "🚫 Toggle auto-ban on max warnings" },
+        { command: "setmaxwarns",       description: "⚠️ Set auto-ban warning threshold" },
+        { command: "muteuser",          description: "🔇 Mute a user (bot ignores them)" },
+        { command: "unmuteuser",        description: "🔊 Unmute a user" },
+        { command: "mutedlist",         description: "🔇 List all muted users" },
+        { command: "shadowban",         description: "👻 Ghost ban (user unaware)" },
+        { command: "unshadowban",       description: "👻 Remove shadow ban" },
+        { command: "shadowlist",        description: "👻 List all shadow banned users" },
+        { command: "trustuser",         description: "✅ Whitelist user (bypass rate limit)" },
+        { command: "untrustuser",       description: "✅ Remove from trusted list" },
+        { command: "trustedlist",       description: "✅ View all trusted users" },
+        { command: "flaguser",          description: "🚩 Flag suspicious user for monitoring" },
+        { command: "unflaguser",        description: "🚩 Remove user flag" },
+        { command: "blockword",         description: "🚫 Block a word/phrase in messages" },
+        { command: "unblockword",       description: "✅ Unblock a word/phrase" },
+        { command: "blockedwords",      description: "🚫 List all blocked words" },
+        { command: "suspicious",        description: "🛡️ Last 20 security events" },
+        { command: "auditlog",          description: "📋 Last 30 audit log entries" },
+        { command: "securityreport",    description: "📄 Download full security report .txt" }
       ], { scope: { type: "chat", chat_id: MAIN_ADMIN_ID } });
 
       console.log("✅ Bot commands registered!");

@@ -428,8 +428,68 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/setfreelimit` | `/setfreelimit <n\|unlimited>` | Set free giveaway quota |
 | `/perms` | `/perms <userId>` | Toggle user permissions (button UI) |
 | `/allchannels` | `/allchannels` | List all registered channels + groups |
-| `/cleandb` | `/cleandb` | Clean expired data from MongoDB |
-| `/adminhelp` | `/adminhelp` | Full admin command reference |
+| `/cleandb` | `/cleandb` | Interactive selective cleanup — choose giveaways/payments/memberships/VIP/seclogs |
+| `/adminhelp` | `/adminhelp` | Full admin command reference (4 parts including security) |
+
+#### Security & Protection Commands *(NEW — v3.0)*
+
+| Command | Usage | Description |
+|---|---|---|
+| `/securityhelp` | `/securityhelp` | Full 40-command security reference (600+ words, 3 parts) |
+| `/honeypot` | `/honeypot on\|off` | Enable/disable honeypot trap system |
+| `/honeytrap` | `/honeytrap <cmd>` | Add a fake command as honeypot trap |
+| `/removetrap` | `/removetrap <cmd>` | Remove a honeypot trap |
+| `/listtraps` | `/listtraps` | List all active honeypot traps |
+| `/honeypotlist` | `/honeypotlist` | Users who triggered traps + timestamps |
+| `/cleanhoneypot` | `/cleanhoneypot` | Clear honeypot triggered-users list |
+| `/warnuser` | `/warnuser <id> [reason]` | Manually warn a user |
+| `/warnings` | `/warnings <id>` | Check user's warning count + reasons |
+| `/clearwarnings` | `/clearwarnings <id>` | Clear all warnings for a user |
+| `/setmaxwarns` | `/setmaxwarns <n>` | Set auto-ban threshold (1–20, default 3) |
+| `/autoban` | `/autoban on\|off` | Toggle auto-ban when max warnings reached |
+| `/muteuser` | `/muteuser <id>` | Mute a user (bot ignores their messages) |
+| `/unmuteuser` | `/unmuteuser <id>` | Unmute a user |
+| `/mutedlist` | `/mutedlist` | List all muted users |
+| `/shadowban` | `/shadowban <id>` | Ghost ban — user gets no response, doesn't know they're banned |
+| `/unshadowban` | `/unshadowban <id>` | Remove shadow ban |
+| `/shadowlist` | `/shadowlist` | List all shadow-banned users |
+| `/trustuser` | `/trustuser <id>` | Whitelist user (bypasses rate limit + honeypot) |
+| `/untrustuser` | `/untrustuser <id>` | Remove from trusted list |
+| `/trustedlist` | `/trustedlist` | View all trusted users |
+| `/flaguser` | `/flaguser <id> [reason]` | Flag suspicious user for monitoring |
+| `/unflaguser` | `/unflaguser <id>` | Remove flag |
+| `/flaggedlist` | `/flaggedlist` | List all flagged users |
+| `/securitymode` | `/securitymode strict\|normal\|off` | Set rate-limit mode |
+| `/antispam` | `/antispam on\|off` | Toggle flood/spam protection |
+| `/emergencylock` | `/emergencylock` | Block ALL non-admin users instantly |
+| `/emergencyunlock` | `/emergencyunlock` | Restore normal access |
+| `/securitystats` | `/securitystats` | Full security dashboard |
+| `/suspicious` | `/suspicious` | Last 20 security log events |
+| `/auditlog` | `/auditlog` | Last 30 detailed audit log entries |
+| `/clearaudit` | `/clearaudit` | Clear security + audit log |
+| `/userhistory` | `/userhistory <id>` | Last 30 commands sent by a user |
+| `/blockword` | `/blockword <word>` | Block a word/phrase from all messages |
+| `/unblockword` | `/unblockword <word>` | Unblock a word/phrase |
+| `/blockedwords` | `/blockedwords` | List all blocked words/phrases |
+| `/ratelimitreset` | `/ratelimitreset <id>` | Reset user's rate limit counter |
+| `/securityreport` | `/securityreport` | Download full security report as .txt |
+
+#### New User Commands *(NEW — v3.0)*
+
+| Command | Description |
+|---|---|
+| `/about` | About this bot (DRS Network info, features, version) |
+| `/version` | Bot version, uptime, runtime info |
+| `/uptime` | Bot uptime in days/hours/minutes/seconds |
+| `/rules` | Bot usage rules (7 rules — fair play, no spam, payments, etc.) |
+| `/faq` | 7 frequently asked questions with answers |
+| `/terms` | Terms of service |
+| `/countdown` | Timer countdown for your active auto-end giveaways |
+| `/rank` | Your global rank by number of giveaways created |
+| `/invite` | Step-by-step guide to invite bot to channel |
+| `/notify` | Info about bot notification events |
+| `/refer` | Your personal referral link |
+| `/feedback` | Send feedback/suggestions to admin |
 
 ---
 
