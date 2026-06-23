@@ -35,6 +35,7 @@ const giveawaySchema = new mongoose.Schema({
   endTime: Date,
   paymentMode: { type: String, default: "none" },
   qrFileId: String,
+  upiId: { type: String, default: null },
   votesPerInr: { type: Number, default: 10 },
   votesPerStar: { type: Number, default: 5 },
   extraForceJoin: { type: mongoose.Schema.Types.Mixed, default: null },
@@ -1880,7 +1881,11 @@ bot.on("callback_query", async (query) => {
         caption:
           `🇮🇳 <b>PAY VIA UPI/QR</b>\n\n` +
           `━━━━━━━━━━━━━━━━━━━━\n` +
-          `<blockquote>◈ Rate: <b>${g.votesPerInr} Votes</b> per ₹1\n\nSteps:\n1️⃣ Scan the QR code above\n2️⃣ Pay your desired amount\n3️⃣ Take screenshot of payment\n4️⃣ Send screenshot here ↓</blockquote>\n` +
+          `<blockquote>◈ Rate: <b>${g.votesPerInr} Votes</b> per ₹1\n` +
+          (g.upiId ? `◈ UPI ID: <code>${h(g.upiId)}</code>\n` : "") +
+          `\nSteps:\n1️⃣ Scan the QR code above\n2️⃣ Pay your desired amount\n` +
+          (g.upiId ? `   (or send directly to UPI ID above)\n` : "") +
+          `3️⃣ Take screenshot of payment\n4️⃣ Send screenshot here ↓</blockquote>\n` +
           `━━━━━━━━━━━━━━━━━━━━`,
         parse_mode: "HTML"
       });
@@ -1902,19 +1907,18 @@ bot.on("callback_query", async (query) => {
       await bot.answerCallbackQuery(query.id, { text: "❌ You must join the giveaway first!", show_alert: true }).catch(() => {});
       return;
     }
-    try {
-      await bot.sendInvoice(
-        chatId,
-        `Vote Pack — ${h(g.title)}`,
-        `${g.votesPerStar} votes ke liye 1 Telegram Star do`,
-        `paid_vote_${gId}_${userId}`,
-        "", "XTR",
-        [{ label: `${g.votesPerStar} Votes`, amount: 1 }]
-      );
-    } catch (e) {
-      console.error("Stars invoice error:", e.message);
-      await bot.sendMessage(chatId, `<b>Error:</b> ${h(e.message)}`, { parse_mode: "HTML" });
-    }
+    userState.set(userId, { step: "awaiting_stars_quantity", giveawayId: gId });
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+    await bot.sendMessage(chatId,
+      `⭐ <b>BUY VOTES WITH STARS</b>\n` +
+      `<i>${h(g.title)}</i>\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `<blockquote>◈ Rate: <b>${g.votesPerStar} votes</b> per 1 ⭐ Star\n\n` +
+      `How many Stars do you want to spend?\n\nExample: <code>5</code> → 5 ⭐ = ${g.votesPerStar * 5} votes</blockquote>\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📝 <b>Type the number of Stars below:</b>`,
+      { parse_mode: "HTML", reply_markup: backKeyboard(`buy_votes:${gId}`) }
+    );
     return;
   }
 
@@ -2800,6 +2804,7 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
     endTime: state.endTime || null,
     paymentMode: state.currency || "none",
     qrFileId: qrFileId || state.qrFileId || null,
+    upiId: state.upiId || null,
     votesPerInr: state.votesPerInr || 10,
     votesPerStar: state.votesPerStar || 5,
     customPhotoId: state.customPhotoId || null,
@@ -3081,12 +3086,12 @@ bot.on("message", async (msg) => {
 
     if (state.step === "qr_upload") {
       state.qrFileId = fileId;
-      state.step = "inr_rate";
+      state.step = "upi_id";
       userState.set(userId, state);
       await bot.sendMessage(chatId,
-        `🇮🇳 <b>SET INR VOTE RATE</b>\n\n` +
+        `🇮🇳 <b>SET UPI ID</b>\n\n` +
         `━━━━━━━━━━━━━━━━━━━━\n` +
-        `<blockquote>How many votes per ₹1?\n\nExample: <code>45</code> → ₹1 = 45 votes</blockquote>`,
+        `<blockquote>Apna UPI ID enter karein jahan users payment karenge.\n\nExample: <code>yourname@upi</code> ya <code>9876543210@paytm</code></blockquote>`,
         { parse_mode: "HTML", reply_markup: backKeyboard("cancel_flow") }
       );
       return;
@@ -3268,6 +3273,21 @@ bot.on("message", async (msg) => {
         { parse_mode: "HTML" }
       );
     } catch {}
+    // Channel notification for paid votes approved
+    if (g.channelId) {
+      try {
+        await bot.sendMessage(g.channelId,
+          `💰 <b>Paid Votes Purchased!</b>\n\n` +
+          `<blockquote>` +
+          `◈ Participant  ▸  <b>${h(participant.name)}</b>\n` +
+          `◈ Votes Added  ▸  +<b>${votes}</b> 🗳️\n` +
+          `◈ Method       ▸  🇮🇳 INR/UPI\n` +
+          `◈ Giveaway     ▸  <b>${h(g.title)}</b>` +
+          `</blockquote>`,
+          { parse_mode: "HTML" }
+        );
+      } catch {}
+    }
     return;
   }
 
@@ -3379,6 +3399,52 @@ bot.on("message", async (msg) => {
     userState.set(userId, state);
     await bot.sendMessage(chatId, `✅ <b>Will end on: ${h(formatted)} IST</b>`, { parse_mode: "HTML" });
     await askPaidVotes(chatId);
+    return;
+  }
+
+  if (state.step === "awaiting_stars_quantity") {
+    const qty = parseInt(text, 10);
+    if (isNaN(qty) || qty < 1) {
+      await bot.sendMessage(chatId, "❌ Please enter a valid number of Stars (minimum 1).", { parse_mode: "HTML" });
+      return;
+    }
+    const gId = state.giveawayId;
+    const g = getGiveaway(gId);
+    if (!g) { userState.delete(userId); return; }
+    const participant = g.participants.get(userId);
+    if (!participant) { userState.delete(userId); return; }
+    userState.delete(userId);
+    try {
+      await bot.sendInvoice(
+        chatId,
+        `Vote Pack — ${h(g.title)}`,
+        `${qty} Stars = ${qty * g.votesPerStar} votes for ${h(g.title)}`,
+        `paid_vote_${gId}_${userId}`,
+        "", "XTR",
+        [{ label: `${qty * g.votesPerStar} Votes`, amount: qty }]
+      );
+    } catch (e) {
+      console.error("Stars invoice error:", e.message);
+      await bot.sendMessage(chatId, `❌ <b>Error sending invoice:</b> ${h(e.message)}`, { parse_mode: "HTML" });
+    }
+    return;
+  }
+
+  if (state.step === "upi_id") {
+    const upiIdVal = text.trim();
+    if (!upiIdVal || upiIdVal.length < 3) {
+      await bot.sendMessage(chatId, "❌ Please enter a valid UPI ID (e.g. yourname@upi).");
+      return;
+    }
+    state.upiId = upiIdVal;
+    state.step = "inr_rate";
+    userState.set(userId, state);
+    await bot.sendMessage(chatId,
+      `🇮🇳 <b>SET INR VOTE RATE</b>\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `<blockquote>How many votes per ₹1?\n\nExample: <code>45</code> → ₹1 = 45 votes</blockquote>`,
+      { parse_mode: "HTML", reply_markup: backKeyboard("cancel_flow") }
+    );
     return;
   }
 
@@ -3531,10 +3597,13 @@ bot.on("message", async (msg) => {
     await saveGiveaway(g);
     await updateChannelPost(g, participant);
     await bot.sendMessage(chatId,
-      `<b>✅ Stars Payment Done!</b>\n\n` +
-      `<b>${votesToAdd} votes</b> add ho gaye!\n` +
-      `Stars spent: <b>${stars} ⭐</b>\n` +
-      `Current votes: <b>${participant.votes}</b>`,
+      `⭐ <b>Stars Payment Successful!</b>\n\n` +
+      `<blockquote>` +
+      `◈ Stars Spent  ▸  <b>${stars} ⭐</b>\n` +
+      `◈ Votes Added  ▸  +<b>${votesToAdd}</b> 🗳️\n` +
+      `◈ Total Votes  ▸  <b>${participant.votes}</b>\n` +
+      `◈ Giveaway     ▸  <b>${h(g.title)}</b>` +
+      `</blockquote>`,
       { parse_mode: "HTML" }
     );
     const su = botUsers.get(userId);
@@ -3551,6 +3620,21 @@ bot.on("message", async (msg) => {
       `◈ Giveaway ▸  <b>${h(g.title)}</b>` +
       `</blockquote>`
     );
+    // Channel notification for Stars paid votes
+    if (g.channelId) {
+      try {
+        await bot.sendMessage(g.channelId,
+          `⭐ <b>Stars Votes Purchased!</b>\n\n` +
+          `<blockquote>` +
+          `◈ Participant  ▸  <b>${h(participant.name)}</b>\n` +
+          `◈ Stars Spent  ▸  <b>${stars} ⭐</b>\n` +
+          `◈ Votes Added  ▸  +<b>${votesToAdd}</b> 🗳️\n` +
+          `◈ Giveaway     ▸  <b>${h(g.title)}</b>` +
+          `</blockquote>`,
+          { parse_mode: "HTML" }
+        );
+      } catch {}
+    }
     return;
   }
 });
@@ -3825,16 +3909,16 @@ bot.onText(/\/help/, async (msg) => {
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
     `<b>🎯 ᴀʟʟ ᴄᴏᴍᴍᴀɴᴅꜱ</b>\n` +
     `<blockquote>` +
-    `/start — ᴍᴀɪɴ ᴍᴇɴᴜ (ᴅɪɴɢ ᴅᴏɴɢ ᴀɴɪᴍᴀᴛɪᴏɴ)\n` +
+    `/start — ᴍᴀɪɴ ᴍᴇɴᴜ\n` +
     `/membership — ᴠɪᴘ ᴘʟᴀɴꜱ &amp; ᴘᴜʀᴄʜᴀꜱᴇ\n` +
     `/myplan — ʏᴏᴜʀ ᴠɪᴘ ꜱᴛᴀᴛᴜꜱ &amp; ᴇxᴘɪʀʏ\n` +
     `/leaderboard — ʟɪᴠᴇ ɢɪᴠᴇᴀᴡᴀʏ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ\n` +
     `/mystats — ʏᴏᴜʀ ᴘᴇʀꜱᴏɴᴀʟ ꜱᴛᴀᴛꜱ\n` +
-    `/botstatus — ʙᴏᴛ ʜᴇᴀʟᴛʜ &amp; ꜱᴛᴀᴛꜱ\n` +
-    `/ping — ʀᴇꜱᴘᴏɴꜱᴇ ᴛɪᴍᴇ ᴄʜᴇᴄᴋ\n` +
-    `/myid — ʏᴏᴜʀ ᴛᴇʟᴇɢʀᴀᴍ ᴜꜱᴇʀ ɪᴅ\n` +
     `/createpost — ᴘᴏꜱᴛ ᴛᴏ ʏᴏᴜʀ ᴄʜᴀɴɴᴇʟ\n` +
     `/topvoters — ᴛᴏᴘ ᴘᴀʀᴛɪᴄɪᴘᴀɴᴛꜱ ʀᴀɴᴋɪɴɢ\n` +
+    `/active — ᴀʟʟ ʟɪᴠᴇ ɢɪᴠᴇᴀᴡᴀʏꜱ\n` +
+    `/winners — ʟᴀꜱᴛ ɢɪᴠᴇᴀᴡᴀʏ ᴡɪɴɴᴇʀꜱ\n` +
+    `/glink — ɢᴇᴛ ɢɪᴠᴇᴀᴡᴀʏ ᴊᴏɪɴ ʟɪɴᴋ\n` +
     `/support — ᴄᴏɴᴛᴀᴄᴛ ꜱᴜᴘᴘᴏʀᴛ` +
     `</blockquote>\n\n` +
     `<b>🎁 ɢɪᴠᴇᴀᴡᴀʏ ʙᴀɴᴀɴᴇ ᴋᴀ ᴛᴀʀɪᴋᴀ</b>\n` +
@@ -4530,6 +4614,25 @@ bot.onText(/\/removemem\s+(\d+)/, async (msg, match) => {
       { parse_mode: "HTML" }
     );
   } catch {}
+});
+
+// /extendmem — Admin: show usage when called without args
+bot.onText(/^\/extendmem$/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  ⏰  <b>EXTEND MEMBERSHIP</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>Usage:\n` +
+    `<code>/extendmem &lt;userId&gt; &lt;plan&gt;</code>\n\n` +
+    `Plans:\n` +
+    `▸ <code>1d</code>  — Extend 1 day\n` +
+    `▸ <code>7d</code>  — Extend 7 days\n` +
+    `▸ <code>30d</code> — Extend 30 days\n\n` +
+    `Example:\n` +
+    `<code>/extendmem 123456789 7d</code></blockquote>`,
+    { parse_mode: "HTML" }
+  );
 });
 
 // /extendmem — Admin: Extend existing membership

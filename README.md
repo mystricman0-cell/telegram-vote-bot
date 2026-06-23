@@ -329,6 +329,9 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/myplan` | Check your own VIP status, expiry & time remaining |
 | `/leaderboard` | Live leaderboard of your active giveaway |
 | `/mystats` | Your personal giveaway stats (total giveaways, participants, votes) |
+| `/active` | List all live giveaways with participants, votes & time remaining |
+| `/winners` | View winners of the last (or specified) ended giveaway |
+| `/glink` | Get participation link for the active (or specified) giveaway |
 | `/botstatus` | Quick bot health & stats (users, giveaways, channels, pending) |
 | `/ping` | Check bot response time in ms |
 | `/myid` | Show your Telegram user ID, username & language |
@@ -368,6 +371,7 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/removevotes` | `/removevotes <gId> <userId> <count>` | Remove votes (cheating fix) |
 | `/setwinner` | `/setwinner <gId> <count>` | Change winner count of any giveaway (1–100) |
 | `/endgiveaway` | `/endgiveaway <giveawayId>` | Force-close any giveaway + announce winners |
+| `/cancelgiveaway` | `/cancelgiveaway <giveawayId>` | Cancel giveaway silently — no winners announced |
 | `/resetvotes` | `/resetvotes <giveawayId>` | Reset all votes in a giveaway to zero |
 | `/clonegiveaway` | `/clonegiveaway <giveawayId>` | Clone giveaway with same settings |
 | `/giveawayreport` | `/giveawayreport <gId>` | Download full giveaway report as .txt file |
