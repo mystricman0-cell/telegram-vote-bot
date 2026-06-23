@@ -3,3 +3,4 @@
 - [Image Spoiler](image-spoiler.md) — Welcome image taken as URL (/setwelcomeimageurl), sent with has_spoiler:true; no file upload for welcome image.
 - [Telegram setMyCommands Limit](telegram-limits.md) — Max 100 commands per scope; admin scope must be counted carefully to avoid BOT_COMMANDS_TOO_MUCH error.
 - [Security System](security-system.md) — Full security engine added: honeypot, warnings, shadow ban, mute, trust, flag, rate-limit, word filter, emergency lock, audit log, security report.
+- [GitHub Push](github-push.md) — Remote is origin → github.com/mystricman0-cell/telegram-vote-bot; GITHUB_TOKEN secret set; push via `git push https://$GITHUB_TOKEN@github.com/...`; git commit is blocked in main agent (use checkpoint commits).
