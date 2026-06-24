@@ -8226,6 +8226,9 @@ const KNOWN_COMMANDS = new Set([
   "antispam","emergencylock","emergencyunlock","securitystats","suspicious","auditlog",
   "clearaudit","resetsecurity","userhistory","blockword","unblockword","blockedwords","ratelimitreset","securityreport",
   "previewwelcome",
+  "addadmin","removeadmin","listadmins","editadminperms",
+  "customize","settext","resettext","listtext",
+  "pushgithub","health",
   "about","version","uptime","rules","faq","terms","countdown","rank","invite","notify","refer","feedback"
 ]);
 
