@@ -537,7 +537,7 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/unblockword` | `/unblockword <word>` | Unblock a word/phrase |
 | `/blockedwords` | `/blockedwords` | List all blocked words/phrases |
 | `/ratelimitreset` | `/ratelimitreset <id>` | Reset user's rate limit counter |
-| `/securityreport` | `/securityreport` | Download full security report as .txt |
+| `/securityreport` | `/securityreport` | Download full security report as .txt — includes summary, banned/muted/shadow/flagged/warned/trusted users, honeypot hits, blocked words, and last 100 security log events |
 
 #### New User Commands *(NEW — v3.0)*
 
