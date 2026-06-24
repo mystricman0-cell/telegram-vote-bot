@@ -267,6 +267,30 @@
 - Multiple styles: loading · leaderboard · payment · vote · success · cancel
 - Premium `✦━━━` borders and blockquote formatting throughout
 
+### 🎨 &nbsp;UI Text Customizer *(NEW — v3.0.1)*
+- **48 customizable keys** — buttons, headers, emojis, error messages, labels
+- `/customize` — Paginated interactive menu (tap any key to edit it)
+- `/settext <key> <value>` — Set any text directly, HTML supported
+- `/resettext <key>` — Restore default instantly
+- `/listtext` — See all keys with current values at a glance
+- All changes saved to MongoDB — **survive restarts**
+
+```
+  /settext giveaway.btn_vote 🔥 Vote Karo!
+  /settext welcome.header 🎉 DRS NETWORK 🎉
+  /settext pay.btn_inr 💰 UPI se Pay Karo
+  /resettext giveaway.btn_vote
+```
+
+### 🏥 &nbsp;Health Monitor *(NEW — v3.0.1)*
+- `/health` — Real-time bot diagnostics in one command
+- Shows: uptime · MongoDB status · active giveaways · users · VIP · memory · security mode · pending payments · scheduled broadcasts
+
+### 🚀 &nbsp;GitHub Push from Telegram *(NEW — v3.0.1)*
+- `/pushgithub [commit message]` — Push `vote-bot.mjs` to your GitHub repo directly from Telegram
+- Requires `GITHUB_TOKEN` + `GITHUB_REPO_URL` set as Railway environment variables
+- All commits made as author **drs**
+
 ---
 
 ```
