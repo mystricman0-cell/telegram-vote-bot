@@ -327,8 +327,26 @@
 
 ### 🚀 &nbsp;GitHub Push from Telegram *(NEW — v3.0.1)*
 - `/pushgithub [commit message]` — Push `vote-bot.mjs` to your GitHub repo directly from Telegram
-- Requires `GITHUB_TOKEN` + `GITHUB_REPO_URL` set as Railway environment variables
+- Requires `GITHUB_TOKEN` + `GITHUB_REPO_URL` set as environment variables
 - All commits made as author **drs**
+
+### 👑 &nbsp;Sub-Admin Management *(NEW — v3.0.2)*
+- Add trusted sub-admins with specific permission sets — no need to share main admin access
+- `/addadmin <userId> <perms>` — Grant sub-admin with selected permissions
+- `/removeadmin <userId>` — Revoke sub-admin access instantly
+- `/listadmins` — View all sub-admins and their permission sets
+- `/editadminperms <userId>` — Edit permissions via interactive button UI
+- **Available permissions:** `all` · `approve_payments` · `broadcast` · `ban_users` · `manage_giveaways`
+
+### 🔄 &nbsp;Security Reset *(NEW — v3.0.2)*
+- `/resetsecurity` — Full security state reset with one command
+- Clears: bans · warnings · mutes · shadow bans · flags · honeypot hit history · audit log
+- **Keeps safe:** honeypot traps · blocked words · security mode · max warnings setting · trusted users
+
+### 👁️ &nbsp;Welcome Preview *(NEW — v3.0.2)*
+- `/previewwelcome` — See exactly how your welcome screen looks right now (image + buttons)
+- `/setwelcomemsg` — Set welcome text — **jo bhejo waisa hi dikhe** (exact text, emojis, symbols preserved)
+- After setting, `/previewwelcome` instantly shows you the result
 
 ---
 
@@ -482,8 +500,9 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/gcount` | `/gcount` | Quick giveaway count breakdown — active, ended, totals, participants, votes |
 | `/topusers` | `/topusers` | Top 10 users ranked by number of giveaways created |
 | `/maintenance` | `/maintenance on\|off` | Block all non-admin users during updates |
-| `/previewwelcome` | `/previewwelcome` | Preview the current welcome screen (with image + buttons) |
-| `/setwelcomemsg` | `/setwelcomemsg` | Set custom welcome message text (HTML supported) |
+| `/health` | `/health` | Real-time bot diagnostics — uptime, DB, memory, giveaways, VIP, security, payments |
+| `/previewwelcome` | `/previewwelcome` | Preview the current welcome screen exactly as users see it (image + buttons) |
+| `/setwelcomemsg` | `/setwelcomemsg` | Set custom welcome message — jo bhejo waisa hi dikhe (exact text preserved) |
 | `/clearwelcomemsg` | `/clearwelcomemsg` | Restore default welcome message |
 | `/exportusers` | `/exportusers` | Download all bot users as .txt file |
 | `/setmembershipqr` | `/setmembershipqr` | Upload UPI QR code photo |
@@ -494,6 +513,25 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/allchannels` | `/allchannels` | List all registered channels + groups |
 | `/cleandb` | `/cleandb` | Interactive selective cleanup — choose giveaways/payments/memberships/VIP/seclogs |
 | `/adminhelp` | `/adminhelp` | Full admin command reference (4 parts including security) |
+| `/pushgithub` | `/pushgithub [message]` | Push vote-bot.mjs to GitHub directly from Telegram |
+
+#### Admin Commands — UI Customizer
+
+| Command | Usage | Description |
+|---|---|---|
+| `/customize` | `/customize` | Paginated interactive UI text customizer — tap any key to edit |
+| `/settext` | `/settext <key> <value>` | Set any UI text, emoji, or button label directly |
+| `/resettext` | `/resettext <key>` | Reset one UI text to its default value |
+| `/listtext` | `/listtext` | List all UI text keys with current values |
+
+#### Admin Commands — Sub-Admin Management
+
+| Command | Usage | Description |
+|---|---|---|
+| `/addadmin` | `/addadmin <userId> <perms>` | Add sub-admin with permissions — `all` or `approve_payments,broadcast,ban_users,manage_giveaways` |
+| `/removeadmin` | `/removeadmin <userId>` | Remove sub-admin access |
+| `/listadmins` | `/listadmins` | List all sub-admins and their permission sets |
+| `/editadminperms` | `/editadminperms <userId>` | Edit sub-admin permissions via interactive button UI |
 
 #### Security & Protection Commands *(NEW — v3.0)*
 
