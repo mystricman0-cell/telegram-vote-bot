@@ -276,19 +276,49 @@
 - Multiple styles: loading · leaderboard · payment · vote · success · cancel
 - Premium `✦━━━` borders and blockquote formatting throughout
 
-### 🎨 &nbsp;UI Text Customizer *(NEW — v3.0.1)*
-- **48 customizable keys** — buttons, headers, emojis, error messages, labels
+### 🎨 &nbsp;UI Text Customizer *(NEW — v3.0.1 · expanded v3.0.2)*
+- **65+ customizable keys** — every visible text, emoji, button & link in the bot
 - `/customize` — Paginated interactive menu (tap any key to edit it)
 - `/settext <key> <value>` — Set any text directly, HTML supported
 - `/resettext <key>` — Restore default instantly
 - `/listtext` — See all keys with current values at a glance
 - All changes saved to MongoDB — **survive restarts**
 
+**Welcome Screen Keys** *(every element you see on /start)*
+
+| Key | What it controls |
+|-----|-----------------|
+| `welcome.title` | Big bold title — "𝐃𝐑𝐒 𝐆𝐈𝐕𝐄𝐀𝐖𝐀𝐘 𝐁𝐎𝐓! 🎁" |
+| `welcome.feature1` | Blockquote line 1 — "✨ FULLY AUTOMATED…" |
+| `welcome.feature2` | Blockquote line 2 — "⚡ FAST & TRANSPARENT…" |
+| `welcome.feature3` | Blockquote line 3 — "🛡 SECURE, RELIABLE…" |
+| `welcome.feature4` | Blockquote line 4 — "🎊 HOST GIVEAWAYS…" |
+| `welcome.tip1` | Instruction line 1 — "🔺 TAP 🎁 NEW GIVEAWAY…" |
+| `welcome.tip2` | Instruction line 2 — "🔺 TAP 📂 MY GIVEAWAYS…" |
+| `welcome.divider` | Divider text — "✈️━━━━━ 𝐃𝐑𝐒 ━━━━━✈️" |
+| `welcome.divider_url` | Divider hyperlink URL |
+| `welcome.powered_name` | Powered-by name inside link |
+| `welcome.powered_url` | Powered-by URL |
+| `welcome.support_name` | Support person name inside link |
+| `welcome.support_url` | Support person URL |
+| `welcome.btn_new_giveaway` | "🎁 NEW GIVEAWAY ✦" button |
+| `welcome.btn_my_giveaways` | "✦ MY GIVEAWAYS 📂" button |
+| `welcome.btn_add_channel` | "📢 ADD CHANNEL ⚡" button |
+| `welcome.btn_add_group` | "⚡ ADD GROUP 👥" button |
+| `welcome.btn_vip` | "👑 VIP MEMBERSHIP 💎" button |
+| `welcome.btn_create_post` | "🚀 CREATE POST ✍️" button |
+| `welcome.btn_guide` | "🌟 ─── GUIDE & HELP ─── 🌟" button |
+
 ```
+  /settext welcome.title 🎉 MY BOT NAME 🎉
+  /settext welcome.feature1 ✨ Custom feature line 1
+  /settext welcome.powered_name MY NETWORK
+  /settext welcome.powered_url https://t.me/mychannel
+  /settext welcome.btn_new_giveaway 🎁 Start Giveaway
+  /settext welcome.btn_guide ✦ Help & Support ✦
   /settext giveaway.btn_vote 🔥 Vote Karo!
-  /settext welcome.header 🎉 DRS NETWORK 🎉
   /settext pay.btn_inr 💰 UPI se Pay Karo
-  /resettext giveaway.btn_vote
+  /resettext welcome.title
 ```
 
 ### 🏥 &nbsp;Health Monitor *(NEW — v3.0.1)*
