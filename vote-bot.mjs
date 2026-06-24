@@ -172,6 +172,23 @@ let emergencyLocked     = false;
 const botStartTime      = Date.now();
 
 // ============================================================
+// SUB-ADMIN SYSTEM
+// Add admins with granular permissions via /addadmin
+// ============================================================
+const subAdmins = new Map(); // Map<userId, { name, username, addedAt, permissions: Set<string> }>
+
+const ADMIN_PERMS = {
+  all:               "🔑 Full access (same as main admin)",
+  approve_payments:  "✅ Approve/reject vote & membership payments",
+  manage_giveaways:  "🎁 End/cancel/reset/addvotes for giveaways",
+  broadcast:         "📢 Send broadcasts to users/channels/all",
+  ban_users:         "🚫 Ban & unban users",
+  view_stats:        "📊 View stats, paystats, listusers, allgiveaways",
+  manage_membership: "👑 Grant/revoke/extend VIP membership",
+  security:          "🛡️ Warn, mute, shadowban, security commands",
+};
+
+// ============================================================
 // UI TEXT CUSTOMIZATION SYSTEM
 // Change any text/emoji/button via /customize or /settext
 // ============================================================
@@ -439,7 +456,15 @@ async function loadStateFromDB() {
     botCustomTexts.set(c.key.replace('ui:', ''), c.value);
   }
 
-  console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users, ${botCustomTexts.size} custom UI texts`);
+  // Load sub-admins
+  const subAdminsCfg = await BotConfigModel.findOne({ key: "subAdmins" });
+  if (subAdminsCfg?.value && Array.isArray(subAdminsCfg.value)) {
+    for (const sa of subAdminsCfg.value) {
+      subAdmins.set(sa.userId, { ...sa, permissions: new Set(sa.permissions || []) });
+    }
+  }
+
+  console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users, ${botCustomTexts.size} custom UI texts, ${subAdmins.size} sub-admins`);
 }
 
 async function saveGiveaway(g) {
@@ -477,6 +502,18 @@ async function saveConfig(key, value) {
   try {
     await BotConfigModel.findOneAndUpdate({ key }, { key, value }, { upsert: true });
   } catch (e) { console.error("saveConfig error:", e.message); }
+}
+
+async function saveSubAdmins() {
+  const arr = [];
+  for (const [userId, sa] of subAdmins) {
+    arr.push({ ...sa, userId, permissions: [...sa.permissions] });
+  }
+  await BotConfigModel.findOneAndUpdate(
+    { key: "subAdmins" },
+    { key: "subAdmins", value: arr },
+    { upsert: true }
+  );
 }
 
 async function trackUser(from) {
@@ -867,7 +904,19 @@ function h(t) {
 }
 
 function getGiveaway(id) { return giveaways.get(String(id)); }
-function isAdmin(uid) { return uid === MAIN_ADMIN_ID; }
+function isAdmin(uid) {
+  if (uid === MAIN_ADMIN_ID) return true;
+  const sa = subAdmins.get(uid);
+  return sa ? sa.permissions.has("all") : false;
+}
+function isSubAdmin(uid) { return subAdmins.has(uid); }
+function isAnyAdmin(uid) { return uid === MAIN_ADMIN_ID || subAdmins.has(uid); }
+function hasAdminPerm(uid, perm) {
+  if (uid === MAIN_ADMIN_ID) return true;
+  const sa = subAdmins.get(uid);
+  if (!sa) return false;
+  return sa.permissions.has("all") || sa.permissions.has(perm);
+}
 
 // ─── Security helper functions (used by middleware + commands) ───
 function _secLog(userId, username, action, detail) {
@@ -1427,6 +1476,47 @@ bot.on("callback_query", async (query) => {
     try { await bot.deleteMessage(chatId, msgId); } catch {}
     await sendWelcome(chatId, userId);
     return;
+  }
+
+  // ─── Sub-admin permission callbacks ───
+  if (data.startsWith("sadm_perm:")) {
+    if (userId !== MAIN_ADMIN_ID) return bot.answerCallbackQuery(query.id, { text: "❌ Main admin only!" }).catch(() => {});
+    const parts = data.split(":");
+    const targetId = Number(parts[1]);
+    const perm = parts[2];
+    const sa = subAdmins.get(targetId);
+    if (!sa) return bot.answerCallbackQuery(query.id, { text: "❌ Sub-admin not found." }).catch(() => {});
+    if (sa.permissions.has(perm)) { sa.permissions.delete(perm); } else { sa.permissions.add(perm); }
+    await saveSubAdmins();
+    const toggled = sa.permissions.has(perm);
+    const buttons = Object.keys(ADMIN_PERMS).map(p => [{
+      text: (sa.permissions.has(p) ? "✅ " : "❌ ") + p,
+      callback_data: `sadm_perm:${targetId}:${p}`
+    }]);
+    buttons.push([{ text: "🗑️ Remove Sub-Admin", callback_data: `sadm_remove:${targetId}` }]);
+    buttons.push([{ text: "✖ Close", callback_data: "sadm_close" }]);
+    await bot.editMessageReplyMarkup({ inline_keyboard: buttons }, { chat_id: chatId, message_id: msgId }).catch(() => {});
+    return bot.answerCallbackQuery(query.id, { text: `${toggled ? "✅ Added" : "❌ Removed"}: ${perm}` }).catch(() => {});
+  }
+  if (data.startsWith("sadm_remove:")) {
+    if (userId !== MAIN_ADMIN_ID) return bot.answerCallbackQuery(query.id, { text: "❌ Main admin only!" }).catch(() => {});
+    const targetId = Number(data.split(":")[1]);
+    const sa = subAdmins.get(targetId);
+    if (!sa) return bot.answerCallbackQuery(query.id, { text: "❌ Not found." }).catch(() => {});
+    subAdmins.delete(targetId);
+    await saveSubAdmins();
+    await bot.editMessageText(
+      `✅ <b>Sub-admin removed:</b> ${h(sa.name || "Unknown")} (<code>${targetId}</code>)`,
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+    ).catch(() => {});
+    await bot.answerCallbackQuery(query.id, { text: "✅ Removed." }).catch(() => {});
+    try { await bot.sendMessage(targetId, "⚠️ <b>Admin Access Revoked</b>\n\nTumhara is bot ka admin access hata diya gaya hai.", { parse_mode: "HTML" }); } catch {}
+    return;
+  }
+  if (data === "sadm_close") {
+    if (userId !== MAIN_ADMIN_ID) return bot.answerCallbackQuery(query.id).catch(() => {});
+    await bot.deleteMessage(chatId, msgId).catch(() => {});
+    return bot.answerCallbackQuery(query.id).catch(() => {});
   }
 
   // ─── Customize UI text callbacks ───
@@ -5004,7 +5094,7 @@ async function showBroadcastMenu(chatId, userId, adminMsg, text, silent, compose
 
 // /broadcast — Silent broadcast with target selection
 bot.onText(/\/broadcast(?:\s+([\s\S]+))?/, async (msg, match) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "broadcast")) return;
   const text = match[1]?.trim();
   if (text || msg.reply_to_message) {
     return showBroadcastMenu(msg.chat.id, msg.from.id, msg, text || "", true);
@@ -5030,7 +5120,7 @@ bot.onText(/\/broadcast(?:\s+([\s\S]+))?/, async (msg, match) => {
 
 // /loud — LOUD broadcast with target selection
 bot.onText(/\/loud(?:\s+([\s\S]+))?/, async (msg, match) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "broadcast")) return;
   const text = match[1]?.trim();
   if (text || msg.reply_to_message) {
     return showBroadcastMenu(msg.chat.id, msg.from.id, msg, text || "", false);
@@ -5182,7 +5272,7 @@ bot.onText(/\/forcejoininfo/, async (msg) => {
 
 // /givemem — Admin: Give membership to a user
 bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "manage_membership")) return;
   const targetId = Number(match[1]);
   const planKey = match[2];
   const plan = getMembershipPlan(planKey);
@@ -5229,7 +5319,7 @@ bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
 
 // /removemem — Admin: Remove/revoke membership from a user
 bot.onText(/\/removemem\s+(\d+)/, async (msg, match) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "manage_membership")) return;
   const targetId = Number(match[1]);
   const existing = vipUsers.get(targetId);
   if (!existing?.vip) {
@@ -5817,7 +5907,7 @@ bot.onText(/\/support/, async (msg) => {
 
 // ─── /addvotes <giveawayId> <userId> <count> ───
 bot.onText(/\/addvotes\s+(\S+)\s+(\d+)\s+(\d+)/, async (msg, match) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "manage_giveaways")) return;
   const chatId = msg.chat.id;
   const gId = match[1].trim();
   const targetId = Number(match[2]);
@@ -5850,7 +5940,7 @@ bot.onText(/\/addvotes\s+(\S+)\s+(\d+)\s+(\d+)/, async (msg, match) => {
 
 // ─── /removevotes <giveawayId> <userId> <count> ───
 bot.onText(/\/removevotes\s+(\S+)\s+(\d+)\s+(\d+)/, async (msg, match) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "manage_giveaways")) return;
   const chatId = msg.chat.id;
   const gId = match[1].trim();
   const targetId = Number(match[2]);
@@ -6498,7 +6588,7 @@ bot.onText(/\/userinfo\s+(\d+)/, async (msg, match) => {
 
 // ─── /ban <userId> [reason] ───
 bot.onText(/\/ban\s+(\d+)(?:\s+([\s\S]+))?/, async (msg, match) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "ban_users")) return;
   const targetId = Number(match[1]);
   const reason = match[2]?.trim() || "Admin action";
   const chatId = msg.chat.id;
@@ -6527,7 +6617,7 @@ bot.onText(/\/ban\s+(\d+)(?:\s+([\s\S]+))?/, async (msg, match) => {
 
 // ─── /unban <userId> ───
 bot.onText(/\/unban\s+(\d+)/, async (msg, match) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "ban_users")) return;
   const targetId = Number(match[1]);
   const chatId = msg.chat.id;
   if (!bannedUsers.has(targetId)) {
@@ -6640,7 +6730,7 @@ bot.onText(/\/listusers(?:\s+(\d+))?/, async (msg, match) => {
 
 // ─── /endgiveaway <giveawayId> ───
 bot.onText(/\/endgiveaway\s+(\S+)/, async (msg, match) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "manage_giveaways")) return;
   const chatId = msg.chat.id;
   const gId = match[1].trim();
   const g = getGiveaway(gId);
@@ -6788,7 +6878,7 @@ bot.onText(/\/active/, async (msg) => {
 
 // ─── /cancelgiveaway <gId> — Admin: cancel without announcing winners ───
 bot.onText(/\/cancelgiveaway\s+(\S+)/, async (msg, match) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "manage_giveaways")) return;
   const chatId = msg.chat.id;
   const gId = match[1].trim();
   const g = getGiveaway(gId);
@@ -7979,6 +8069,167 @@ bot.onText(/\/pushgithub(?:\s+([\s\S]+))?/, async (msg, match) => {
 });
 
 // ============================================================
+// SUB-ADMIN MANAGEMENT COMMANDS
+// /addadmin  /removeadmin  /listadmins  /editadminperms
+// ============================================================
+
+// /addadmin — MAIN ADMIN ONLY: Add a sub-admin with specific permissions
+bot.onText(/\/addadmin(?:\s+(\d+))?(?:\s+([\w,]+))?/, async (msg, match) => {
+  const userId = msg.from.id;
+  if (userId !== MAIN_ADMIN_ID) return;
+  const chatId = msg.chat.id;
+
+  if (!match[1]) {
+    const permList = Object.entries(ADMIN_PERMS)
+      .map(([k, d]) => `  • <code>${k}</code> — ${d}`).join("\n");
+    return bot.sendMessage(chatId,
+      `✦━━━━━━━━━━━━━━━━━✦\n  👑  ADD SUB-ADMIN\n✦━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<b>Usage:</b>\n<code>/addadmin &lt;userId&gt; &lt;perms&gt;</code>\n\n` +
+      `<b>Available permissions:</b>\n${permList}\n\n` +
+      `<b>Examples:</b>\n` +
+      `<code>/addadmin 123456789 all</code>\n` +
+      `<code>/addadmin 123456789 approve_payments,broadcast</code>\n` +
+      `<code>/addadmin 123456789 manage_giveaways,ban_users</code>`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  const targetId = Number(match[1]);
+  if (targetId === MAIN_ADMIN_ID) {
+    return bot.sendMessage(chatId, `❌ Main admin already has full access.`, { parse_mode: "HTML" });
+  }
+
+  const permsRaw = (match[2] || "all").toLowerCase().split(",").map(p => p.trim()).filter(p => ADMIN_PERMS[p]);
+  if (permsRaw.length === 0) {
+    return bot.sendMessage(chatId,
+      `❌ <b>Invalid permissions.</b>\n\nValid: ${Object.keys(ADMIN_PERMS).map(k => `<code>${k}</code>`).join(", ")}`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  const targetUser = botUsers.get(targetId);
+  const name  = targetUser?.name || targetUser?.firstName || `User ${targetId}`;
+  const uname = targetUser?.username || null;
+  const existing = subAdmins.get(targetId);
+
+  subAdmins.set(targetId, {
+    name, username: uname,
+    addedAt: existing?.addedAt || new Date().toISOString(),
+    permissions: new Set(permsRaw)
+  });
+  await saveSubAdmins();
+
+  const permStr = permsRaw.map(p => `✅ <code>${p}</code>`).join("\n");
+  await bot.sendMessage(chatId,
+    `✦━━━━━━━━━━━━━━━━━✦\n  👑  SUB-ADMIN ADDED\n✦━━━━━━━━━━━━━━━━━✦\n\n` +
+    `👤 <b>${h(name)}</b>${uname ? ` (@${uname})` : ""}\n` +
+    `🆔 <code>${targetId}</code>\n\n` +
+    `<b>Permissions:</b>\n${permStr}\n\n` +
+    `<i>Use /editadminperms ${targetId} to modify.\nUse /removeadmin ${targetId} to revoke.</i>`,
+    { parse_mode: "HTML" }
+  );
+
+  try {
+    await bot.sendMessage(targetId,
+      `✦━━━━━━━━━━━━━━━━━✦\n  👑  ADMIN ACCESS\n✦━━━━━━━━━━━━━━━━━✦\n\n` +
+      `✅ Tumhe is bot ka admin access diya gaya hai!\n\n` +
+      `<b>Tumhare permissions:</b>\n${permStr}\n\n` +
+      `<i>Type /adminhelp to see available commands.</i>`,
+      { parse_mode: "HTML" }
+    );
+  } catch {}
+});
+
+// /removeadmin — MAIN ADMIN ONLY: Remove a sub-admin
+bot.onText(/\/removeadmin\s+(\d+)/, async (msg, match) => {
+  const userId = msg.from.id;
+  if (userId !== MAIN_ADMIN_ID) return;
+  const chatId = msg.chat.id;
+  const targetId = Number(match[1]);
+
+  if (!subAdmins.has(targetId)) {
+    return bot.sendMessage(chatId, `❌ User <code>${targetId}</code> is not a sub-admin.`, { parse_mode: "HTML" });
+  }
+
+  const sa = subAdmins.get(targetId);
+  subAdmins.delete(targetId);
+  await saveSubAdmins();
+
+  await bot.sendMessage(chatId,
+    `✅ <b>Sub-admin removed.</b>\n\n` +
+    `👤 ${h(sa.name || "Unknown")} (<code>${targetId}</code>) ka admin access hata diya gaya.`,
+    { parse_mode: "HTML" }
+  );
+
+  try {
+    await bot.sendMessage(targetId,
+      `⚠️ <b>Admin Access Revoked</b>\n\nTumhara is bot ka admin access hata diya gaya hai.`,
+      { parse_mode: "HTML" }
+    );
+  } catch {}
+});
+
+// /listadmins — MAIN ADMIN ONLY: List all sub-admins
+bot.onText(/\/listadmins/, async (msg) => {
+  const userId = msg.from.id;
+  if (userId !== MAIN_ADMIN_ID) return;
+  const chatId = msg.chat.id;
+
+  if (subAdmins.size === 0) {
+    return bot.sendMessage(chatId,
+      `<b>👑 Sub-Admins</b>\n\nAbhi koi sub-admin nahi hai.\n\n` +
+      `<code>/addadmin &lt;userId&gt; &lt;perms&gt;</code> se add karo.`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  let text = `✦━━━━━━━━━━━━━━━━━✦\n  👑  SUB-ADMINS (${subAdmins.size})\n✦━━━━━━━━━━━━━━━━━✦\n\n`;
+  let i = 1;
+  for (const [uid, sa] of subAdmins) {
+    const perms = [...sa.permissions].map(p => `<code>${p}</code>`).join(", ");
+    const added = sa.addedAt ? new Date(sa.addedAt).toLocaleDateString("en-IN") : "?";
+    text += `${i}. 👤 <b>${h(sa.name || "Unknown")}</b>${sa.username ? ` (@${sa.username})` : ""}\n` +
+      `   🆔 <code>${uid}</code>  ·  Added: ${added}\n` +
+      `   🔑 ${perms}\n\n`;
+    i++;
+  }
+  text += `<i>Edit: /editadminperms &lt;userId&gt;\nRemove: /removeadmin &lt;userId&gt;</i>`;
+
+  await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
+});
+
+// /editadminperms — MAIN ADMIN ONLY: Interactive permission editor
+bot.onText(/\/editadminperms\s+(\d+)/, async (msg, match) => {
+  const userId = msg.from.id;
+  if (userId !== MAIN_ADMIN_ID) return;
+  const chatId = msg.chat.id;
+  const targetId = Number(match[1]);
+
+  if (!subAdmins.has(targetId)) {
+    return bot.sendMessage(chatId,
+      `❌ <code>${targetId}</code> is not a sub-admin.\n\nPehle <code>/addadmin ${targetId}</code> se add karo.`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  const sa = subAdmins.get(targetId);
+  const buttons = Object.keys(ADMIN_PERMS).map(perm => [{
+    text: (sa.permissions.has(perm) ? "✅ " : "❌ ") + perm,
+    callback_data: `sadm_perm:${targetId}:${perm}`
+  }]);
+  buttons.push([{ text: "🗑️ Remove Sub-Admin", callback_data: `sadm_remove:${targetId}` }]);
+  buttons.push([{ text: "✖ Close", callback_data: "sadm_close" }]);
+
+  await bot.sendMessage(chatId,
+    `✦━━━━━━━━━━━━━━━━━✦\n  🔑  ADMIN PERMISSIONS\n✦━━━━━━━━━━━━━━━━━✦\n\n` +
+    `👤 <b>${h(sa.name || "Unknown")}</b>\n` +
+    `🆔 <code>${targetId}</code>\n\n` +
+    `<i>Tap any permission to toggle it:</i>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: buttons } }
+  );
+});
+
+// ============================================================
 // MAIN START
 // ============================================================
 
@@ -8051,15 +8302,13 @@ async function main() {
         { command: "setwinner",         description: "🏆 Set winner count for giveaway" },
         { command: "clonegiveaway",     description: "📋 Clone a giveaway" },
         { command: "announce",          description: "📢 Message all giveaway participants" },
-        { command: "setpanelthreshold", description: "🚨 Set vote panel alert threshold" },
-        // ── Membership (7) ──
+        // ── Membership (6) ──
         { command: "givemem",           description: "💳 Give membership to user" },
         { command: "removemem",         description: "🗑️ Revoke user membership" },
         { command: "extendmem",         description: "➕ Extend user membership" },
         { command: "listmem",           description: "📋 List all active VIP members" },
         { command: "meminfo",           description: "ℹ️ Check any user's membership" },
         { command: "setplan",           description: "💰 Update plan pricing" },
-        { command: "setstar",           description: "⭐ Set votes per Telegram Star" },
         // ── User management (7) ──
         { command: "ban",               description: "🚫 Ban a user" },
         { command: "unban",             description: "✅ Unban a user" },
@@ -8077,7 +8326,6 @@ async function main() {
         { command: "paystats",          description: "💰 Pending payments dashboard" },
         { command: "maintenance",       description: "🔧 Toggle maintenance mode on/off" },
         { command: "setwelcomemsg",     description: "✏️ Set custom welcome message" },
-        { command: "clearwelcomemsg",   description: "🗑️ Restore default welcome message" },
         { command: "setwelcomeimageurl",description: "🖼️ Set welcome image via URL (spoiler)" },
         { command: "setmembershipqr",   description: "📸 Upload membership QR code" },
         // ── DB & utility (8) ──
@@ -8087,7 +8335,11 @@ async function main() {
         { command: "cleandb",           description: "🧹 Interactive selective DB cleanup" },
         { command: "removepay",         description: "🗑️ Remove a pending payment by ID" },
         { command: "clearallpending",   description: "🗑️ Clear ALL pending payments at once" },
-        { command: "topusers",          description: "🏆 Top users by giveaways created" },
+        // ── Sub-admin management (4) ──
+        { command: "addadmin",          description: "👑 Add a sub-admin with permissions" },
+        { command: "removeadmin",       description: "🗑️ Remove a sub-admin" },
+        { command: "listadmins",        description: "📋 List all sub-admins & permissions" },
+        { command: "editadminperms",    description: "🔑 Edit sub-admin permissions (button UI)" },
         // ── New admin tools (6) ──
         { command: "health",            description: "🏥 Bot health — uptime, DB, memory, stats" },
         { command: "customize",         description: "🎨 Interactive UI text & emoji customizer" },
