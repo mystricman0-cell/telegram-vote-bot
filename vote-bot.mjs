@@ -353,12 +353,35 @@ const ADMIN_PERMS = {
 const botCustomTexts = new Map();
 
 const DEFAULT_UI_TEXTS = {
-  // Welcome screen
+  // ── Welcome Screen — Text ──
+  "welcome.title":             "𝐃𝐑𝐒 𝐆𝐈𝐕𝐄𝐀𝐖𝐀𝐘 𝐁𝐎𝐓! 🎁",
+  "welcome.feature1":          "✨ ꜰᴜʟʟʏ ᴀᴜᴛᴏᴍᴀᴛᴇᴅ &amp; ꜰᴀɪʀ ɢɪᴠᴇᴀᴡᴀʏ ꜱʏꜱᴛᴇᴍ ✔️",
+  "welcome.feature2":          "⚡️ ꜰᴀꜱᴛ &amp; ᴛʀᴀɴꜱᴘᴀʀᴇɴᴛ ᴡɪɴɴᴇʀ ꜱᴇʟᴇᴄᴛɪᴏɴ ✔️",
+  "welcome.feature3":          "🛡 ꜱᴇᴄᴜʀᴇ, ʀᴇʟɪᴀʙʟᴇ &amp; ᴇᴀꜱʏ ᴛᴏ ᴜꜱᴇ ✔️",
+  "welcome.feature4":          "🎊 ʜᴏꜱᴛ ɢɪᴠᴇᴀᴡᴀʏꜱ ᴡɪᴛʜ ᴀ ᴘʀᴇᴍɪᴜᴍ ᴇxᴘᴇʀɪᴇɴᴄᴇ ✔️",
+  "welcome.tip1":              "🔺 ᴛᴀᴘ 🎁 ɴᴇᴡ ɢɪᴠᴇᴀᴡᴀʏ ʙᴜᴛᴛᴏɴ ᴛᴏ ᴄʀᴇᴀᴛᴇ ᴀ ɢɪᴠᴇᴀᴡᴀʏ ⭐",
+  "welcome.tip2":              "🔺 ᴛᴀᴘ 📂 ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ ʙᴜᴛᴛᴏɴ ᴛᴏ ᴠɪᴇᴡ ʏᴏᴜʀ ɢɪᴠᴇᴀᴡᴀʏꜱ ⭐️",
+  "welcome.divider":           "✈️━━━━━ 𝐃𝐑𝐒 ━━━━━✈️",
+  "welcome.divider_url":       "https://t.me/rchiex",
+  "welcome.powered":           "⚡️ ᴘᴏᴡᴇʀᴇᴅ : 𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ ❤️‍🔥",
+  "welcome.powered_url":       "https://t.me/rchiex",
+  "welcome.powered_name":      "𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ",
+  "welcome.support":           "❤️ ꜱᴜᴘᴘᴏʀᴛ :— 𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊 ❤️‍🔥",
+  "welcome.support_url":       "https://t.me/drssupport",
+  "welcome.support_name":      "𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊",
+  // ── Welcome Screen — Buttons ──
+  "welcome.btn_new_giveaway":  "🎁 ɴᴇᴡ ɢɪᴠᴇᴀᴡᴀʏ ✦",
+  "welcome.btn_my_giveaways":  "✦ ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ 📂",
+  "welcome.btn_add_channel":   "📢 ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ ⚡",
+  "welcome.btn_add_group":     "⚡ ᴀᴅᴅ ɢʀᴏᴜᴘ 👥",
+  "welcome.btn_vip":           "👑 ᴠɪᴘ ᴍᴇᴍʙᴇʀꜱʜɪᴘ 💎",
+  "welcome.btn_create_post":   "🚀 ᴄʀᴇᴀᴛᴇ ᴘᴏꜱᴛ ✍️",
+  "welcome.btn_guide":         "🌟 ─── ɢᴜɪᴅᴇ & ʜᴇʟᴘ ─── 🌟",
+  // ── Legacy keys (kept for compatibility) ──
   "welcome.header":            "🎁 <b>DRS GIVEAWAY BOT</b> 🎁",
   "welcome.tagline":           "✦ Fair · Fast · Automated ✦",
   "welcome.btn_join":          "🎯 Join a Giveaway",
   "welcome.btn_create":        "➕ Create Giveaway",
-  "welcome.btn_vip":           "👑 Get VIP",
   "welcome.btn_help":          "📖 Help & Guide",
   "welcome.btn_support":       "💬 Support",
   "welcome.btn_leaderboard":   "🏆 Leaderboard",
@@ -1297,18 +1320,18 @@ function mainMenuKeyboard() {
   return {
     inline_keyboard: [
       [
-        { text: "🎁 ɴᴇᴡ ɢɪᴠᴇᴀᴡᴀʏ ✦", callback_data: "new_giveaway" },
-        { text: "✦ ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ 📂", callback_data: "my_giveaways" }
+        { text: getUI("welcome.btn_new_giveaway"), callback_data: "new_giveaway" },
+        { text: getUI("welcome.btn_my_giveaways"), callback_data: "my_giveaways" }
       ],
       [
-        { text: "📢 ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ ⚡", callback_data: "add_channel" },
-        { text: "⚡ ᴀᴅᴅ ɢʀᴏᴜᴘ 👥", callback_data: "add_group" }
+        { text: getUI("welcome.btn_add_channel"), callback_data: "add_channel" },
+        { text: getUI("welcome.btn_add_group"),   callback_data: "add_group" }
       ],
       [
-        { text: "👑 ᴠɪᴘ ᴍᴇᴍʙᴇʀꜱʜɪᴘ 💎", callback_data: "vip_membership" },
-        { text: "🚀 ᴄʀᴇᴀᴛᴇ ᴘᴏꜱᴛ ✍️", callback_data: "create_post" }
+        { text: getUI("welcome.btn_vip"),         callback_data: "vip_membership" },
+        { text: getUI("welcome.btn_create_post"), callback_data: "create_post" }
       ],
-      [{ text: "🌟 ─── ɢᴜɪᴅᴇ & ʜᴇʟᴘ ─── 🌟", callback_data: "how_to_use" }]
+      [{ text: getUI("welcome.btn_guide"),        callback_data: "how_to_use" }]
     ]
   };
 }
@@ -1378,19 +1401,19 @@ async function sendWelcome(chatId, userId) {
   try { await bot.sendChatAction(chatId, "typing"); } catch {}
 
   const welcomeText = customWelcomeText ||
-    `<b>𝐃𝐑𝐒 𝐆𝐈𝐕𝐄𝐀𝐖𝐀𝐘 𝐁𝐎𝐓! 🎁</b>\n\n` +
+    `<b>${getUI("welcome.title")}</b>\n\n` +
     `<blockquote>` +
-    `✨ ꜰᴜʟʟʏ ᴀᴜᴛᴏᴍᴀᴛᴇᴅ &amp; ꜰᴀɪʀ ɢɪᴠᴇᴀᴡᴀʏ ꜱʏꜱᴛᴇᴍ ✔️\n` +
-    `⚡️ ꜰᴀꜱᴛ &amp; ᴛʀᴀɴꜱᴘᴀʀᴇɴᴛ ᴡɪɴɴᴇʀ ꜱᴇʟᴇᴄᴛɪᴏɴ ✔️\n` +
-    `🛡 ꜱᴇᴄᴜʀᴇ, ʀᴇʟɪᴀʙʟᴇ &amp; ᴇᴀꜱʏ ᴛᴏ ᴜꜱᴇ ✔️\n` +
-    `🎊 ʜᴏꜱᴛ ɢɪᴠᴇᴀᴡᴀʏꜱ ᴡɪᴛʜ ᴀ ᴘʀᴇᴍɪᴜᴍ ᴇxᴘᴇʀɪᴇɴᴄᴇ ✔️` +
+    `${getUI("welcome.feature1")}\n` +
+    `${getUI("welcome.feature2")}\n` +
+    `${getUI("welcome.feature3")}\n` +
+    `${getUI("welcome.feature4")}` +
     `</blockquote>\n\n` +
-    `🔺 ᴛᴀᴘ 🎁 ɴᴇᴡ ɢɪᴠᴇᴀᴡᴀʏ ʙᴜᴛᴛᴏɴ ᴛᴏ ᴄʀᴇᴀᴛᴇ ᴀ ɢɪᴠᴇᴀᴡᴀʏ ⭐\n` +
-    `🔺 ᴛᴀᴘ 📂 ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ ʙᴜᴛᴛᴏɴ ᴛᴏ ᴠɪᴇᴡ ʏᴏᴜʀ ɢɪᴠᴇᴀᴡᴀʏꜱ ⭐️\n\n` +
-    `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
+    `${getUI("welcome.tip1")}\n` +
+    `${getUI("welcome.tip2")}\n\n` +
+    `<a href="${getUI("welcome.divider_url")}">${getUI("welcome.divider")}</a>\n` +
     `<blockquote>` +
-    `⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/rchiex">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
-    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥` +
+    `⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="${getUI("welcome.powered_url")}">${getUI("welcome.powered_name")}</a> ❤️‍🔥\n` +
+    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="${getUI("welcome.support_url")}">${getUI("welcome.support_name")}</a> ❤️‍🔥` +
     `</blockquote>`;
 
   // Send photo first with spoiler + first animation frame as caption
