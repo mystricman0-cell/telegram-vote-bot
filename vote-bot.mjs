@@ -172,6 +172,164 @@ let emergencyLocked     = false;
 const botStartTime      = Date.now();
 
 // ============================================================
+// DEFAULT SECURITY: HONEYPOT TRAPS + BLOCKED WORDS
+// Auto-seeded to MongoDB on first run (version-controlled)
+// ============================================================
+
+const DEFAULT_HONEYPOT_TRAPS = [
+  // ── Hacking / Exploits ──
+  "hack","hacked","hacker","hackers","hacking","hackbot","hackme","hackthis",
+  "exploit","exploits","exploiting","exploited","exploiter","payload","payloads",
+  "script","scripts","scriptbot","botnet","botnets","ddos","dosattack","dos",
+  "spam","spambot","spammer","spammers","spamming","flood","flooding","flooder",
+  "brute","bruteforce","bruteforcing","crack","cracked","cracker","crackers","cracking",
+  "bypass","bypassed","bypassme","phishing","phish","phishme",
+  "scam","scambot","scammer","scammers","scamming",
+  "carding","carder","carders","cc_dump","cvv","bin","bins",
+  "otp","otpbypass","bypass_otp","termux","linux","kali","kalilinux","ubuntu",
+  "python","py","pip","node","npm","git","github","clone","repo","repository",
+  "session","string_session","pyrogram","telethon","telethon_session","session_string",
+  "account","accounts","report_bot","report_spam",
+  "proxy","proxies","vpn","scan","scanner","nmap","sqlmap",
+  "vulnerability","vulnerable","exploit_db","exploitdb",
+  "shell","reverse_shell","revshell","terminal","bash",
+  "apk","modapk","mod","modded","premium","pro","freepremium","free_premium",
+  // ── Malware / RAT / Tools ──
+  "rat","keylogger","malware","ransomware","trojan","virus","worm",
+  "backdoor","rootkit","zero_day","zeroday",
+  "xss","sqli","lfi","rfi","csrf","rce","c2","botmaster",
+  "loic","hoic","slowloris","metasploit","msfvenom","msfconsole",
+  "netcat","nc","wireshark","aircrack","hashcat","john","hydra",
+  "medusa","burpsuite","owasp","nikto","dirb","gobuster","ffuf","wfuzz",
+  "sqlninja","xsstrike","commix","weevely","msfpayload","meterpreter",
+  "mimikatz","lazagne","bloodhound","empire","cobalt_strike",
+  "powersploit","powercat","psexec","winrm","wmiexec","dcsync",
+  "pass_hash","golden_ticket","silver_ticket","kerberoast","asreproast",
+  // ── Telegram Specific ──
+  "telegram_hack","tg_hack","account_hack","phone_hack",
+  "otp_bypass","twofactor_bypass","twofa_bypass","account_recover","account_steal",
+  "session_hijack","string_session_gen","pyrogram_client","telethon_client",
+  "account_gen","account_sell","tg_member","tg_scraper","tg_adder",
+  "mass_add","spambot","floodbot","tgbot_hack","group_hack","channel_hack",
+  "phone_verify","fake_otp","sim_swap","kyc_bypass",
+  "tg_token","bot_token","bot_hack","admin_hack","admin_panel","adminpanel",
+  "admin_login","cpanel","cpanelhack","ftp_crack","ssh_crack","rdp_crack",
+  "telnet_crack","database_dump","db_dump","mysql_dump","sql_dump",
+  "data_breach","leak_db","leaked_db","server_hack","vps_hack","cloud_hack",
+  "aws_hack","azure_hack","gcp_hack","docker_escape","api_hack",
+  "mongodb_inject","nosql_inject","redis_inject","graphql_inject",
+  "xml_inject","ldap_inject","blind_sql","time_sql","union_sql",
+  // ── Userbot / Scraper ──
+  "userbot","ub","tg_userbot","userbotplugin","plugin","plugins",
+  "module","modules","addon","addons","join_all","leave_all",
+  "scrape","scraper","scraping","member_add","adder","add_members",
+  "invite","inviter","massdm","mass_dm","gcast","global_broadcast",
+  "forwarder","auto_forward","auto_reply","afk","tagall","broadcast_all",
+  "input_peer","access_hash","encode","decode","base64_decode",
+  "member_scraper","group_scraper","channel_scraper","contact_scraper",
+  "phone_scraper","data_scraper","username_scraper","profile_scraper",
+  "message_copy","message_sender","bulk_message","mass_message",
+  "joiner","leaver","join_bot","leave_bot","report_all","mass_report",
+  "dm_all","pm_all","pm_bot","spammer_bot","flood_all","spam_all",
+  // ── Adult / NSFW ──
+  "adult","nsfw","leaks","premiumchan","onlyfans","xxx","pornhub","xnxx",
+  "xvideos","nude","nudes","explicit","sexbot","adult_bot","nsfw_bot",
+  "leak_channel","onlyfans_free","adult_content","18plus","eighteen_plus",
+  "pornlink","nsfwlink","nude_leak","celebrity_leak","mms","mmslink",
+  // ── Gambling / Betting ──
+  "casino","bet","betting","lottery","gamble","gambling","slots","poker",
+  "jackpot","satta","matka","cricket_bet","ipl_bet","prediction",
+  "tipster","bet365","onexbet","betway","1xbet","satta_king","satta_matka",
+  "lucky_draw_hack","lottery_win","jackpot_trick","casino_trick",
+  // ── Carding / Financial Fraud ──
+  "creditcard","debit_card","card_crack","paypal_hack","upi_hack",
+  "paytm_hack","bank_hack","net_banking","otp_hack","aadhaar_bypass",
+  "pan_bypass","fake_kyc","money_double","investment_scam","ponzi","mlm_scam",
+  "crypto_scam","bitcoin_double","eth_double","wallet_hack","seed_phrase",
+  "private_key","recovery_phrase","mnemonic","binance_hack","coinbase_hack",
+  "metamask_hack","trustwallet_hack","phantom_hack","ledger_hack",
+  "card_gen","cardgen","cc_checker","bin_checker","live_cc","dead_cc",
+  "cc_valid","cc_invalid","cvv_check","card_check","paypal_check",
+  "stripe_check","braintree_check","paypal_gen","card_dump",
+  // ── Password / Auth Bypass ──
+  "password_crack","password_dump","password_list","wordlist","rockyou",
+  "password_spray","credential_stuff","credential_harvest","cred_dump",
+  "rainbow_table","hash_crack","sha1_crack","md5_crack","bcrypt_crack",
+  "ntlm_crack","lm_crack","kerberos_crack","ticket_crack",
+  // ── Social Engineering ──
+  "social_engineer","se","pretexting","vishing","smishing",
+  "spear_phish","whaling","clone_phishing","watering_hole","baiting",
+  // ── Mobile Hacking ──
+  "android_hack","ios_hack","iphone_hack","samsung_hack","xiaomi_hack",
+  "apk_mod","apk_crack","apk_patch","apk_decompile","apk_recompile",
+  "apk_inject","ios_jailbreak","iphone_unlock","imei_unlock","bootloader",
+  // ── Gaming Cheats / Mods ──
+  "cheat_codes","pubg_mod","freefire_mod","diamonds","coins",
+  "unlimited_money","generator","keygen","key_gen","serial_number",
+  "license","activation","cracked_software","warez","torrent","magnet",
+  "mediafire","zippyshare","drive_link","mega_nz","piracy",
+  "game_hack","game_cheat","pubg_hack","freefire_hack","cod_hack",
+  "minecraft_crack","roblox_hack","fortnite_hack","valorant_hack",
+  "csgo_cheat","cs2_cheat","aimbot","wallhack","esp_cheat",
+  // ── Token / API Key Stealers ──
+  "token_grab","token_grabber","discord_token","whatsapp_session",
+  "facebook_hack","instagram_hack","snapchat_hack","twitter_hack",
+  "gmail_hack","email_hack","script_kiddie","github_leak","pastebin_hack",
+  // ── Network / Server ──
+  "port_scan","port_scanner","portscan","arp_spoof","arp_poison",
+  "dns_spoof","dns_hijack","mitm","man_in_middle","ssl_strip",
+  "wifi_crack","wpa_crack","wpa2_crack","handshake_crack","pmkid",
+  "evil_twin","rogue_ap","captive_portal_hack","hotspot_hack",
+  // ── File / Malware ──
+  "exe","cmd","cmdexe","powershell","batch_script","vbs_script",
+  "macro_virus","office_macro","pdf_exploit","zip_bomb","fork_bomb",
+  "memory_bomb","cpu_bomb","kill_bot","kill_all","destroy_db",
+  // ── Miscellaneous ──
+  "darkweb","dark_web","deepweb","deep_web","tor_browser","onion_link",
+  "blackhat","black_hat","greyhat","grey_hat","pentest_tool",
+  "ctf_help","pwn","pwntools","pwnme","overflow","buffer_overflow",
+  "heap_spray","use_after_free","format_string","rop_chain","shellcode",
+  "obfuscate","deobfuscate","unpack","pack","encode_payload","encrypt_payload",
+  "steganography","stego","hide_payload","bypass_detection",
+  "antivirus_bypass","av_bypass","amsi_bypass","edr_bypass",
+  "sandbox_bypass","vm_detect","vm_escape","hypervisor_escape",
+  "container_escape","privilege_escalate","priv_esc","uac_bypass",
+];
+
+const DEFAULT_BLOCKED_WORDS = [
+  // ── Hindi (Devanagari) ──
+  "भड़वा","भड़वे","रंडी","रंडिया","भोसड़ी","भोसड़ीके","चुत","चुतिया",
+  "चूतिया","लंड","लौड़ा","लोड़ा","मादरचोद","बहनचोद","भड़ुआ",
+  "हरामी","हरामजादे","हरामजादा","कमीना","कमीने","बेशर्म","गांड",
+  "कुतिया","कुत्ते","सुअर","सूअर","गधा","बकलोल","रंडीबाज",
+  "चुतमारी","गांडू","भोसड़ा","लौड़ेबाज","मादरचोद","बहनचोद",
+  "हरामखोर","कुत्ते की औलाद","साले","साली","कमीनी","भड़ासी",
+  // ── Hinglish Transliterated ──
+  "madarchod","madarchodd","maderchod","maadarchodd","bhenchod","bhainchod",
+  "behenchod","behnchod","bc","mc","chutiya","chutiye","chutiyapon","chut",
+  "lund","lauda","lavda","lavde","gaand","gandu","gand","randi","randiya",
+  "randwe","randwa","harami","haramjada","haramjadi","haramzada","haramzadi",
+  "haramkhor","kameena","kamine","bhadva","bhadviya","bhadua","saala","saali",
+  "saale","maadarchodd","bhosdike","bhosadike","bhosadwale","bhosadi","bhosda",
+  "khankhi","khankhar","randi_ki_aulad","gand_mara","gand_maro","gaandmaro",
+  "chakka","hijra","hijre","kutwa","kuttiya","sooar","suwar","suwara",
+  "ullu","ullu_ka_patha","bevakoof","bewakoof","chutad","chutmarani",
+  "lund_maro","laude_ke","gaand_maro","bhosdiwale","maadarchodd",
+  "sala_kutta","sali_kutiya","haramkhor","kamine_log","kamini","kamine",
+  "bkl","bkl_sala","maa_ki_aankh","teri_maa","teri_ma","teri_bahan",
+  "maa_chudao","behen_chudao","gandu_sala","lund_khao","lauda_khao",
+  "chut_mein","gaand_mein","rand","randi_rona","randibaz","randibazi",
+  // ── English Abuses ──
+  "fuck","fucking","fucked","fucker","fucks","motherfucker","mf",
+  "shit","bullshit","bitch","bitches","bastard","bastards",
+  "asshole","assholes","dickhead","cunt","prick","twat",
+  "slut","whore","whores","dick","cock","pussy",
+  "son_of_a_bitch","sob","nigger","nigga","fag","faggot",
+  "retard","moron","idiot_fuck","dumbfuck","dipshit","jackass",
+  "shithead","arsehole","bloody_hell","bollocks","wanker","tosser",
+];
+
+// ============================================================
 // SUB-ADMIN SYSTEM
 // Add admins with granular permissions via /addadmin
 // ============================================================
@@ -465,6 +623,8 @@ async function loadStateFromDB() {
   }
 
   console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users, ${botCustomTexts.size} custom UI texts, ${subAdmins.size} sub-admins`);
+  // Seed defaults (one-time — skips if already done)
+  await seedDefaultSecurity();
 }
 
 async function saveGiveaway(g) {
@@ -502,6 +662,53 @@ async function saveConfig(key, value) {
   try {
     await BotConfigModel.findOneAndUpdate({ key }, { key, value }, { upsert: true });
   } catch (e) { console.error("saveConfig error:", e.message); }
+}
+
+// Seeds DEFAULT_HONEYPOT_TRAPS + DEFAULT_BLOCKED_WORDS to MongoDB on first run
+// Bumping SECURITY_SEED_VERSION will re-seed new additions on next restart
+const SECURITY_SEED_VERSION = "v1";
+async function seedDefaultSecurity() {
+  try {
+    const existing = await BotConfigModel.findOne({ key: "defaultSecurityVersion" });
+    if (existing?.value === SECURITY_SEED_VERSION) return; // already seeded
+
+    console.log("🔐 Seeding default honeypot traps & blocked words...");
+
+    // Bulk-upsert honeypot traps
+    const trapOps = DEFAULT_HONEYPOT_TRAPS.map(cmd => ({
+      updateOne: {
+        filter: { command: cmd },
+        update: { command: cmd },
+        upsert: true
+      }
+    }));
+    await HoneypotTrapModel.bulkWrite(trapOps, { ordered: false }).catch(() => {});
+
+    // Bulk-upsert blocked words
+    const wordOps = DEFAULT_BLOCKED_WORDS.map(word => ({
+      updateOne: {
+        filter: { word },
+        update: { word },
+        upsert: true
+      }
+    }));
+    await BlockedWordModel.bulkWrite(wordOps, { ordered: false }).catch(() => {});
+
+    // Also add to in-memory sets (loadStateFromDB runs before this, so need to merge)
+    for (const cmd of DEFAULT_HONEYPOT_TRAPS) honeypotTraps.add(cmd);
+    for (const word of DEFAULT_BLOCKED_WORDS) blockedWords.add(word);
+
+    // Mark as seeded
+    await BotConfigModel.findOneAndUpdate(
+      { key: "defaultSecurityVersion" },
+      { key: "defaultSecurityVersion", value: SECURITY_SEED_VERSION },
+      { upsert: true }
+    );
+
+    console.log(`✅ Seeded ${honeypotTraps.size} honeypot traps + ${blockedWords.size} blocked words.`);
+  } catch (e) {
+    console.error("seedDefaultSecurity error:", e.message);
+  }
 }
 
 async function saveSubAdmins() {
