@@ -7787,6 +7787,67 @@ bot.onText(/\/clearaudit/, async (msg) => {
   await bot.sendMessage(msg.chat.id, `🧹 <b>Security/Audit log cleared.</b>`, { parse_mode: "HTML" });
 });
 
+// ─── /resetsecurity — Reset all security state (keep config/traps/words) ───
+bot.onText(/\/resetsecurity/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+
+  const prevBanned   = bannedUsers.size;
+  const prevWarnings = userWarnings.size;
+  const prevShadow   = shadowBanned.size;
+  const prevMuted    = mutedUsers.size;
+  const prevFlagged  = flaggedUsers.size;
+  const prevHoney    = honeypotTripped.size;
+
+  // Clear state — keep traps, blocked words, securityMode, maxWarnings, autobanEnabled, antispamEnabled
+  bannedUsers.clear();
+  userWarnings.clear();
+  shadowBanned.clear();
+  mutedUsers.clear();
+  flaggedUsers.clear();
+  honeypotTripped.clear();
+  securityLog.length = 0;
+
+  // Persist resets
+  await saveConfig("bannedUsers",   []).catch(() => {});
+  await saveConfig("shadowBanned",  []).catch(() => {});
+  await saveConfig("mutedUsers",    []).catch(() => {});
+  await saveConfig("trustedUsers",  [...trustedUsers]).catch(() => {});
+  await SecurityLogModel.deleteMany({}).catch(() => {});
+
+  await bot.sendMessage(chatId,
+    `🔄━━━━━━━━━━━━━━━━━━━━━━🔄\n` +
+    `  🛡️  <b>SECURITY RESET DONE</b>\n` +
+    `🔄━━━━━━━━━━━━━━━━━━━━━━🔄\n\n` +
+    `<blockquote>` +
+    `✅ Saari security state clear ho gayi:\n\n` +
+    `🚫 Banned Users     » <b>${prevBanned} → 0</b>\n` +
+    `⚠️ Warnings         » <b>${prevWarnings} → 0</b>\n` +
+    `👻 Shadow Bans      » <b>${prevShadow} → 0</b>\n` +
+    `🔇 Muted Users      » <b>${prevMuted} → 0</b>\n` +
+    `🚩 Flagged Users    » <b>${prevFlagged} → 0</b>\n` +
+    `🍯 Honeypot Hits    » <b>${prevHoney} → 0</b>\n` +
+    `📋 Security Logs    » <b>Cleared</b>\n\n` +
+    `🔒 <i>Config safe hai:</i>\n` +
+    `▸ Honeypot traps (${honeypotTraps.size})\n` +
+    `▸ Blocked words (${blockedWords.size})\n` +
+    `▸ Security mode: <b>${securityMode.toUpperCase()}</b>\n` +
+    `▸ Trusted users (${trustedUsers.size}) — unchanged` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /previewwelcome — Preview welcome screen ───
+bot.onText(/\/previewwelcome/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  await bot.sendMessage(msg.chat.id,
+    `👁️ <b>Welcome screen preview bhej raha hoon...</b>`,
+    { parse_mode: "HTML" }
+  );
+  await sendWelcome(msg.chat.id, msg.from.id);
+});
+
 // ─── /userhistory <userId> ───
 bot.onText(/\/userhistory (\d+)/, async (msg, match) => {
   if (!isAdmin(msg.from.id)) return;
@@ -8042,7 +8103,8 @@ const KNOWN_COMMANDS = new Set([
   "shadowban","unshadowban","shadowlist","trustuser","untrustuser","trustedlist",
   "flaguser","unflaguser","flaggedlist","autoban","setmaxwarns","securitymode",
   "antispam","emergencylock","emergencyunlock","securitystats","suspicious","auditlog",
-  "clearaudit","userhistory","blockword","unblockword","blockedwords","ratelimitreset","securityreport",
+  "clearaudit","resetsecurity","userhistory","blockword","unblockword","blockedwords","ratelimitreset","securityreport",
+  "previewwelcome",
   "about","version","uptime","rules","faq","terms","countdown","rank","invite","notify","refer","feedback"
 ]);
 
