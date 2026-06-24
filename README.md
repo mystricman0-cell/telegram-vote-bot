@@ -482,6 +482,7 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/gcount` | `/gcount` | Quick giveaway count breakdown — active, ended, totals, participants, votes |
 | `/topusers` | `/topusers` | Top 10 users ranked by number of giveaways created |
 | `/maintenance` | `/maintenance on\|off` | Block all non-admin users during updates |
+| `/previewwelcome` | `/previewwelcome` | Preview the current welcome screen (with image + buttons) |
 | `/setwelcomemsg` | `/setwelcomemsg` | Set custom welcome message text (HTML supported) |
 | `/clearwelcomemsg` | `/clearwelcomemsg` | Restore default welcome message |
 | `/exportusers` | `/exportusers` | Download all bot users as .txt file |
@@ -530,6 +531,7 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/suspicious` | `/suspicious` | Last 20 security log events |
 | `/auditlog` | `/auditlog` | Last 30 detailed audit log entries |
 | `/clearaudit` | `/clearaudit` | Clear security + audit log |
+| `/resetsecurity` | `/resetsecurity` | Reset ALL security state (bans, warnings, mutes, shadow bans, flags, honeypot hits) — keeps traps & config |
 | `/userhistory` | `/userhistory <id>` | Last 30 commands sent by a user |
 | `/blockword` | `/blockword <word>` | Block a word/phrase from all messages |
 | `/unblockword` | `/unblockword <word>` | Unblock a word/phrase |
