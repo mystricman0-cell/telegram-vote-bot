@@ -262,6 +262,15 @@
 - Global force join — applies to all bot users (VIP 7D+)
 - Private channel support via invite links
 
+### 🛡️ &nbsp;Auto Security Defaults *(NEW — v3.0.2)*
+- **561 honeypot traps** pre-loaded on first startup — covers hacking, exploits, userbots, scams, adult, gambling, carding, tools and more
+- **177 blocked words** — Hindi (Devanagari), Hinglish transliterated, and English abuses all blocked automatically
+- Traps and words are seeded to MongoDB once and **treated like manually added ones** — `/removetrap` permanently removes them
+- `/listtraps` shows all 561 active traps
+- `/blockedwords` shows all 177 blocked words
+- Any user who triggers a honeypot trap → **instant admin alert + automatic warning**
+- Any user who types a blocked word → **warning logged + message blocked**
+
 ### 🎨 &nbsp;Animated UI
 - Every button click: smooth **delete → animate → appear** flow
 - Multiple styles: loading · leaderboard · payment · vote · success · cancel
