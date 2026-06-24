@@ -170,6 +170,66 @@ let maxWarnings         = 3;
 let autobanEnabled      = true;
 let emergencyLocked     = false;
 const botStartTime      = Date.now();
+
+// ============================================================
+// UI TEXT CUSTOMIZATION SYSTEM
+// Change any text/emoji/button via /customize or /settext
+// ============================================================
+const botCustomTexts = new Map();
+
+const DEFAULT_UI_TEXTS = {
+  // Welcome screen
+  "welcome.header":            "🎁 <b>DRS GIVEAWAY BOT</b> 🎁",
+  "welcome.tagline":           "✦ Fair · Fast · Automated ✦",
+  "welcome.btn_join":          "🎯 Join a Giveaway",
+  "welcome.btn_create":        "➕ Create Giveaway",
+  "welcome.btn_vip":           "👑 Get VIP",
+  "welcome.btn_help":          "📖 Help & Guide",
+  "welcome.btn_support":       "💬 Support",
+  "welcome.btn_leaderboard":   "🏆 Leaderboard",
+  // Giveaway UI
+  "giveaway.btn_participate":  "🎯 Participate",
+  "giveaway.btn_vote":         "🗳️ Vote Now!",
+  "giveaway.btn_leaderboard":  "🏆 Leaderboard",
+  "giveaway.btn_share":        "📤 Share",
+  "giveaway.winner_header":    "🏆 <b>WINNERS ANNOUNCED!</b> 🏆",
+  "giveaway.active_header":    "🟢 <b>LIVE GIVEAWAYS</b>",
+  "giveaway.ended_tag":        "🏁 Ended",
+  "giveaway.label_votes":      "🗳️ Votes",
+  "giveaway.label_rank":       "🏅 Rank",
+  "giveaway.label_participants":"👥 Participants",
+  "giveaway.medal_1":          "🥇",
+  "giveaway.medal_2":          "🥈",
+  "giveaway.medal_3":          "🥉",
+  // VIP / Membership
+  "vip.badge":                 "👑 VIP",
+  "vip.tag_active":            "✅ Active",
+  "vip.tag_expired":           "⚠️ Expired",
+  "vip.btn_buy":               "💎 Get VIP Membership",
+  // Payments
+  "pay.btn_inr":               "💳 Pay via UPI/INR",
+  "pay.btn_stars":             "⭐ Pay with Stars",
+  "pay.msg_success":           "✅ Payment verified! Votes added.",
+  "pay.msg_pending":           "⏳ Payment is under review.",
+  "pay.msg_rejected":          "❌ Payment rejected. Contact support.",
+  // Support
+  "support.header":            "💬 <b>DRS Support</b>",
+  "support.btn":               "📩 Contact Support",
+  // System / Errors
+  "sys.footer":                "✦ ─── <b>@DRS_GiveawayBot</b> ─── ✦",
+  "sys.maintenance":           "🔧 Bot is under maintenance. Please try again later.",
+  "sys.banned":                "🚫 You are banned from using this bot.",
+  "sys.admin_only":            "❌ Admin only!",
+  "sys.not_found":             "❌ Not found.",
+  "sys.btn_back":              "🔙 Back",
+  "sys.btn_close":             "❌ Close",
+  "sys.btn_confirm":           "✅ Confirm",
+  "sys.btn_cancel":            "🚫 Cancel",
+};
+
+function getUI(key) {
+  return botCustomTexts.has(key) ? botCustomTexts.get(key) : (DEFAULT_UI_TEXTS[key] ?? key);
+}
 let membershipQrFileId = null;
 let forceJoinChannels = [];
 let membershipPlans = {
@@ -373,7 +433,13 @@ async function loadStateFromDB() {
   const recentSecLogs = await SecurityLogModel.find({}).sort({ timestamp: -1 }).limit(200).lean();
   for (const l of recentSecLogs.reverse()) securityLog.push(l);
 
-  console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users`);
+  // Load custom UI texts
+  const uiConfigs = await BotConfigModel.find({ key: /^ui:/ });
+  for (const c of uiConfigs) {
+    botCustomTexts.set(c.key.replace('ui:', ''), c.value);
+  }
+
+  console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users, ${botCustomTexts.size} custom UI texts`);
 }
 
 async function saveGiveaway(g) {
@@ -1361,6 +1427,34 @@ bot.on("callback_query", async (query) => {
     try { await bot.deleteMessage(chatId, msgId); } catch {}
     await sendWelcome(chatId, userId);
     return;
+  }
+
+  // ─── Customize UI text callbacks ───
+  if (data.startsWith("cust_page:")) {
+    if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!" }).catch(() => {});
+    const page = parseInt(data.split(":")[1]);
+    await bot.editMessageReplyMarkup(custKeyboard(page), { chat_id: chatId, message_id: msgId }).catch(() => {});
+    return bot.answerCallbackQuery(query.id).catch(() => {});
+  }
+  if (data === "cust_noop") return bot.answerCallbackQuery(query.id).catch(() => {});
+  if (data === "cust_close") {
+    if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!" }).catch(() => {});
+    await bot.deleteMessage(chatId, msgId).catch(() => {});
+    return bot.answerCallbackQuery(query.id).catch(() => {});
+  }
+  if (data.startsWith("cust_edit:")) {
+    if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!" }).catch(() => {});
+    const key = data.replace("cust_edit:", "");
+    const current = getUI(key);
+    const isCustom = botCustomTexts.has(key);
+    const editText =
+      `🔑 <b>Key:</b> <code>${key}</code>\n\n` +
+      `📌 <b>Default:</b>\n<blockquote>${DEFAULT_UI_TEXTS[key] || "(none)"}</blockquote>\n\n` +
+      (isCustom ? `✏️ <b>Current (custom):</b>\n<blockquote>${current}</blockquote>\n\n` : "") +
+      `<b>Naya text bhejo:</b>\n<code>/settext ${key} naya text</code>\n\n` +
+      (isCustom ? `Default restore:\n<code>/resettext ${key}</code>` : "");
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+    return bot.sendMessage(chatId, editText, { parse_mode: "HTML" });
   }
 
   // ─── cleandb: callback handlers ───
@@ -7673,6 +7767,218 @@ bot.on("polling_error", e => {
 bot.on("error", e => console.error("Bot error:", e.message));
 
 // ============================================================
+// /health — Bot health status
+// ============================================================
+bot.onText(/\/health/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const upMs   = Date.now() - botStartTime;
+  const upSecs = Math.floor(upMs / 1000);
+  const upH    = Math.floor(upSecs / 3600);
+  const upM    = Math.floor((upSecs % 3600) / 60);
+  const upS    = upSecs % 60;
+  const upStr  = `${upH}h ${upM}m ${upS}s`;
+
+  const dbState = mongoose.connection.readyState;
+  const dbStatus = dbState === 1 ? "✅ Connected" : dbState === 2 ? "🔄 Connecting" : "❌ Disconnected";
+
+  const activeG = [...giveaways.values()].filter(g => g.active).length;
+  const totalG  = giveaways.size;
+  const memMB   = (process.memoryUsage().heapUsed / 1024 / 1024).toFixed(1);
+  const totalMB = (process.memoryUsage().heapTotal / 1024 / 1024).toFixed(1);
+
+  const text =
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  🏥  <b>BOT HEALTH REPORT</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `⏱️ Uptime      » <b>${upStr}</b>\n` +
+    `💾 MongoDB     » <b>${dbStatus}</b>\n` +
+    `🎁 Giveaways   » <b>${activeG} active / ${totalG} total</b>\n` +
+    `👥 Users       » <b>${botUsers.size}</b>\n` +
+    `👑 VIP         » <b>${vipUsers.size}</b>\n` +
+    `🔧 Maintenance » <b>${maintenanceMode ? "🔴 ON" : "🟢 OFF"}</b>\n` +
+    `🔒 EmergencyLock» <b>${emergencyLocked ? "🔴 ON" : "🟢 OFF"}</b>\n` +
+    `🛡️ Security    » <b>${securityMode.toUpperCase()}</b>\n` +
+    `🧠 Memory      » <b>${memMB} MB / ${totalMB} MB</b>\n` +
+    `📋 Custom Texts» <b>${botCustomTexts.size} overrides</b>\n` +
+    `⏰ Scheduled   » <b>${scheduledMessages.size} pending</b>\n` +
+    `💳 Payments    » <b>${pendingPayments.size} pending</b>` +
+    `</blockquote>\n\n` +
+    `<i>Checked at ${new Date().toUTCString()}</i>`;
+
+  await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
+});
+
+// ============================================================
+// /customize — Interactive UI text customizer
+// ============================================================
+const UI_KEYS = Object.keys(DEFAULT_UI_TEXTS);
+const CUST_PAGE_SIZE = 8;
+
+function custKeyboard(page) {
+  const start  = page * CUST_PAGE_SIZE;
+  const slice  = UI_KEYS.slice(start, start + CUST_PAGE_SIZE);
+  const rows   = slice.map(k => [{
+    text: (botCustomTexts.has(k) ? "✏️ " : "   ") + k,
+    callback_data: `cust_edit:${k}`
+  }]);
+  const nav = [];
+  if (page > 0) nav.push({ text: "⬅️ Prev", callback_data: `cust_page:${page - 1}` });
+  nav.push({ text: `📄 ${page + 1}/${Math.ceil(UI_KEYS.length / CUST_PAGE_SIZE)}`, callback_data: "cust_noop" });
+  if (start + CUST_PAGE_SIZE < UI_KEYS.length) nav.push({ text: "Next ➡️", callback_data: `cust_page:${page + 1}` });
+  rows.push(nav);
+  rows.push([{ text: "🔙 Close", callback_data: "cust_close" }]);
+  return { inline_keyboard: rows };
+}
+
+bot.onText(/\/customize/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const text =
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  🎨  <b>UI TEXT CUSTOMIZER</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `Bot ke <b>${UI_KEYS.length}</b> customizable texts hain.\n` +
+    `✏️ = already customized\n\n` +
+    `Kisi bhi key par tap karo — phir naya text bhejo.\n` +
+    `<code>/settext &lt;key&gt; &lt;new value&gt;</code> se bhi directly set kar sakte ho.\n` +
+    `<code>/resettext &lt;key&gt;</code> se default restore hoga.`;
+  await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML", reply_markup: custKeyboard(0) });
+});
+
+
+// /settext <key> <value>
+bot.onText(/\/settext\s+(\S+)\s+([\s\S]+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const key   = match[1].trim();
+  const value = match[2].trim();
+  if (!DEFAULT_UI_TEXTS.hasOwnProperty(key)) {
+    const validKeys = UI_KEYS.join("\n• ");
+    return bot.sendMessage(msg.chat.id,
+      `❌ Unknown key: <code>${key}</code>\n\nValid keys:\n• ${validKeys}`,
+      { parse_mode: "HTML" });
+  }
+  botCustomTexts.set(key, value);
+  await BotConfigModel.findOneAndUpdate(
+    { key: `ui:${key}` }, { key: `ui:${key}`, value }, { upsert: true }
+  );
+  await bot.sendMessage(msg.chat.id,
+    `✅ <b>Text updated!</b>\n\n🔑 Key: <code>${key}</code>\n📝 New value:\n<blockquote>${value}</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// /resettext <key>
+bot.onText(/\/resettext\s+(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const key = match[1].trim();
+  if (!DEFAULT_UI_TEXTS.hasOwnProperty(key)) {
+    return bot.sendMessage(msg.chat.id, `❌ Unknown key: <code>${key}</code>`, { parse_mode: "HTML" });
+  }
+  botCustomTexts.delete(key);
+  await BotConfigModel.deleteOne({ key: `ui:${key}` });
+  await bot.sendMessage(msg.chat.id,
+    `✅ <b>Reset to default!</b>\n\n🔑 Key: <code>${key}</code>\n📌 Default:\n<blockquote>${DEFAULT_UI_TEXTS[key]}</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
+// /listtext — show all keys with current values
+bot.onText(/\/listtext/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const lines = UI_KEYS.map(k => {
+    const val = botCustomTexts.has(k) ? `✏️ ${botCustomTexts.get(k)}` : `   ${DEFAULT_UI_TEXTS[k]}`;
+    return `<code>${k}</code>\n↳ ${val}`;
+  }).join("\n\n");
+  const chunks = [];
+  let chunk = "";
+  for (const line of lines.split("\n\n")) {
+    if ((chunk + "\n\n" + line).length > 3800) {
+      chunks.push(chunk);
+      chunk = line;
+    } else {
+      chunk = chunk ? chunk + "\n\n" + line : line;
+    }
+  }
+  if (chunk) chunks.push(chunk);
+  for (const c of chunks) {
+    await bot.sendMessage(msg.chat.id,
+      `🎨 <b>All UI Texts</b> (✏️ = custom)\n\n${c}`,
+      { parse_mode: "HTML" });
+  }
+});
+
+// ============================================================
+// /pushgithub — Push current vote-bot.mjs to GitHub
+// ============================================================
+bot.onText(/\/pushgithub(?:\s+([\s\S]+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+
+  const ghToken = process.env.GITHUB_TOKEN;
+  const ghRepo  = process.env.GITHUB_REPO_URL;
+
+  if (!ghToken || !ghRepo) {
+    return bot.sendMessage(msg.chat.id,
+      `❌ <b>GitHub credentials missing!</b>\n\n` +
+      `Railway pe ye environment variables set karo:\n` +
+      `• <code>GITHUB_TOKEN</code> — GitHub Personal Access Token\n` +
+      `• <code>GITHUB_REPO_URL</code> — Repo URL (https://github.com/user/repo)`,
+      { parse_mode: "HTML" });
+  }
+
+  const commitMsg = match?.[1]?.trim() || `chore: bot update via /pushgithub [${new Date().toISOString()}]`;
+  const repoPath  = ghRepo.replace("https://github.com/", "").replace(/\/$/, "");
+
+  const statusMsg = await bot.sendMessage(msg.chat.id, "⏳ GitHub pe push ho raha hai...", { parse_mode: "HTML" });
+
+  try {
+    const { readFileSync } = await import("fs");
+    const { fileURLToPath } = await import("url");
+    const { dirname, join } = await import("path");
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const fileContent = readFileSync(join(__dirname, "vote-bot.mjs"), "utf8");
+    const encoded     = Buffer.from(fileContent).toString("base64");
+
+    // Get current SHA
+    const getResp = await fetch(`https://api.github.com/repos/${repoPath}/contents/vote-bot.mjs`, {
+      headers: { "Authorization": `token ${ghToken}`, "Accept": "application/vnd.github.v3+json" }
+    });
+    const getJson = await getResp.json();
+    if (!getJson.sha) throw new Error(getJson.message || "Could not get file SHA");
+
+    // Push update
+    const putResp = await fetch(`https://api.github.com/repos/${repoPath}/contents/vote-bot.mjs`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `token ${ghToken}`,
+        "Accept": "application/vnd.github.v3+json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        message: commitMsg,
+        content: encoded,
+        sha: getJson.sha,
+        committer: { name: "drs", email: "drs@drsnetwork.com" },
+        author:    { name: "drs", email: "drs@drsnetwork.com" }
+      })
+    });
+    const putJson = await putResp.json();
+    if (!putJson.commit) throw new Error(putJson.message || "Push failed");
+
+    await bot.editMessageText(
+      `✅ <b>GitHub pe push ho gaya!</b>\n\n` +
+      `📁 File: <code>vote-bot.mjs</code>\n` +
+      `💬 Commit: <code>${commitMsg}</code>\n` +
+      `🔗 SHA: <code>${putJson.commit.sha.substring(0, 7)}</code>\n` +
+      `🌐 Repo: <a href="${ghRepo}">${repoPath}</a>`,
+      { chat_id: statusMsg.chat.id, message_id: statusMsg.message_id, parse_mode: "HTML", disable_web_page_preview: true }
+    );
+  } catch (e) {
+    await bot.editMessageText(
+      `❌ <b>Push failed!</b>\n\n<code>${e.message}</code>`,
+      { chat_id: statusMsg.chat.id, message_id: statusMsg.message_id, parse_mode: "HTML" }
+    );
+  }
+});
+
+// ============================================================
 // MAIN START
 // ============================================================
 
@@ -7745,9 +8051,6 @@ async function main() {
         { command: "setwinner",         description: "🏆 Set winner count for giveaway" },
         { command: "clonegiveaway",     description: "📋 Clone a giveaway" },
         { command: "announce",          description: "📢 Message all giveaway participants" },
-        { command: "remindvote",        description: "🔔 Send vote reminder to participants" },
-        { command: "voteleaderboard",   description: "🌍 Global top 20 voters" },
-        { command: "giveawayreport",    description: "📄 Download giveaway report .txt" },
         { command: "setpanelthreshold", description: "🚨 Set vote panel alert threshold" },
         // ── Membership (7) ──
         { command: "givemem",           description: "💳 Give membership to user" },
@@ -7784,8 +8087,14 @@ async function main() {
         { command: "cleandb",           description: "🧹 Interactive selective DB cleanup" },
         { command: "removepay",         description: "🗑️ Remove a pending payment by ID" },
         { command: "clearallpending",   description: "🗑️ Clear ALL pending payments at once" },
-        { command: "gcount",            description: "🎁 Quick giveaway count breakdown" },
         { command: "topusers",          description: "🏆 Top users by giveaways created" },
+        // ── New admin tools (6) ──
+        { command: "health",            description: "🏥 Bot health — uptime, DB, memory, stats" },
+        { command: "customize",         description: "🎨 Interactive UI text & emoji customizer" },
+        { command: "settext",           description: "✏️ Set any UI text/emoji/button label" },
+        { command: "resettext",         description: "🔄 Reset a UI text to default" },
+        { command: "listtext",          description: "📋 List all UI text keys & current values" },
+        { command: "pushgithub",        description: "🚀 Push vote-bot.mjs to GitHub" },
         // ── Security — 33 commands ──
         { command: "securityhelp",      description: "🛡️ Full 40-cmd security reference" },
         { command: "securitystats",     description: "📊 Full security dashboard" },
@@ -7817,9 +8126,7 @@ async function main() {
         { command: "blockword",         description: "🚫 Block a word/phrase in messages" },
         { command: "unblockword",       description: "✅ Unblock a word/phrase" },
         { command: "blockedwords",      description: "🚫 List all blocked words" },
-        { command: "suspicious",        description: "🛡️ Last 20 security events" },
-        { command: "auditlog",          description: "📋 Last 30 audit log entries" },
-        { command: "securityreport",    description: "📄 Download full security report .txt" }
+        { command: "suspicious",        description: "🛡️ Last 20 security events" }
       ], { scope: { type: "chat", chat_id: MAIN_ADMIN_ID } });
 
       console.log("✅ Bot commands registered!");
