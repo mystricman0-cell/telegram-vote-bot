@@ -7902,34 +7902,155 @@ bot.onText(/\/securityreport/, async (msg) => {
   const chatId = msg.chat.id;
   await bot.sendChatAction(chatId, "upload_document").catch(() => {});
   const now = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-  let report = `DRS BOT — SECURITY REPORT\nGenerated: ${now}\n${"=".repeat(60)}\n\n`;
-  report += `SECURITY CONFIG\n${"-".repeat(40)}\nMode: ${securityMode}\nAnti-Spam: ${antispamEnabled}\nHoneypot: ${honeypotEnabled}\nAuto-Ban: ${autobanEnabled}\nEmergency Lock: ${emergencyLocked}\nMax Warnings: ${maxWarnings}\n\n`;
-  report += `HONEYPOT TRAPS (${honeypotTraps.size})\n${"-".repeat(40)}\n${[...honeypotTraps].join(", ") || "None"}\n\n`;
-  report += `HONEYPOT TRIGGERED (${honeypotTripped.size} users)\n${"-".repeat(40)}\n`;
-  for (const [uid, traps] of honeypotTripped) {
-    const u = botUsers.get(uid);
-    report += `User ${uid} @${u?.username || "N/A"}: ${traps.length} trap(s)\n`;
-    traps.forEach(t => { report += `  - /${t.command} at ${new Date(t.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}\n`; });
+  const sep  = "=".repeat(60);
+  const dash = "-".repeat(40);
+
+  let report = ``;
+  report += `╔══════════════════════════════════════════════════════════╗\n`;
+  report += `║         DRS BOT — FULL SECURITY REPORT                  ║\n`;
+  report += `╚══════════════════════════════════════════════════════════╝\n`;
+  report += `Generated : ${now}\n`;
+  report += `Bot Users : ${botUsers.size} total\n`;
+  report += `${sep}\n\n`;
+
+  // ── SUMMARY ──
+  report += `SUMMARY\n${dash}\n`;
+  report += `Banned Users     : ${bannedUsers.size}\n`;
+  report += `Shadow Banned    : ${shadowBanned.size}\n`;
+  report += `Muted Users      : ${mutedUsers.size}\n`;
+  report += `Flagged Users    : ${flaggedUsers.size}\n`;
+  report += `Warned Users     : ${userWarnings.size}\n`;
+  report += `Trusted Users    : ${trustedUsers.size}\n`;
+  report += `Honeypot Hits    : ${honeypotTripped.size}\n`;
+  report += `Blocked Words    : ${blockedWords.size}\n`;
+  report += `Honeypot Traps   : ${honeypotTraps.size}\n`;
+  report += `Security Logs    : ${securityLog.length}\n\n`;
+
+  // ── SECURITY CONFIG ──
+  report += `SECURITY CONFIG\n${dash}\n`;
+  report += `Mode             : ${securityMode.toUpperCase()}\n`;
+  report += `Anti-Spam        : ${antispamEnabled ? "ON" : "OFF"}\n`;
+  report += `Honeypot         : ${honeypotEnabled ? "ON" : "OFF"}\n`;
+  report += `Auto-Ban         : ${autobanEnabled ? "ON" : "OFF"}\n`;
+  report += `Emergency Lock   : ${emergencyLocked ? "ON ⚠️" : "OFF"}\n`;
+  report += `Max Warnings     : ${maxWarnings}\n\n`;
+
+  // ── BANNED USERS ──
+  report += `BANNED USERS (${bannedUsers.size})\n${dash}\n`;
+  if (bannedUsers.size === 0) {
+    report += `None\n`;
+  } else {
+    for (const uid of bannedUsers) {
+      const u = botUsers.get(uid);
+      report += `  • ${uid}  @${u?.username || "N/A"}  — ${u?.firstName || ""}\n`;
+    }
   }
-  report += `\nWARNED USERS (${userWarnings.size})\n${"-".repeat(40)}\n`;
-  for (const [uid, w] of userWarnings) {
-    const u = botUsers.get(uid);
-    report += `User ${uid} @${u?.username || "N/A"}: ${w.count} warnings\n`;
-    (w.reasons || []).forEach(r => { report += `  - ${r}\n`; });
+  report += `\n`;
+
+  // ── SHADOW BANNED ──
+  report += `SHADOW BANNED (${shadowBanned.size})\n${dash}\n`;
+  if (shadowBanned.size === 0) {
+    report += `None\n`;
+  } else {
+    for (const uid of shadowBanned) {
+      const u = botUsers.get(uid);
+      report += `  • ${uid}  @${u?.username || "N/A"}\n`;
+    }
   }
-  report += `\nSHADOW BANNED (${shadowBanned.size})\n${"-".repeat(40)}\n${[...shadowBanned].join(", ") || "None"}\n`;
-  report += `\nFLAGGED USERS (${flaggedUsers.size})\n${"-".repeat(40)}\n`;
-  for (const [uid, f] of flaggedUsers) {
-    const u = botUsers.get(uid);
-    report += `User ${uid} @${u?.username || "N/A"}: ${f.reason}\n`;
+  report += `\n`;
+
+  // ── MUTED USERS ──
+  report += `MUTED USERS (${mutedUsers.size})\n${dash}\n`;
+  if (mutedUsers.size === 0) {
+    report += `None\n`;
+  } else {
+    for (const uid of mutedUsers) {
+      const u = botUsers.get(uid);
+      report += `  • ${uid}  @${u?.username || "N/A"}\n`;
+    }
   }
-  report += `\nBLOCKED WORDS (${blockedWords.size})\n${"-".repeat(40)}\n${[...blockedWords].join(", ") || "None"}\n`;
-  report += `\nSECURITY LOG (last 100)\n${"-".repeat(40)}\n`;
-  securityLog.slice(0, 100).forEach(e => {
-    report += `[${new Date(e.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}] ${e.action} | User ${e.userId} @${e.username || "N/A"} | ${e.detail}\n`;
-  });
+  report += `\n`;
+
+  // ── FLAGGED USERS ──
+  report += `FLAGGED USERS (${flaggedUsers.size})\n${dash}\n`;
+  if (flaggedUsers.size === 0) {
+    report += `None\n`;
+  } else {
+    for (const [uid, f] of flaggedUsers) {
+      const u = botUsers.get(uid);
+      report += `  • ${uid}  @${u?.username || "N/A"}  — Reason: ${f.reason}  At: ${f.at ? new Date(f.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" }) : "N/A"}\n`;
+    }
+  }
+  report += `\n`;
+
+  // ── WARNED USERS ──
+  report += `WARNED USERS (${userWarnings.size})\n${dash}\n`;
+  if (userWarnings.size === 0) {
+    report += `None\n`;
+  } else {
+    for (const [uid, w] of userWarnings) {
+      const u = botUsers.get(uid);
+      report += `  • ${uid}  @${u?.username || "N/A"}  — ${w.count}/${maxWarnings} warnings\n`;
+      (w.reasons || []).forEach(r => { report += `      - ${r}\n`; });
+    }
+  }
+  report += `\n`;
+
+  // ── TRUSTED USERS ──
+  report += `TRUSTED USERS (${trustedUsers.size})\n${dash}\n`;
+  if (trustedUsers.size === 0) {
+    report += `None\n`;
+  } else {
+    for (const uid of trustedUsers) {
+      const u = botUsers.get(uid);
+      report += `  • ${uid}  @${u?.username || "N/A"}\n`;
+    }
+  }
+  report += `\n`;
+
+  // ── HONEYPOT TRAPS ──
+  report += `HONEYPOT TRAPS (${honeypotTraps.size})\n${dash}\n`;
+  report += `${[...honeypotTraps].join(", ") || "None"}\n\n`;
+
+  // ── HONEYPOT TRIGGERED ──
+  report += `HONEYPOT TRIGGERED (${honeypotTripped.size} users)\n${dash}\n`;
+  if (honeypotTripped.size === 0) {
+    report += `None\n`;
+  } else {
+    for (const [uid, traps] of honeypotTripped) {
+      const u = botUsers.get(uid);
+      report += `  • ${uid}  @${u?.username || "N/A"}  — ${traps.length} trap(s)\n`;
+      traps.forEach(t => { report += `      - /${t.command}  at  ${new Date(t.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}\n`; });
+    }
+  }
+  report += `\n`;
+
+  // ── BLOCKED WORDS ──
+  report += `BLOCKED WORDS (${blockedWords.size})\n${dash}\n`;
+  report += `${[...blockedWords].join(", ") || "None"}\n\n`;
+
+  // ── SECURITY LOG ──
+  report += `SECURITY LOG (last 100 events)\n${dash}\n`;
+  if (securityLog.length === 0) {
+    report += `No events logged.\n`;
+  } else {
+    securityLog.slice(0, 100).forEach((e, i) => {
+      report += `${String(i + 1).padStart(3, " ")}. [${new Date(e.timestamp).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}]\n`;
+      report += `      Action  : ${e.action}\n`;
+      report += `      User    : ${e.userId}  @${e.username || "N/A"}\n`;
+      report += `      Detail  : ${e.detail || "—"}\n`;
+    });
+  }
+
+  report += `\n${sep}\n`;
+  report += `End of Report — DRS Network\n`;
+
   const buf = Buffer.from(report, "utf8");
-  await bot.sendDocument(chatId, buf, {}, { filename: `drs_security_report_${Date.now()}.txt`, contentType: "text/plain" });
+  const ts  = new Date().toISOString().slice(0, 10);
+  await bot.sendDocument(chatId, buf, {
+    caption: `📋 <b>Security Report</b>\n<blockquote>Generated: ${now}\n\nBanned: ${bannedUsers.size} | Muted: ${mutedUsers.size} | Shadow: ${shadowBanned.size}\nFlagged: ${flaggedUsers.size} | Warned: ${userWarnings.size} | Trusted: ${trustedUsers.size}\nHoneypot hits: ${honeypotTripped.size} | Logs: ${securityLog.length}</blockquote>`,
+    parse_mode: "HTML"
+  }, { filename: `drs_security_report_${ts}.txt`, contentType: "text/plain" });
 });
 
 // ============================================================
