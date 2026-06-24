@@ -4451,10 +4451,11 @@ bot.on("message", async (msg) => {
   // ─── Admin: set custom welcome text ───
   if (state?.step === "set_welcome_msg" && isAdmin(userId)) {
     userState.delete(userId);
-    customWelcomeText = text || null;
+    // h() se escape karo taaki exactly jaisa type kiya waisa dikhe
+    customWelcomeText = text ? h(text) : null;
     await saveConfig("customWelcomeText", customWelcomeText);
     await bot.sendMessage(chatId,
-      `✅ <b>Custom welcome message set!</b>\n\n<blockquote>${h((text || "").slice(0, 200))}</blockquote>\n\n<i>Ab /start karo preview dekhne ke liye.</i>`,
+      `✅ <b>Custom welcome message set!</b>\n\n<blockquote>${customWelcomeText?.slice(0, 300) || ""}</blockquote>\n\n<i>Preview dekhne ke liye /previewwelcome bhejo.</i>`,
       { parse_mode: "HTML" }
     );
     return;
@@ -7262,8 +7263,9 @@ bot.onText(/\/adminhelp/, async (msg) => {
   const part3 =
     `<b>🖼️ IMAGES & WELCOME</b>\n` +
     `<blockquote>` +
-    `/setwelcomemsg\n  → Set custom welcome message text (HTML ok)\n\n` +
+    `/setwelcomemsg\n  → Set custom welcome message (jo bhejo waisa hi dikhe)\n\n` +
     `/clearwelcomemsg\n  → Restore default welcome message\n\n` +
+    `/previewwelcome\n  → Current welcome screen preview dekho (image + buttons)\n\n` +
     `/setwelcomeimageurl\n  → Set welcome spoiler image (URL)\n\n` +
     `/clearwelcomeimage\n  → Remove welcome image\n\n` +
     `/setmembershipqr\n  → Upload UPI/payment QR code\n\n` +
@@ -7278,20 +7280,36 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `<b>📊 STATS & MAINTENANCE</b>\n` +
     `<blockquote>` +
     `/stats\n  → Full bot dashboard\n\n` +
+    `/health\n  → Bot health — uptime, DB, memory, giveaways, VIP, security\n\n` +
     `/paystats\n  → Pending payments + VIP + ban counts (shows payIds)\n\n` +
-    `/removepay &lt;payId&gt;\n  → Remove any pending payment (vote or membership) by ID\n  Example: /removepay PAY123\n\n` +
-    `/clearallpending\n  → Clear ALL pending payments at once + notify all users\n\n` +
+    `/removepay &lt;payId&gt;\n  → Remove any pending payment by ID\n\n` +
+    `/clearallpending\n  → Clear ALL pending payments + notify users\n\n` +
     `/maintenance on|off\n  → Block all non-admin users (for updates)\n\n` +
     `/allchannels\n  → List all registered channels + groups\n\n` +
     `/cleandb\n  → Clean expired data from MongoDB\n\n` +
     `/adminhelp\n  → Show this panel` +
     `</blockquote>\n\n` +
-    `<b>🖼️ NEW UTILITY COMMANDS</b>\n` +
+    `<b>🎨 UI CUSTOMIZER</b>\n` +
     `<blockquote>` +
-    `/setstartimage &lt;url&gt;\n  → Set welcome/start image in one line (no wizard)\n  Example: /setstartimage https://i.imgur.com/abc.jpg\n\n` +
+    `/customize\n  → Interactive UI text customizer (button menu)\n\n` +
+    `/settext &lt;key&gt; &lt;value&gt;\n  → Set any UI text, emoji or button label\n  Example: /settext welcome.title 🎉 DRS Bot\n\n` +
+    `/resettext &lt;key&gt;\n  → Reset one UI text to default\n\n` +
+    `/listtext\n  → List all UI text keys + current values` +
+    `</blockquote>\n\n` +
+    `<b>👑 SUB-ADMIN MANAGEMENT</b>\n` +
+    `<blockquote>` +
+    `/addadmin &lt;userId&gt; &lt;perms&gt;\n  → Add sub-admin with specific permissions\n  Perms: all | approve_payments, broadcast, ban_users, manage_giveaways\n  Example: /addadmin 123456 all\n\n` +
+    `/removeadmin &lt;userId&gt;\n  → Remove sub-admin access\n  Example: /removeadmin 123456\n\n` +
+    `/listadmins\n  → List all sub-admins + their permissions\n\n` +
+    `/editadminperms &lt;userId&gt;\n  → Edit sub-admin permissions via button UI` +
+    `</blockquote>\n\n` +
+    `<b>🖼️ UTILITY COMMANDS</b>\n` +
+    `<blockquote>` +
+    `/setstartimage &lt;url&gt;\n  → Set welcome image directly (no wizard)\n\n` +
     `/clearstates\n  → Clear all stuck user conversation states\n\n` +
-    `/gcount\n  → Quick giveaway count breakdown (active, ended, totals)\n\n` +
-    `/topusers\n  → Top 10 users ranked by giveaways created` +
+    `/gcount\n  → Quick giveaway count breakdown\n\n` +
+    `/topusers\n  → Top 10 users by giveaways created\n\n` +
+    `/pushgithub [message]\n  → Push vote-bot.mjs to GitHub\n  Example: /pushgithub fix: update welcome text` +
     `</blockquote>\n\n` +
     `<b>👤 USER COMMANDS (reference)</b>\n` +
     `<blockquote>` +
@@ -7363,8 +7381,9 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/suspicious — Last 20 events\n` +
     `/auditlog — Last 30 entries\n` +
     `/clearaudit — Clear logs\n` +
+    `/resetsecurity — Reset ALL state (bans/warns/mutes/shadow/flags/honeypot hits)\n` +
     `/userhistory &lt;id&gt; — Command history\n` +
-    `/securityreport — Download .txt report\n` +
+    `/securityreport — Download full .txt report\n` +
     `/ratelimitreset &lt;id&gt; — Reset rate limit\n\n` +
     `<b>🚫 Word Filter</b>\n` +
     `/blockword &lt;word&gt; — Block word\n` +
