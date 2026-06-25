@@ -51,6 +51,7 @@ const giveawaySchema = new mongoose.Schema({
   customPhotoId: { type: String, default: null },
   panelThreshold: { type: Number, default: 15 },
   panelWindowSecs: { type: Number, default: 90 },
+  channelMsgIds: { type: [Number], default: [] },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -2416,7 +2417,7 @@ bot.on("callback_query", async (query) => {
     return;
   }
 
-  // ─── Clear Channel Posts ───
+  // ─── Clear Channel Posts — confirmation step ───
   if (data.startsWith("clear_posts:")) {
     const gId = data.split(":")[1];
     const g = getGiveaway(gId);
@@ -2425,15 +2426,85 @@ bot.on("callback_query", async (query) => {
       await bot.answerCallbackQuery(query.id, { text: "Sirf creator kar sakta hai!", show_alert: true }).catch(() => {});
       return;
     }
+    const voteCards = [...g.participants.values()].filter(p => p.channelMsgId).length;
+    const extraMsgs = (g.channelMsgIds || []).length;
+    const total = voteCards + extraMsgs;
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+    await bot.sendMessage(chatId,
+      `🗑️━━━━━━━━━━━━━━━━━━━━━━🗑️\n` +
+      `  <b>CLEAR CHANNEL POSTS</b>\n` +
+      `🗑️━━━━━━━━━━━━━━━━━━━━━━🗑️\n\n` +
+      `<blockquote>` +
+      `◈ Giveaway  ▸  <b>${h(g.title)}</b>\n` +
+      `◈ Vote Cards  ▸  <b>${voteCards}</b> messages\n` +
+      `◈ Bot Posts   ▸  <b>${extraMsgs}</b> messages (announcements, winners)\n` +
+      `◈ Total       ▸  <b>${total}</b> messages to delete\n\n` +
+      `⚠️ <b>Ye action undo nahi ho sakta!</b>\n` +
+      `Channel ke SAARE bot messages delete ho jayenge.` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      {
+        parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [[
+          { text: "🗑️ Haan, Delete Karo!", callback_data: `confirm_clear:${gId}` },
+          { text: "❌ Cancel", callback_data: `my_giveaways` }
+        ]]}
+      }
+    );
+    return;
+  }
+
+  // ─── Clear Channel Posts — confirmed, execute delete ───
+  if (data.startsWith("confirm_clear:")) {
+    const gId = data.split(":")[1];
+    const g = getGiveaway(gId);
+    if (!g || !g.channelId) return;
+    if (g.creatorId !== userId && !isAdmin(userId)) {
+      await bot.answerCallbackQuery(query.id, { text: "Sirf creator kar sakta hai!", show_alert: true }).catch(() => {});
+      return;
+    }
+    await bot.answerCallbackQuery(query.id, { text: "⏳ Delete ho raha hai..." }).catch(() => {});
+
     let cleared = 0;
+    let failed = 0;
+
+    // Delete participant vote cards
     for (const p of g.participants.values()) {
       if (p.channelMsgId) {
-        try { await bot.deleteMessage(g.channelId, p.channelMsgId); cleared++; } catch {}
+        try { await bot.deleteMessage(g.channelId, p.channelMsgId); cleared++; } catch { failed++; }
         p.channelMsgId = null;
+        await sleep(50);
       }
     }
+
+    // Delete tracked bot messages (announcement, winner post, etc.)
+    for (const msgId of (g.channelMsgIds || [])) {
+      try { await bot.deleteMessage(g.channelId, msgId); cleared++; } catch { failed++; }
+      await sleep(50);
+    }
+    g.channelMsgIds = [];
+
     await saveGiveaway(g);
-    await bot.answerCallbackQuery(query.id, { text: `${cleared} posts delete kiye!`, show_alert: true }).catch(() => {});
+
+    await bot.editMessageText(
+      `✅━━━━━━━━━━━━━━━━━━━━━━✅\n` +
+      `  <b>CHANNEL CLEARED!</b>\n` +
+      `✅━━━━━━━━━━━━━━━━━━━━━━✅\n\n` +
+      `<blockquote>` +
+      `◈ Deleted     ▸  <b>${cleared}</b> messages\n` +
+      `◈ Failed      ▸  <b>${failed}</b> (already deleted / not found)\n` +
+      `◈ Giveaway    ▸  <b>${h(g.title)}</b>\n\n` +
+      `✅ Channel saaf ho gaya. Naye giveaway ke liye ready!` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { chat_id: chatId, message_id: query.message.message_id, parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [[{ text: "◀️ My Giveaways", callback_data: `my_giveaways` }]] } }
+    ).catch(async () => {
+      await bot.sendMessage(chatId,
+        `✅ <b>Channel cleared!</b>\n<blockquote>◈ ${cleared} messages delete kiye\n◈ ${failed} failed/already deleted</blockquote>`,
+        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "◀️ My Giveaways", callback_data: `my_giveaways` }]] } }
+      );
+    });
     return;
   }
 
@@ -3728,7 +3799,14 @@ async function announceWinners(g, gId, creatorId) {
     `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
 
   if (g.channelId) {
-    try { await bot.sendMessage(g.channelId, channelCard, { parse_mode: "HTML" }); } catch {}
+    try {
+      const winnerSent = await bot.sendMessage(g.channelId, channelCard, { parse_mode: "HTML" });
+      if (winnerSent?.message_id) {
+        if (!g.channelMsgIds) g.channelMsgIds = [];
+        g.channelMsgIds.push(winnerSent.message_id);
+        await saveGiveaway(g);
+      }
+    } catch {}
   }
   try { await bot.sendMessage(creatorId, creatorCard, { parse_mode: "HTML" }); } catch {}
 
@@ -3898,18 +3976,24 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
       `✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦`;
     const photoSrc = g.customPhotoId || GIVEAWAY_IMAGE_URL;
     try {
+      let announceSent;
       if (g.customPhotoId) {
-        await bot.sendPhoto(g.channelId, g.customPhotoId, {
+        announceSent = await bot.sendPhoto(g.channelId, g.customPhotoId, {
           caption: channelAnnouncement,
           parse_mode: "HTML",
           reply_markup: { inline_keyboard: [[{ text: "✦ JOIN NOW — TAP HERE ✦", url: link }]] }
         });
       } else {
-        await bot.sendPhoto(g.channelId, GIVEAWAY_IMAGE_URL, {
+        announceSent = await bot.sendPhoto(g.channelId, GIVEAWAY_IMAGE_URL, {
           caption: channelAnnouncement,
           parse_mode: "HTML",
           reply_markup: { inline_keyboard: [[{ text: "✦ JOIN NOW — TAP HERE ✦", url: link }]] }
         });
+      }
+      if (announceSent?.message_id) {
+        if (!g.channelMsgIds) g.channelMsgIds = [];
+        g.channelMsgIds.push(announceSent.message_id);
+        await saveGiveaway(g);
       }
     } catch (e) { console.error("Channel giveaway announcement error:", e.message); }
     await notifyAdmin(
