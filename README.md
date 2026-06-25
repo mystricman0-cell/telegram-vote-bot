@@ -12,7 +12,7 @@
 ║                                                      ║
 ║    ✦  N  E  T  W  O  R  K  ✦                        ║
 ║    ─────────────────────────                         ║
-║    🎁  GIVEAWAY & VOTE BOT  v3.0.4  🏆               ║
+║    🎁  GIVEAWAY & VOTE BOT  v3.0.5  🏆               ║
 ║                                                      ║
 ╚══════════════════════════════════════════════════════╝
 ```
@@ -47,6 +47,15 @@
                     FEATURES
 ✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦
 ```
+
+### 📡 &nbsp;Log Destination Control *(NEW in v3.0.5)*
+- Route **all user logs, support messages, feedback & payment notifications** to any destination
+- Supports **private user ID** or **any channel** (public or private)
+- Bot tests access before saving — fails safely with an error if bot is not admin in the channel
+- **`/setlogdest <user_id>`** — redirect logs to another user
+- **`/setlogdest <channel_id>`** — redirect logs to a channel (bot must be admin)
+- **`/setlogdest reset`** — restore logs back to your own admin ID
+- Setting persists across restarts via MongoDB
 
 ### 🎁 &nbsp;Giveaway System
 - Step-by-step wizard to create giveaways in DMs
