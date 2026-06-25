@@ -155,6 +155,7 @@ const bannedUsers = new Set();
 let maintenanceMode = false;
 let customWelcomeText = null;
 const scheduledMessages = new Map(); // id → { id, timeStr, text, timerId, createdAt }
+const lbBroadcastTimers = new Map(); // gId → { intervalId, hours, nextAt, channelId }
 let scheduleCounter = 1;
 let paymentCounter = 1;
 let membershipPayCounter = 1;
@@ -7378,6 +7379,134 @@ bot.onText(/\/voteleaderboard/, async (msg) => {
   await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
 });
 
+// ─── Leaderboard Broadcast — helpers ───
+function buildLbCard(g) {
+  const sorted = [...g.participants.entries()]
+    .sort((a, b) => b[1].votes - a[1].votes);
+  const medals = ["🥇", "🥈", "🥉"];
+  const top10 = sorted.slice(0, 10);
+  let rows = "";
+  top10.forEach(([uid, p], i) => {
+    const bu = botUsers.get(uid);
+    const name = h(bu?.firstName || "User");
+    const uname = bu?.username ? ` (@${bu.username})` : "";
+    const medal = medals[i] || `${i + 1}.`;
+    rows += `${medal} <b>${name}</b>${uname} — <b>${p.votes}</b> votes\n`;
+  });
+  const now = new Date();
+  const istStr = now.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: true,
+    day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  return (
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `  🏆  <b>LIVE LEADERBOARD</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+    `📌 <b>${h(g.title)}</b>\n` +
+    `👥 Participants: <b>${g.participants.size}</b>\n\n` +
+    `<blockquote>${rows.trim()}</blockquote>\n\n` +
+    `🕐 Updated: ${istStr} IST\n` +
+    `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`
+  );
+}
+
+function stopLbBroadcast(gId) {
+  const entry = lbBroadcastTimers.get(gId);
+  if (!entry) return false;
+  clearInterval(entry.intervalId);
+  lbBroadcastTimers.delete(gId);
+  return true;
+}
+
+// ─── /setlbbroadcast <gId> <hours> — Auto-broadcast leaderboard to channel ───
+bot.onText(/\/setlbbroadcast\s+(\S+)\s+(\d+(?:\.\d+)?)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const hours = parseFloat(match[2]);
+  const g = giveaways.get(gId);
+  if (!g) return bot.sendMessage(chatId, `❌ Giveaway <code>${gId}</code> nahi mila.`, { parse_mode: "HTML" });
+  if (!g.active) return bot.sendMessage(chatId, `⚠️ Yeh giveaway already end ho chuka hai.`, { parse_mode: "HTML" });
+  if (!g.channelId) return bot.sendMessage(chatId, `❌ Is giveaway ka channel set nahi hai.`, { parse_mode: "HTML" });
+  if (hours < 0.5 || hours > 24) return bot.sendMessage(chatId, `❌ Hours 0.5 se 24 ke beech hone chahiye.`, { parse_mode: "HTML" });
+
+  // Stop existing timer if any
+  stopLbBroadcast(gId);
+
+  const intervalMs = Math.round(hours * 60 * 60 * 1000);
+
+  const intervalId = setInterval(async () => {
+    const live = giveaways.get(gId);
+    if (!live || !live.active) { stopLbBroadcast(gId); return; }
+    const card = buildLbCard(live);
+    try {
+      await bot.sendMessage(live.channelId, card, { parse_mode: "HTML" });
+    } catch (e) { console.error(`LB Broadcast error giveaway ${gId}:`, e.message); }
+    const entry = lbBroadcastTimers.get(gId);
+    if (entry) entry.nextAt = new Date(Date.now() + intervalMs);
+  }, intervalMs);
+
+  lbBroadcastTimers.set(gId, {
+    intervalId,
+    hours,
+    nextAt: new Date(Date.now() + intervalMs),
+    channelId: g.channelId
+  });
+
+  // Send one immediately
+  const card = buildLbCard(g);
+  try { await bot.sendMessage(g.channelId, card, { parse_mode: "HTML" }); } catch {}
+
+  await bot.sendMessage(chatId,
+    `✅ <b>Leaderboard Broadcast Set!</b>\n\n` +
+    `<blockquote>` +
+    `◈ Giveaway  ▸  <b>${h(g.title)}</b>\n` +
+    `◈ Interval  ▸  every <b>${hours}h</b>\n` +
+    `◈ Channel   ▸  <code>${g.channelId}</code>\n` +
+    `◈ Status    ▸  ✅ Active (posted now)` +
+    `</blockquote>\n\n` +
+    `💡 Stop karne ke liye: /stoplbbroadcast <code>${gId}</code>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /stoplbbroadcast <gId> — Stop auto leaderboard broadcast ───
+bot.onText(/\/stoplbbroadcast\s+(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const gId = match[1].trim();
+  const stopped = stopLbBroadcast(gId);
+  const g = giveaways.get(gId);
+  if (!stopped) return bot.sendMessage(chatId,
+    `⚠️ <code>${gId}</code> ke liye koi active broadcast nahi hai.`, { parse_mode: "HTML" });
+  await bot.sendMessage(chatId,
+    `🛑 <b>Leaderboard Broadcast Stopped!</b>\n\n` +
+    `<blockquote>◈ Giveaway ▸  <b>${h(g?.title || gId)}</b></blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /listlbbroadcast — View all active leaderboard broadcasts ───
+bot.onText(/\/listlbbroadcast/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  if (lbBroadcastTimers.size === 0)
+    return bot.sendMessage(chatId,
+      `📭 <b>Koi active leaderboard broadcast nahi hai.</b>\n\n` +
+      `💡 Set karne ke liye:\n<code>/setlbbroadcast &lt;gId&gt; &lt;hours&gt;</code>`,
+      { parse_mode: "HTML" }
+    );
+  let text = `✦━━━━━━━━━━━━━━━━━━━━━✦\n  📡  <b>ACTIVE LB BROADCASTS</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n`;
+  for (const [gId, entry] of lbBroadcastTimers) {
+    const g = giveaways.get(gId);
+    const nextStr = entry.nextAt.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour12: true,
+      hour: "2-digit", minute: "2-digit" });
+    text += `<b>${h(g?.title || gId)}</b>\n` +
+      `  ◈ ID       ▸ <code>${gId}</code>\n` +
+      `  ◈ Interval ▸ every ${entry.hours}h\n` +
+      `  ◈ Next     ▸ ${nextStr} IST\n\n`;
+  }
+  await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
+});
+
 // ─── /remindvote <gId> — Send reminder to all giveaway participants ───
 bot.onText(/\/remindvote\s+(\S+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
@@ -7882,6 +8011,9 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/announce &lt;gId&gt; &lt;text&gt;\n  → Send message to all participants of a giveaway\n\n` +
     `/remindvote &lt;gId&gt;\n  → Send vote reminder + top 3 to all participants\n\n` +
     `/voteleaderboard\n  → Global top 20 voters across all giveaways\n\n` +
+    `/setlbbroadcast &lt;gId&gt; &lt;hours&gt;\n  → Auto-post live leaderboard to channel every X hours\n  Range: 0.5–24h · Posts immediately + on interval\n  Example: /setlbbroadcast ABC123 2\n\n` +
+    `/stoplbbroadcast &lt;gId&gt;\n  → Stop auto leaderboard broadcast for a giveaway\n\n` +
+    `/listlbbroadcast\n  → View all active leaderboard broadcasts\n\n` +
     `/setstar &lt;gId&gt; &lt;votes&gt;\n  → Votes per ⭐ Star\n\n` +
     `/setinr &lt;gId&gt; &lt;votes&gt;\n  → Votes per ₹1 INR\n\n` +
     `/setpanelthreshold &lt;gId&gt; &lt;votes&gt; [seconds]\n  → Vote panel alert threshold\n  Default: 15 votes / 90s\n  Example: /setpanelthreshold ABC123 20 60` +
@@ -8920,6 +9052,7 @@ const KNOWN_COMMANDS = new Set([
   "ban","unban","userinfo","listusers","dm","reply","exportusers",
   "addvotes","removevotes","setwinner","endgiveaway","cancelgiveaway","resetvotes",
   "clonegiveaway","giveawayreport","announce","remindvote","voteleaderboard",
+  "setlbbroadcast","stoplbbroadcast","listlbbroadcast",
   "setstar","setinr","setpanelthreshold","schedule","schedulelist","cancelschedule",
   "setwelcomemsg","clearwelcomemsg","setwelcomeimageurl","clearwelcomeimage",
   "setmembershipqr","imageinfo","setforcejoin","forcejoininfo","setfreelimit",
@@ -9897,7 +10030,10 @@ async function main() {
         { command: "resettext",         description: "🔄 Reset a UI text to default" },
         { command: "listtext",          description: "📋 List all UI text keys & current values" },
         { command: "preview",           description: "👁 Preview exactly how any UI key looks" },
-        { command: "pushgithub",        description: "🚀 Push vote-bot.mjs to GitHub" },
+        { command: "setlbbroadcast",     description: "📡 Auto-post leaderboard to channel every X hours" },
+        { command: "stoplbbroadcast",    description: "🛑 Stop auto leaderboard broadcast" },
+        { command: "listlbbroadcast",    description: "📋 View all active leaderboard broadcasts" },
+        { command: "pushgithub",         description: "🚀 Push vote-bot.mjs to GitHub" },
         { command: "cloneui",           description: "📦 Export/Import all UI text settings (backup/transfer)" },
         { command: "resetui",           description: "🔄 Reset ALL UI texts to default (with confirmation)" },
         { command: "autoclean",         description: "🧹 Manually trigger memory + DB cleanup now" },
