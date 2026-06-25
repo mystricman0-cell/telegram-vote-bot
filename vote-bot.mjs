@@ -1632,6 +1632,137 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
     }
   }
 
+  // ── Deep link: /start v_<giveawayId>_<participantId>  → VOTE via link ──
+  if (param && param.startsWith("v_")) {
+    const parts = param.split("_");
+    const gId = parts[1];
+    const participantUserId = Number(parts[2]);
+    const g = getGiveaway(gId);
+
+    if (!g || !g.active) {
+      return bot.sendMessage(chatId,
+        `❌ <b>Giveaway Active Nahi Hai</b>\n\n<blockquote>Ye giveaway abhi voting ke liye open nahi hai ya exist nahi karta.</blockquote>`,
+        { parse_mode: "HTML" }
+      );
+    }
+    const participant = g.participants.get(participantUserId);
+    if (!participant) {
+      return bot.sendMessage(chatId,
+        `❌ <b>Participant Nahi Mila</b>\n\n<blockquote>Ye participant giveaway mein registered nahi hai.</blockquote>`,
+        { parse_mode: "HTML" }
+      );
+    }
+
+    // Self-vote check
+    if (userId === participantUserId) {
+      return bot.sendMessage(chatId,
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+        `   ⛔  <b>VOTE DENIED</b>  ⛔\n` +
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+        `<blockquote>` +
+        `<b>Tum apne aap ko vote nahi de sakte!</b>\n\n` +
+        `Apna vote link dosto ko share karo\n` +
+        `aur unse vote karwao.\n\n` +
+        `◈ Tumhare Votes ▸  <b>${participant.votes}</b>` +
+        `</blockquote>\n\n` +
+        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+        { parse_mode: "HTML" }
+      );
+    }
+
+    // Channel membership check
+    if (g.channelId) {
+      const member = await isMember(g.channelId, userId);
+      if (!member) {
+        let channelUrl = g.channelUsername ? `https://t.me/${g.channelUsername}` : null;
+        if (!channelUrl) {
+          try { channelUrl = await bot.exportChatInviteLink(g.channelId); } catch {}
+        }
+        return bot.sendMessage(chatId,
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+          `  🔒  <b>CHANNEL REQUIRED</b>\n` +
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+          `<blockquote>` +
+          `Vote karne ke liye pehle channel join karo.\n\n` +
+          (channelUrl ? `👉 Niche button dabao aur join karo.\n\n` : ``) +
+          `Join karne ke baad wapas link dabao!` +
+          `</blockquote>`,
+          {
+            parse_mode: "HTML",
+            reply_markup: channelUrl ? {
+              inline_keyboard: [[{ text: "📢 Channel Join Karo", url: channelUrl }]]
+            } : undefined
+          }
+        );
+      }
+    }
+
+    if (!g.voterMap) g.voterMap = new Map();
+    const existingVote = g.voterMap.get(userId);
+    const voterName = (msg.from.first_name || "") + (msg.from.last_name ? ` ${msg.from.last_name}` : "");
+
+    // Toggle: same participant clicked again → remove vote
+    if (existingVote === participantUserId) {
+      participant.votes = Math.max(0, participant.votes - 1);
+      participant.voters.delete(userId);
+      g.voterMap.delete(userId);
+      await saveGiveaway(g);
+      await updateChannelPost(g, participant);
+      return bot.sendMessage(chatId,
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+        `  ↩️  <b>VOTE WAPAS LIYA</b>\n` +
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+        `<blockquote>` +
+        `◈ Participant  ▸  <b>${h(participant.name)}</b>\n` +
+        `◈ Total Votes  ▸  <b>${participant.votes}</b>\n\n` +
+        `<i>Dobara vote dene ke liye link dubara dabao.</i>` +
+        `</blockquote>\n\n` +
+        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+        { parse_mode: "HTML" }
+      );
+    }
+
+    // Switch: voted for someone else → remove old vote first
+    if (existingVote) {
+      const oldP = g.participants.get(existingVote);
+      if (oldP) {
+        oldP.votes = Math.max(0, oldP.votes - 1);
+        oldP.voters.delete(userId);
+        await updateChannelPost(g, oldP);
+      }
+    }
+
+    // Cast new vote
+    participant.votes += 1;
+    participant.voters.add(userId);
+    g.voterMap.set(userId, participantUserId);
+    await saveGiveaway(g);
+    await updateChannelPost(g, participant);
+
+    await notifyAdmin(
+      `🗳️ <b>Vote Cast (via Link)</b>\n` +
+      `<blockquote>` +
+      `◈ From      ▸  <b>${h(voterName)}</b> (<code>${userId}</code>)\n` +
+      `◈ For       ▸  <b>${h(participant.name)}</b>\n` +
+      `◈ Giveaway  ▸  <b>${h(g.title)}</b>\n` +
+      `◈ Total     ▸  <b>${participant.votes} votes</b>` +
+      `</blockquote>`
+    );
+
+    return bot.sendMessage(chatId,
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  ✅  <b>VOTE DIYA GAYA!</b>  ✅\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>` +
+      `◈ Participant  ▸  <b>${h(participant.name)}</b>\n` +
+      `◈ Total Votes  ▸  <b>${participant.votes}</b>\n\n` +
+      `🎉 Tumhara vote register ho gaya!` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML" }
+    );
+  }
+
   // Deep link: /start <giveawayId>
   if (param) {
     const g = getGiveaway(param);
@@ -1710,7 +1841,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
         (existing.channelMsgId && g.channelId
           ? `<a href="https://t.me/c/${String(g.channelId).replace("-100", "")}/${existing.channelMsgId}">📋 My Vote Post</a>\n`
           : "") +
-        `🔗 Vote Link: https://t.me/${BOT_USERNAME}?start=${g.id}`,
+        `🗳️ Vote Link: <code>https://t.me/${BOT_USERNAME}?start=v_${g.id}_${userId}</code>`,
         {
           parse_mode: "HTML",
           reply_markup: {
@@ -2589,7 +2720,8 @@ bot.on("callback_query", async (query) => {
 
     await saveGiveaway(g);
 
-    const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
+    const voteLink = `https://t.me/${BOT_USERNAME}?start=v_${gId}_${userId}`;
+    const joinLink = `https://t.me/${BOT_USERNAME}?start=${gId}`;
     const chLink = g.channelId && channelMsgId
       ? `https://t.me/c/${String(g.channelId).replace("-100", "")}/${channelMsgId}`
       : null;
@@ -2602,7 +2734,7 @@ bot.on("callback_query", async (query) => {
     // Build keyboard — channel open button always shows if channel is set
     const joinKb = [];
     if (chOpenUrl) joinKb.push([{ text: "📢 Open Channel", url: chOpenUrl }]);
-    joinKb.push([{ text: "📋 Copy Vote Link", switch_inline_query: link }]);
+    joinKb.push([{ text: "🗳️ Copy Vote Link", switch_inline_query: voteLink }]);
     joinKb.push([{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}` }]);
     joinKb.push([{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }]);
     joinKb.push([{ text: "🔄 Get Links Again", callback_data: `my_links:${gId}` }]);
@@ -2676,7 +2808,7 @@ bot.on("callback_query", async (query) => {
             chat_id: userId, message_id: dmid, parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [[
-                { text: "📋 Share My Vote Link", switch_inline_query: `https://t.me/${BOT_USERNAME}?start=${g.id}` }
+                { text: "🗳️ Share My Vote Link", switch_inline_query: `https://t.me/${BOT_USERNAME}?start=v_${g.id}_${participantUserId}` }
               ]]
             }
           }
@@ -2902,23 +3034,31 @@ bot.on("callback_query", async (query) => {
     const g = getGiveaway(gId);
     if (!g) return;
     const participant = g.participants.get(userId);
-    const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
+    const voteLink = `https://t.me/${BOT_USERNAME}?start=v_${gId}_${userId}`;
+    const joinLink = `https://t.me/${BOT_USERNAME}?start=${gId}`;
     const chLink = participant?.channelMsgId && g.channelId
       ? `https://t.me/c/${String(g.channelId).replace("-100", "")}/${participant.channelMsgId}`
       : null;
     await bot.editMessageText(
-      `🔗 <b>YOUR LINKS</b>\n` +
-      `<i>${h(g.title)}</i>\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `<blockquote>◈ Votes Now  :  <b>${participant?.votes ?? 0}</b> 🗳️\n` +
-      (chLink ? `◈ Vote Card  :  <a href="${chLink}">View in Channel</a>\n` : "") +
-      `\n📌 Share this link:\n<code>${link}</code></blockquote>\n` +
-      `━━━━━━━━━━━━━━━━━━━━`,
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `   🔗  <b>TUMHARE LINKS</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `📌 <b>${h(g.title)}</b>\n\n` +
+      `<blockquote>` +
+      `◈ Votes Now  ▸  <b>${participant?.votes ?? 0}</b> 🗳️\n` +
+      (chLink ? `◈ Vote Card  ▸  <a href="${chLink}">View in Channel</a>\n` : "") +
+      `\n🗳️ <b>Vote Link</b> — <i>Share this to get votes:</i>\n` +
+      `<code>${voteLink}</code>\n\n` +
+      `📋 <b>Join Link</b> — <i>For new participants to join:</i>\n` +
+      `<code>${joinLink}</code>` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       {
         chat_id: chatId, message_id: msgId, parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "📋 Copy Vote Link", switch_inline_query: link }],
+            [{ text: "🗳️ Copy Vote Link", switch_inline_query: voteLink }],
+            [{ text: "📋 Copy Join Link", switch_inline_query: joinLink }],
             [{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}` }],
             [{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }]
           ]
