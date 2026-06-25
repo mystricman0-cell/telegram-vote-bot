@@ -16,6 +16,9 @@ if (!BOT_TOKEN) { console.error("❌ TELEGRAM_BOT_TOKEN not set!"); process.exit
 if (!MAIN_ADMIN_ID) { console.error("❌ ADMIN_ID not set!"); process.exit(1); }
 if (!MONGODB_URI) { console.error("❌ MONGODB_URI not set!"); process.exit(1); }
 
+// Dynamic owner ID — starts from env, can be changed at runtime via /setownerid
+let ownerAdminId = MAIN_ADMIN_ID;
+
 // ============================================================
 // MONGODB SCHEMAS
 // ============================================================
@@ -645,6 +648,10 @@ async function loadStateFromDB() {
     }
   }
 
+  // Load dynamic owner admin ID
+  const ownerCfg = await BotConfigModel.findOne({ key: "ownerAdminId" });
+  if (ownerCfg?.value) ownerAdminId = Number(ownerCfg.value);
+
   console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users, ${botCustomTexts.size} custom UI texts, ${subAdmins.size} sub-admins`);
   // Seed defaults (one-time — skips if already done)
   await seedDefaultSecurity();
@@ -912,7 +919,7 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // ============================================================
 async function notifyAdmin(text) {
   try {
-    await bot.sendMessage(MAIN_ADMIN_ID,
+    await bot.sendMessage(ownerAdminId,
       `<b>📡 EVENT</b>\n\n${text}`,
       { parse_mode: "HTML" }
     );
@@ -1248,14 +1255,14 @@ function stripTgEmoji(html) {
 
 function getGiveaway(id) { return giveaways.get(String(id)); }
 function isAdmin(uid) {
-  if (uid === MAIN_ADMIN_ID) return true;
+  if (uid === ownerAdminId) return true;
   const sa = subAdmins.get(uid);
   return sa ? sa.permissions.has("all") : false;
 }
 function isSubAdmin(uid) { return subAdmins.has(uid); }
-function isAnyAdmin(uid) { return uid === MAIN_ADMIN_ID || subAdmins.has(uid); }
+function isAnyAdmin(uid) { return uid === ownerAdminId || subAdmins.has(uid); }
 function hasAdminPerm(uid, perm) {
-  if (uid === MAIN_ADMIN_ID) return true;
+  if (uid === ownerAdminId) return true;
   const sa = subAdmins.get(uid);
   if (!sa) return false;
   return sa.permissions.has("all") || sa.permissions.has(perm);
@@ -1289,7 +1296,7 @@ async function _addWarn(userId, username, reason, notifyChatId) {
     bannedUsers.add(userId);
     await saveConfig("bannedUsers", [...bannedUsers]);
     _secLog(userId, username, "AUTO-BAN", `${warn.count} warnings`);
-    bot.sendMessage(MAIN_ADMIN_ID,
+    bot.sendMessage(ownerAdminId,
       `🚫 <b>ᴀᴜᴛᴏ-ʙᴀɴ ᴛʀɪɢɢᴇʀᴇᴅ</b>\n\n<blockquote>◈ ɪᴅ      ▸  <code>${userId}</code>\n◈ ᴜꜱᴇʀ    ▸  @${username || "N/A"}\n◈ ᴡᴀʀɴꜱ   ▸  ${warn.count}\n◈ ʀᴇᴀꜱᴏɴ  ▸  ${reason}</blockquote>`,
       { parse_mode: "HTML" }
     ).catch(() => {});
@@ -1825,7 +1832,7 @@ bot.on("callback_query", async (query) => {
 
   // ─── Sub-admin permission callbacks ───
   if (data.startsWith("sadm_perm:")) {
-    if (userId !== MAIN_ADMIN_ID) return bot.answerCallbackQuery(query.id, { text: "❌ Main admin only!" }).catch(() => {});
+    if (userId !== ownerAdminId) return bot.answerCallbackQuery(query.id, { text: "❌ Main admin only!" }).catch(() => {});
     const parts = data.split(":");
     const targetId = Number(parts[1]);
     const perm = parts[2];
@@ -1844,7 +1851,7 @@ bot.on("callback_query", async (query) => {
     return bot.answerCallbackQuery(query.id, { text: `${toggled ? "✅ Added" : "❌ Removed"}: ${perm}` }).catch(() => {});
   }
   if (data.startsWith("sadm_remove:")) {
-    if (userId !== MAIN_ADMIN_ID) return bot.answerCallbackQuery(query.id, { text: "❌ Main admin only!" }).catch(() => {});
+    if (userId !== ownerAdminId) return bot.answerCallbackQuery(query.id, { text: "❌ Main admin only!" }).catch(() => {});
     const targetId = Number(data.split(":")[1]);
     const sa = subAdmins.get(targetId);
     if (!sa) return bot.answerCallbackQuery(query.id, { text: "❌ Not found." }).catch(() => {});
@@ -1859,7 +1866,7 @@ bot.on("callback_query", async (query) => {
     return;
   }
   if (data === "sadm_close") {
-    if (userId !== MAIN_ADMIN_ID) return bot.answerCallbackQuery(query.id).catch(() => {});
+    if (userId !== ownerAdminId) return bot.answerCallbackQuery(query.id).catch(() => {});
     await bot.deleteMessage(chatId, msgId).catch(() => {});
     return bot.answerCallbackQuery(query.id).catch(() => {});
   }
@@ -8509,7 +8516,8 @@ const KNOWN_COMMANDS = new Set([
   "customize","settext","resettext","listtext","preview",
   "pushgithub","health",
   "about","version","uptime","rules","faq","terms","countdown","rank","invite","notify","refer","feedback",
-  "autoclean","cloneui","resetui","memstats"
+  "autoclean","cloneui","resetui","memstats",
+  "setownerid"
 ]);
 
 bot.on("message", async (msg) => {
@@ -8521,7 +8529,7 @@ bot.on("message", async (msg) => {
     const userId = msg.from.id;
     await bot.sendMessage(msg.chat.id,
       `❓━━━━━━━━━━━━━━━━━━━━━━❓\n   <b>ᴜɴᴋɴᴏᴡɴ ᴄᴏᴍᴍᴀɴᴅ</b>\n❓━━━━━━━━━━━━━━━━━━━━━━❓\n\n` +
-      `<blockquote>◈ Command <code>/${cmd}</code> exist nahi karta.\n\n📖 Saare commands:\n/help — User commands\n${isAdmin(userId) ? "/adminhelp — Admin commands\n/securityhelp — Security commands" : ""}\n\n💡 Koi problem ho toh /support karo.</blockquote>`,
+      `<blockquote>◈ Command <code>/${cmd}</code> exist nahi karta.\n\n📖 Saare commands:\n/help — User commands\n\n💡 Koi problem ho toh /support karo.</blockquote>`,
       { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "📖 ʜᴇʟᴘ", callback_data: "show_help" }, { text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
     ).catch(() => {});
   } catch (e) { console.error("unknown_cmd handler error:", e.message); }
@@ -8749,6 +8757,68 @@ bot.onText(/\/preview(?:\s+(\S+))?/, async (msg, match) => {
       ...(isCustom ? [[{ text: "🔄 Reset to Default", callback_data: `cust_reset:${key}` }]] : [])
     ]}
   });
+});
+
+// ============================================================
+// /setownerid — Transfer bot ownership to a new admin ID
+// ============================================================
+bot.onText(/\/setownerid(?:\s+(\d+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private") return;
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+
+  // Only current owner can use this
+  if (userId !== ownerAdminId) return;
+
+  const newId = match[1] ? Number(match[1]) : null;
+  if (!newId) {
+    return bot.sendMessage(chatId,
+      `👑━━━━━━━━━━━━━━━━━━━━━━👑\n` +
+      `   <b>ꜱᴇᴛ ᴏᴡɴᴇʀ ɪᴅ</b>\n` +
+      `👑━━━━━━━━━━━━━━━━━━━━━━👑\n\n` +
+      `<blockquote>◈ ᴄᴜʀʀᴇɴᴛ ᴏᴡɴᴇʀ ɪᴅ  ▸  <code>${ownerAdminId}</code>\n\n` +
+      `📌 Usage:\n<code>/setownerid &lt;new_user_id&gt;</code>\n\n` +
+      `⚠️ <b>Dhyan rakho:</b> Ye change permanent hai (DB mein save hoga). Naya ID bot ka naya owner banega.</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  if (newId === ownerAdminId) {
+    return bot.sendMessage(chatId,
+      `⚠️ <b>Same ID</b> — Ye pehle se hi owner ID hai!`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  const oldId = ownerAdminId;
+  ownerAdminId = newId;
+  await BotConfigModel.findOneAndUpdate(
+    { key: "ownerAdminId" },
+    { key: "ownerAdminId", value: newId },
+    { upsert: true }
+  );
+
+  await bot.sendMessage(chatId,
+    `✅━━━━━━━━━━━━━━━━━━━━━━✅\n` +
+    `   <b>ᴏᴡɴᴇʀ ɪᴅ ᴜᴘᴅᴀᴛᴇᴅ</b>\n` +
+    `✅━━━━━━━━━━━━━━━━━━━━━━✅\n\n` +
+    `<blockquote>◈ ᴘᴜʀᴀɴᴀ ɪᴅ  ▸  <code>${oldId}</code>\n` +
+    `◈ ɴᴀʏᴀ ɪᴅ    ▸  <code>${newId}</code>\n\n` +
+    `✅ DB mein save ho gaya. Restart ke baad bhi yahi ID owner rahega.</blockquote>\n\n` +
+    `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
+  );
+
+  // Notify new owner
+  try {
+    await bot.sendMessage(newId,
+      `👑 <b>ʙᴏᴛ ᴏᴡɴᴇʀꜱʜɪᴘ ᴛʀᴀɴꜱꜰᴇʀ</b>\n\n` +
+      `<blockquote>Aapko is bot ka naya Owner banaya gaya hai!\n\n` +
+      `◈ ᴘᴜʀᴀɴᴀ ᴏᴡɴᴇʀ  ▸  <code>${oldId}</code>\n` +
+      `◈ ᴀᴀᴘᴋᴀ ɪᴅ       ▸  <code>${newId}</code></blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  } catch { /* new owner might not have started the bot yet */ }
 });
 
 // ============================================================
