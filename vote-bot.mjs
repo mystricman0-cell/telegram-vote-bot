@@ -8309,7 +8309,7 @@ const KNOWN_COMMANDS = new Set([
   "clearaudit","resetsecurity","userhistory","blockword","unblockword","blockedwords","ratelimitreset","securityreport",
   "previewwelcome",
   "addadmin","removeadmin","listadmins","editadminperms",
-  "customize","settext","resettext","listtext",
+  "customize","settext","resettext","listtext","preview",
   "pushgithub","health",
   "about","version","uptime","rules","faq","terms","countdown","rank","invite","notify","refer","feedback"
 ]);
@@ -8491,6 +8491,49 @@ bot.onText(/\/listtext/, async (msg) => {
       `🎨 <b>All UI Texts</b> (✏️ = custom)\n\n${c}`,
       { parse_mode: "HTML" });
   }
+});
+
+// /preview <key> — show exactly what that UI text looks like
+bot.onText(/\/preview(?:\s+(\S+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const key = match?.[1]?.trim();
+  if (!key) {
+    const keyList = UI_KEYS.map(k => `<code>/preview ${k}</code>`).join("\n");
+    return bot.sendMessage(msg.chat.id,
+      `🔍 <b>Preview kisi bhi UI key ka:</b>\n\n${keyList}`,
+      { parse_mode: "HTML" });
+  }
+  if (!DEFAULT_UI_TEXTS.hasOwnProperty(key)) {
+    return bot.sendMessage(msg.chat.id,
+      `❌ Unknown key: <code>${h(key)}</code>\n\nSab keys dekhne ke liye: /listtext`,
+      { parse_mode: "HTML" });
+  }
+  const isCustom   = botCustomTexts.has(key);
+  const current    = getUI(key);
+  const def        = DEFAULT_UI_TEXTS[key];
+  const sameAsDefault = !isCustom;
+
+  const msg2 =
+    `🔍━━━━━━━━━━━━━━━━━━━━━━🔍\n` +
+    `  👁  <b>UI KEY PREVIEW</b>\n` +
+    `🔍━━━━━━━━━━━━━━━━━━━━━━🔍\n\n` +
+    `🔑 <b>Key:</b> <code>${h(key)}</code>\n` +
+    `📌 <b>Status:</b> ${isCustom ? "✏️ Custom set hai" : "🔄 Default use ho raha hai"}\n\n` +
+    `🚀 <b>Default value:</b>\n<code>${h(def)}</code>\n\n` +
+    (isCustom ? `✏️ <b>Current (custom) value:</b>\n<code>${h(botCustomTexts.get(key))}</code>\n\n` : ``) +
+    `👁 <b>Exactly aisa dikhega:</b>\n` +
+    `┌─────────────────────┐\n` +
+    `  ${current}\n` +
+    `└─────────────────────┘\n\n` +
+    `<i>Change karne ke liye /customize → key tap karo, ya /settext ${h(key)} naya text</i>`;
+
+  await bot.sendMessage(msg.chat.id, msg2, {
+    parse_mode: "HTML",
+    reply_markup: { inline_keyboard: [
+      [{ text: "✏️ Edit This Key", callback_data: `cust_edit:${key}` }],
+      ...(isCustom ? [[{ text: "🔄 Reset to Default", callback_data: `cust_reset:${key}` }]] : [])
+    ]}
+  });
 });
 
 // ============================================================
@@ -8844,6 +8887,7 @@ async function main() {
         { command: "settext",           description: "✏️ Set any UI text/emoji/button label" },
         { command: "resettext",         description: "🔄 Reset a UI text to default" },
         { command: "listtext",          description: "📋 List all UI text keys & current values" },
+        { command: "preview",           description: "👁 Preview exactly how any UI key looks" },
         { command: "pushgithub",        description: "🚀 Push vote-bot.mjs to GitHub" },
         // ── Security — 33 commands ──
         { command: "securityhelp",      description: "🛡️ Full 40-cmd security reference" },
