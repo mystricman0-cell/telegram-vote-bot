@@ -1363,21 +1363,23 @@ function forceJoinKeyboard(channels) {
 // ============================================================
 
 function mainMenuKeyboard() {
+  // Inline keyboard buttons don't support HTML — strip <tg-emoji> tags, keep fallback char
+  const btn = key => stripTgEmoji(getUI(key));
   return {
     inline_keyboard: [
       [
-        { text: getUI("welcome.btn_new_giveaway"), callback_data: "new_giveaway" },
-        { text: getUI("welcome.btn_my_giveaways"), callback_data: "my_giveaways" }
+        { text: btn("welcome.btn_new_giveaway"), callback_data: "new_giveaway" },
+        { text: btn("welcome.btn_my_giveaways"), callback_data: "my_giveaways" }
       ],
       [
-        { text: getUI("welcome.btn_add_channel"), callback_data: "add_channel" },
-        { text: getUI("welcome.btn_add_group"),   callback_data: "add_group" }
+        { text: btn("welcome.btn_add_channel"), callback_data: "add_channel" },
+        { text: btn("welcome.btn_add_group"),   callback_data: "add_group" }
       ],
       [
-        { text: getUI("welcome.btn_vip"),         callback_data: "vip_membership" },
-        { text: getUI("welcome.btn_create_post"), callback_data: "create_post" }
+        { text: btn("welcome.btn_vip"),         callback_data: "vip_membership" },
+        { text: btn("welcome.btn_create_post"), callback_data: "create_post" }
       ],
-      [{ text: getUI("welcome.btn_guide"),        callback_data: "how_to_use" }]
+      [{ text: btn("welcome.btn_guide"),        callback_data: "how_to_use" }]
     ]
   };
 }
@@ -8534,8 +8536,12 @@ bot.onText(/\/resettext\s+(\S+)/, async (msg, match) => {
 bot.onText(/\/listtext/, async (msg) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
   const lines = UI_KEYS.map(k => {
-    const val = botCustomTexts.has(k) ? `✏️ ${botCustomTexts.get(k)}` : `   ${DEFAULT_UI_TEXTS[k]}`;
-    return `<code>${k}</code>\n↳ ${val}`;
+    // Custom values are stored as HTML (may contain <tg-emoji>), render directly
+    // Default values are plain text, escape for safety
+    const val = botCustomTexts.has(k)
+      ? `✏️ ${botCustomTexts.get(k)}`
+      : `   ${h(DEFAULT_UI_TEXTS[k])}`;
+    return `<code>${h(k)}</code>\n↳ ${val}`;
   }).join("\n\n");
   const chunks = [];
   let chunk = "";
@@ -8582,12 +8588,16 @@ bot.onText(/\/preview(?:\s+(\S+))?/, async (msg, match) => {
     `🔑 <b>Key:</b> <code>${h(key)}</code>\n` +
     `📌 <b>Status:</b> ${isCustom ? "✏️ Custom set hai" : "🔄 Default use ho raha hai"}\n\n` +
     `🚀 <b>Default value:</b>\n<code>${h(def)}</code>\n\n` +
-    (isCustom ? `✏️ <b>Current (custom) value:</b>\n<code>${h(botCustomTexts.get(key))}</code>\n\n` : ``) +
-    `👁 <b>Exactly aisa dikhega:</b>\n` +
-    `┌─────────────────────┐\n` +
+    (isCustom ?
+      `✏️ <b>Current (custom) value:</b>\n` +
+      `┌───────────────────────┐\n` +
+      `  ${botCustomTexts.get(key)}\n` +
+      `└───────────────────────┘\n\n` : ``) +
+    `👁 <b>Exactly aisa dikhega (premium emoji sahit):</b>\n` +
+    `┌───────────────────────┐\n` +
     `  ${current}\n` +
-    `└─────────────────────┘\n\n` +
-    `<i>Change karne ke liye /customize → key tap karo, ya /settext ${h(key)} naya text</i>`;
+    `└───────────────────────┘\n\n` +
+    `<i>Change: /customize → key tap karo, ya /settext ${h(key)} naya text</i>`;
 
   await bot.sendMessage(msg.chat.id, msg2, {
     parse_mode: "HTML",
