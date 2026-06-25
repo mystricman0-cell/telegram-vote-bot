@@ -566,6 +566,7 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/cleandb` | `/cleandb` | Interactive selective cleanup — choose giveaways/payments/memberships/VIP/seclogs |
 | `/adminhelp` | `/adminhelp` | Full admin command reference (4 parts including security) |
 | `/pushgithub` | `/pushgithub [message]` | Push vote-bot.mjs to GitHub directly from Telegram |
+| `/setownerid` | `/setownerid <userId>` | Transfer bot ownership to a new admin ID — saved to DB, persists across restarts |
 
 #### Admin Commands — UI Customizer
 
