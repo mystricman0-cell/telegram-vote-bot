@@ -106,6 +106,32 @@
   - **✅ Dismiss** — ignore alert (legitimate votes)
 - Detection window resets after 90 seconds (catches repeated panel bursts)
 
+### 📡 &nbsp;Auto Leaderboard Broadcast *(NEW — v3.0.7)*
+- **Auto-post live top-10 leaderboard** to the giveaway channel every X hours
+- `/setlbbroadcast <gId> <hours>` — start auto-broadcast (0.5h to 24h interval)
+- Sends one leaderboard card **immediately** on activation, then every X hours
+- **Stops automatically** when giveaway ends — no cleanup needed
+- `/stoplbbroadcast <gId>` — manually stop at any time
+- `/listlbbroadcast` — see all active broadcasts with next post time (IST)
+- Each card shows: giveaway title · participant count · top 10 ranked with medals · live timestamp
+
+```
+  ✦━━━━━━━━━━━━━━━━━━━━━✦
+    🏆  LIVE LEADERBOARD
+  ✦━━━━━━━━━━━━━━━━━━━━━✦
+
+  📌 Summer Giveaway 2026
+  👥 Participants: 48
+
+  🥇 Rahul (@rahulxyz) — 312 votes
+  🥈 Priya — 278 votes
+  🥉 Amit (@amitdrs) — 201 votes
+  4.  Sneha — 145 votes
+  ...
+
+  🕐 Updated: 25 Jun 2026 · 08:30 pm IST
+```
+
 ### 🏆 &nbsp;Leaderboard & Results
 - Live leaderboard viewable anytime during a giveaway
 - Full post-giveaway leaderboard — all participants ranked 1st to last
