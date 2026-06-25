@@ -1,5 +1,5 @@
 /**
- * 🎁 DRS GIVEAWAY BOT v3.0.4
+ * 🎁 DRS GIVEAWAY BOT v3.0.8
  * Full-featured Telegram Giveaway & Voting System
  * DRS Branding — Fair · Fast · Automated
  * MongoDB Persistent Storage | Force Join | Stylish Animations
@@ -6064,15 +6064,25 @@ bot.onText(/\/allchannels/, async (msg) => {
   await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
 });
 
-bot.onText(/\/allgiveaways/, async (msg) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
-  if (!giveaways.size) return bot.sendMessage(msg.chat.id, "No giveaways found.");
-  let text = "<b>📋 All Giveaways:</b>\n\n";
-  for (const [id, g] of giveaways) {
-    const total = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
-    text += `<b>${h(g.title)}</b> | ID: <code>${id}</code> | ${g.active ? "🟢" : "🔴"} | Votes: ${total}\n`;
-  }
-  await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
+bot.onText(/\/allgiveaways(?:\s+(\d+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from?.id)) return;
+  try {
+    if (!giveaways.size) return bot.sendMessage(msg.chat.id, "No giveaways found.");
+    const PAGE = 20;
+    const page = Math.max(1, parseInt(match?.[1]) || 1);
+    const arr  = [...giveaways.entries()];
+    const total = arr.length;
+    const totalPages = Math.ceil(total / PAGE);
+    const pg = Math.min(page, totalPages);
+    const slice = arr.slice((pg - 1) * PAGE, pg * PAGE);
+    let text = `<b>📋 All Giveaways (${total})</b> — Page ${pg}/${totalPages}\n\n`;
+    for (const [id, g] of slice) {
+      const votes = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
+      text += `${g.active ? "🟢" : "🔴"} <b>${h(g.title)}</b>\n   ID: <code>${id}</code> · ${g.participants.size} 👥 · ${votes} 🗳️\n`;
+    }
+    if (pg < totalPages) text += `\nNext page: /allgiveaways ${pg + 1}`;
+    await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
+  } catch(e) { bot.sendMessage(msg.chat.id, `❌ Error: ${e.message}`, { parse_mode: "HTML" }).catch(()=>{}); }
 });
 
 // /setwelcomeimageurl — Set welcome image via URL (displayed with spoiler effect)
@@ -6279,43 +6289,34 @@ bot.onText(/\/extendmem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
 });
 
 // /listmem — Admin: List all active VIP members
-bot.onText(/\/listmem/, async (msg) => {
-  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
-  const active = [...vipUsers.entries()].filter(([, v]) => {
-    if (!v.vip) return false;
-    if (v.expiry && new Date() > new Date(v.expiry)) return false;
-    return true;
-  });
-  if (!active.length) {
-    return bot.sendMessage(msg.chat.id,
+bot.onText(/\/listmem(?:\s+(\d+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from?.id)) return;
+  try {
+    const now = new Date();
+    const active = [...vipUsers.entries()].filter(([, v]) => {
+      if (!v.vip) return false;
+      if (v.expiry && now > new Date(v.expiry)) return false;
+      return true;
+    });
+    if (!active.length) return bot.sendMessage(msg.chat.id,
       `◈━━━━━━━━━━━━━━━━━━━━━━◈\n  📋  <b>ACTIVE MEMBERS</b>\n◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n<blockquote>No active members at the moment.</blockquote>`,
-      { parse_mode: "HTML" }
-    );
-  }
-  const now = new Date();
-  let text =
-    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
-    `  📋  <b>ACTIVE MEMBERS</b> (${active.length})\n` +
-    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n`;
-  for (const [uid, v] of active) {
-    const expiry = v.expiry ? new Date(v.expiry) : null;
-    const daysLeft = expiry ? Math.ceil((expiry - now) / (1000 * 60 * 60 * 24)) : "∞";
-    const bu = botUsers.get(uid);
-    const nameStr = bu?.firstName ? `<b>${h(bu.firstName)}</b>${bu.username ? ` (@${bu.username})` : ""}` : `<i>Unknown</i>`;
-    const permsObj = v.perms || {};
-    const permStr = Object.keys(permsObj).length
-      ? Object.entries(permsObj).map(([k,val]) => `${val ? "✅" : "❌"} ${k}`).join("  ")
-      : "✅ All Enabled";
-    text += `<blockquote>` +
-      `👤 ${nameStr}\n` +
-      `◈ ID       ▸ <code>${uid}</code>\n` +
-      `◈ Plan     ▸ ${v.plan || "VIP"}\n` +
-      `◈ Expires  ▸ ${expiry ? expiry.toLocaleDateString("en-IN") : "∞"}\n` +
-      `◈ Days Left▸ ${daysLeft} days\n` +
-      `◈ Perms    ▸ ${permStr}` +
-      `</blockquote>\n\n`;
-  }
-  await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
+      { parse_mode: "HTML" });
+    const PAGE = 10;
+    const page = Math.max(1, parseInt(match?.[1]) || 1);
+    const totalPages = Math.ceil(active.length / PAGE);
+    const pg = Math.min(page, totalPages);
+    const slice = active.slice((pg - 1) * PAGE, pg * PAGE);
+    let text = `◈━━━━━━━━━━━━━━━━━━━━━━◈\n  📋  <b>ACTIVE MEMBERS</b> (${active.length}) — Page ${pg}/${totalPages}\n◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n`;
+    for (const [uid, v] of slice) {
+      const expiry = v.expiry ? new Date(v.expiry) : null;
+      const daysLeft = expiry ? Math.ceil((expiry - now) / (1000 * 60 * 60 * 24)) : "∞";
+      const bu = botUsers.get(uid);
+      const nameStr = bu?.firstName ? `<b>${h(bu.firstName)}</b>${bu.username ? ` (@${bu.username})` : ""}` : `<i>Unknown</i>`;
+      text += `<blockquote>👤 ${nameStr}\n◈ ID ▸ <code>${uid}</code>\n◈ Plan ▸ ${v.plan || "VIP"}\n◈ Expires ▸ ${expiry ? expiry.toLocaleDateString("en-IN") : "∞"}\n◈ Days Left ▸ ${daysLeft}d</blockquote>\n\n`;
+    }
+    if (pg < totalPages) text += `Next page: /listmem ${pg + 1}`;
+    await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
+  } catch(e) { bot.sendMessage(msg.chat.id, `❌ Error: ${e.message}`, { parse_mode: "HTML" }).catch(()=>{}); }
 });
 
 // /meminfo — Admin: Check a specific user's membership
@@ -8290,24 +8291,38 @@ bot.onText(/\/removetrap (.+)/, async (msg, match) => {
 });
 
 // ─── /listtraps ───
-bot.onText(/\/listtraps/, async (msg) => {
-  if (!isAdmin(msg.from.id)) return;
-  if (!honeypotTraps.size) return bot.sendMessage(msg.chat.id, `🍯 <b>No honeypot traps set.</b>\n<blockquote>Use /honeytrap &lt;command&gt; to add one.</blockquote>`, { parse_mode: "HTML" });
-  const list = [...honeypotTraps].map((c, i) => `${i + 1}. <code>/${c}</code>`).join("\n");
-  await bot.sendMessage(msg.chat.id, `🍯 <b>Active Honeypot Traps (${honeypotTraps.size})</b>\n<blockquote>${list}</blockquote>`, { parse_mode: "HTML" });
+bot.onText(/\/listtraps(?:\s+(\d+))?/, async (msg, match) => {
+  if (!isAdmin(msg.from?.id)) return;
+  try {
+    if (!honeypotTraps.size) return bot.sendMessage(msg.chat.id, `🍯 <b>No honeypot traps set.</b>\n<blockquote>Use /honeytrap &lt;command&gt; to add one.</blockquote>`, { parse_mode: "HTML" });
+    const PAGE = 50;
+    const page = Math.max(1, parseInt(match?.[1]) || 1);
+    const arr  = [...honeypotTraps];
+    const total = arr.length;
+    const totalPages = Math.ceil(total / PAGE);
+    const pg = Math.min(page, totalPages);
+    const slice = arr.slice((pg - 1) * PAGE, pg * PAGE);
+    const list = slice.map((c, i) => `${(pg - 1) * PAGE + i + 1}. <code>/${c}</code>`).join("\n");
+    const nav = totalPages > 1 ? `\n\n📄 Page ${pg}/${totalPages}${pg < totalPages ? ` · Next: /listtraps ${pg + 1}` : " · ✅ Last page"}` : "";
+    await bot.sendMessage(msg.chat.id, `🍯 <b>Honeypot Traps (${total})</b>\n<blockquote>${list}</blockquote>${nav}`, { parse_mode: "HTML" });
+  } catch(e) { bot.sendMessage(msg.chat.id, `❌ Error: ${e.message}`, { parse_mode: "HTML" }).catch(()=>{}); }
 });
 
 // ─── /honeypotlist ───
 bot.onText(/\/honeypotlist/, async (msg) => {
-  if (!isAdmin(msg.from.id)) return;
-  if (!honeypotTripped.size) return bot.sendMessage(msg.chat.id, `🍯 <b>No users have triggered honeypots yet.</b>`, { parse_mode: "HTML" });
-  let lines = "";
-  for (const [uid, traps] of honeypotTripped) {
-    const u = botUsers.get(uid);
-    lines += `▸ <code>${uid}</code> @${u?.username || "N/A"} — <b>${traps.length}</b> trap(s)\n`;
-    lines += traps.slice(0, 3).map(t => `  └ /${t.command} · ${new Date(t.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`).join("\n") + "\n\n";
-  }
-  await bot.sendMessage(msg.chat.id, `🍯 <b>Honeypot Triggered (${honeypotTripped.size} users)</b>\n<blockquote>${lines.trim()}</blockquote>`, { parse_mode: "HTML" });
+  if (!isAdmin(msg.from?.id)) return;
+  try {
+    if (!honeypotTripped.size) return bot.sendMessage(msg.chat.id, `🍯 <b>No users have triggered honeypots yet.</b>`, { parse_mode: "HTML" });
+    const entries = [...honeypotTripped.entries()].slice(0, 30); // max 30 to avoid limit
+    let lines = "";
+    for (const [uid, traps] of entries) {
+      const u = botUsers.get(uid);
+      lines += `▸ <code>${uid}</code> @${u?.username || "N/A"} — <b>${traps.length}</b> trap(s)\n`;
+      lines += traps.slice(0, 2).map(t => `  └ /${t.command} · ${new Date(t.at).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}`).join("\n") + "\n\n";
+    }
+    const more = honeypotTripped.size > 30 ? `\n<i>...and ${honeypotTripped.size - 30} more users</i>` : "";
+    await bot.sendMessage(msg.chat.id, `🍯 <b>Honeypot Triggered (${honeypotTripped.size} users)</b>\n<blockquote>${lines.trim()}</blockquote>${more}`, { parse_mode: "HTML" });
+  } catch(e) { bot.sendMessage(msg.chat.id, `❌ Error: ${e.message}`, { parse_mode: "HTML" }).catch(()=>{}); }
 });
 
 // ─── /cleanhoneypot ───
@@ -8679,11 +8694,21 @@ bot.onText(/\/unblockword (.+)/, async (msg, match) => {
 });
 
 // ─── /blockedwords ───
-bot.onText(/\/blockedwords/, async (msg) => {
-  if (!isAdmin(msg.from.id)) return;
-  if (!blockedWords.size) return bot.sendMessage(msg.chat.id, `✅ <b>No blocked words.</b>`, { parse_mode: "HTML" });
-  const list = [...blockedWords].map((w, i) => `${i + 1}. <code>${w}</code>`).join("\n");
-  await bot.sendMessage(msg.chat.id, `🚫 <b>Blocked Words (${blockedWords.size})</b>\n<blockquote>${list}</blockquote>`, { parse_mode: "HTML" });
+bot.onText(/\/blockedwords(?:\s+(\d+))?/, async (msg, match) => {
+  if (!isAdmin(msg.from?.id)) return;
+  try {
+    if (!blockedWords.size) return bot.sendMessage(msg.chat.id, `✅ <b>No blocked words.</b>`, { parse_mode: "HTML" });
+    const PAGE = 60;
+    const page = Math.max(1, parseInt(match?.[1]) || 1);
+    const arr  = [...blockedWords];
+    const total = arr.length;
+    const totalPages = Math.ceil(total / PAGE);
+    const pg = Math.min(page, totalPages);
+    const slice = arr.slice((pg - 1) * PAGE, pg * PAGE);
+    const list = slice.map((w, i) => `${(pg - 1) * PAGE + i + 1}. <code>${w}</code>`).join("\n");
+    const nav = totalPages > 1 ? `\n\n📄 Page ${pg}/${totalPages}${pg < totalPages ? ` · Next: /blockedwords ${pg + 1}` : " · ✅ Last page"}` : "";
+    await bot.sendMessage(msg.chat.id, `🚫 <b>Blocked Words (${total})</b>\n<blockquote>${list}</blockquote>${nav}`, { parse_mode: "HTML" });
+  } catch(e) { bot.sendMessage(msg.chat.id, `❌ Error: ${e.message}`, { parse_mode: "HTML" }).catch(()=>{}); }
 });
 
 // ─── /ratelimitreset <userId> ───
@@ -8898,7 +8923,7 @@ bot.onText(/\/about/, async (msg) => {
   if (msg.chat.type !== "private") return;
   await bot.sendMessage(msg.chat.id,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n   ℹ️  <b>𝐀𝐁𝐎𝐔𝐓 𝐃𝐑𝐒 𝐁𝐎𝐓</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-    `<blockquote>◈ ɴᴀᴍᴇ     ▸  <b>DRS Giveaway Bot</b>\n◈ ᴠᴇʀꜱɪᴏɴ  ▸  <b>v3.0.4</b>\n◈ ɴᴇᴛᴡᴏʀᴋ  ▸  <a href="https://t.me/rchiex">DRS Network</a>\n◈ ꜱᴜᴘᴘᴏʀᴛ  ▸  <a href="https://t.me/drssupport">@drssupport</a>\n◈ ʙᴀꜱᴇ    ▸  MongoDB · Node.js · Telegram API\n◈ ꜰᴇᴀᴛᴜʀᴇꜱ ▸  Giveaway · Voting · VIP · Anti-Cheat · Security Engine</blockquote>\n\n✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
+    `<blockquote>◈ ɴᴀᴍᴇ     ▸  <b>DRS Giveaway Bot</b>\n◈ ᴠᴇʀꜱɪᴏɴ  ▸  <b>v3.0.8</b>\n◈ ɴᴇᴛᴡᴏʀᴋ  ▸  <a href="https://t.me/rchiex">DRS Network</a>\n◈ ꜱᴜᴘᴘᴏʀᴛ  ▸  <a href="https://t.me/drssupport">@drssupport</a>\n◈ ʙᴀꜱᴇ    ▸  MongoDB · Node.js · Telegram API\n◈ ꜰᴇᴀᴛᴜʀᴇꜱ ▸  Giveaway · Voting · VIP · Anti-Cheat · Security Engine</blockquote>\n\n✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } });
 });
 
@@ -8909,7 +8934,7 @@ bot.onText(/\/version/, async (msg) => {
   const uptimeStr = `${Math.floor(uptime/3600)}h ${Math.floor((uptime%3600)/60)}m ${uptime%60}s`;
   await bot.sendMessage(msg.chat.id,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n   🔢  <b>ʙᴏᴛ ᴠᴇʀꜱɪᴏɴ</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-    `<blockquote>◈ ᴠᴇʀꜱɪᴏɴ  ▸  <b>v3.0.4</b>\n◈ ᴜᴘᴛɪᴍᴇ   ▸  ${uptimeStr}\n◈ ᴅʙ       ▸  MongoDB\n◈ ʀᴜɴᴛɪᴍᴇ  ▸  Node.js 18+\n◈ ꜰʀᴀᴍᴇᴡᴏʀᴋ ▸  node-telegram-bot-api</blockquote>`,
+    `<blockquote>◈ ᴠᴇʀꜱɪᴏɴ  ▸  <b>v3.0.8</b>\n◈ ᴜᴘᴛɪᴍᴇ   ▸  ${uptimeStr}\n◈ ᴅʙ       ▸  MongoDB\n◈ ʀᴜɴᴛɪᴍᴇ  ▸  Node.js 18+\n◈ ꜰʀᴀᴍᴇᴡᴏʀᴋ ▸  node-telegram-bot-api</blockquote>`,
     { parse_mode: "HTML" });
 });
 
@@ -9950,7 +9975,7 @@ async function main() {
         { command: "support",      description: "💬 Contact Support" }
       ]);
 
-      // Register admin command list — exactly 100 commands (Telegram limit)
+      // Register admin command list — exactly 100 commands (Telegram hard limit)
       await bot.setMyCommands([
         // ── User commands (15) ──
         { command: "start",             description: "🎁 Open DRS Giveaway Bot" },
@@ -9975,8 +10000,8 @@ async function main() {
         { command: "loud",              description: "🔊 LOUD broadcast — Users/Channels/All" },
         { command: "send",              description: "📩 Send message to specific chat" },
         { command: "pin",               description: "📌 Send & pin in channel" },
-        // ── Giveaway management (13) ──
-        { command: "allgiveaways",      description: "🎁 List all giveaways" },
+        // ── Giveaway management (9) ──
+        { command: "allgiveaways",      description: "🎁 List all giveaways (paginated)" },
         { command: "addvotes",          description: "➕ Manually add votes to participant" },
         { command: "removevotes",       description: "➖ Remove votes from participant" },
         { command: "endgiveaway",       description: "🏁 Force-close a giveaway + announce winners" },
@@ -9989,7 +10014,7 @@ async function main() {
         { command: "givemem",           description: "💳 Give membership to user" },
         { command: "removemem",         description: "🗑️ Revoke user membership" },
         { command: "extendmem",         description: "➕ Extend user membership" },
-        { command: "listmem",           description: "📋 List all active VIP members" },
+        { command: "listmem",           description: "📋 List active VIP members (paginated)" },
         { command: "meminfo",           description: "ℹ️ Check any user's membership" },
         { command: "setplan",           description: "💰 Update plan pricing" },
         // ── User management (7) ──
@@ -10000,7 +10025,7 @@ async function main() {
         { command: "dm",                description: "📩 Direct message any user" },
         { command: "reply",             description: "↩️ Reply to a support ticket" },
         { command: "exportusers",       description: "📁 Download all users as .txt" },
-        // ── Config & channels (11) ──
+        // ── Config & channels (9) ──
         { command: "allchannels",       description: "📋 List all registered channels" },
         { command: "setinr",            description: "₹ Set votes per INR paid" },
         { command: "schedule",          description: "⏰ Schedule a broadcast at IST time" },
@@ -10010,37 +10035,28 @@ async function main() {
         { command: "maintenance",       description: "🔧 Toggle maintenance mode on/off" },
         { command: "setwelcomemsg",     description: "✏️ Set custom welcome message" },
         { command: "setwelcomeimageurl",description: "🖼️ Set welcome image via URL (spoiler)" },
-        { command: "setmembershipqr",   description: "📸 Upload membership QR code" },
-        // ── DB & utility (8) ──
+        // ── DB & utility (3) ──  [cleandb/removepay/clearallpending/setfreelimit/perms accessible via /adminhelp]
         { command: "setforcejoin",      description: "📢 Configure force join channel" },
-        { command: "setfreelimit",      description: "🆓 Set free giveaway quota" },
-        { command: "perms",             description: "🔐 Toggle user permissions" },
-        { command: "cleandb",           description: "🧹 Interactive selective DB cleanup" },
-        { command: "removepay",         description: "🗑️ Remove a pending payment by ID" },
-        { command: "clearallpending",   description: "🗑️ Clear ALL pending payments at once" },
+        { command: "setmembershipqr",   description: "📸 Upload membership QR code" },
+        { command: "setlogdest",        description: "📡 Set log destination (user/channel/reset)" },
         // ── Sub-admin management (4) ──
         { command: "addadmin",          description: "👑 Add a sub-admin with permissions" },
         { command: "removeadmin",       description: "🗑️ Remove a sub-admin" },
         { command: "listadmins",        description: "📋 List all sub-admins & permissions" },
         { command: "editadminperms",    description: "🔑 Edit sub-admin permissions (button UI)" },
-        // ── New admin tools (6) ──
+        // ── Admin tools (9) ──  [setlbbroadcast/stoplbbroadcast/listlbbroadcast/preview accessible via /adminhelp]
         { command: "health",            description: "🏥 Bot health — uptime, DB, memory, stats" },
         { command: "customize",         description: "🎨 Interactive UI text & emoji customizer" },
         { command: "settext",           description: "✏️ Set any UI text/emoji/button label" },
         { command: "resettext",         description: "🔄 Reset a UI text to default" },
         { command: "listtext",          description: "📋 List all UI text keys & current values" },
-        { command: "preview",           description: "👁 Preview exactly how any UI key looks" },
-        { command: "setlbbroadcast",     description: "📡 Auto-post leaderboard to channel every X hours" },
-        { command: "stoplbbroadcast",    description: "🛑 Stop auto leaderboard broadcast" },
-        { command: "listlbbroadcast",    description: "📋 View all active leaderboard broadcasts" },
-        { command: "pushgithub",         description: "🚀 Push vote-bot.mjs to GitHub" },
-        { command: "cloneui",           description: "📦 Export/Import all UI text settings (backup/transfer)" },
-        { command: "resetui",           description: "🔄 Reset ALL UI texts to default (with confirmation)" },
-        { command: "autoclean",         description: "🧹 Manually trigger memory + DB cleanup now" },
+        { command: "pushgithub",        description: "🚀 Push vote-bot.mjs to GitHub" },
+        { command: "cloneui",           description: "📦 Export/Import all UI text settings" },
+        { command: "resetui",           description: "🔄 Reset ALL UI texts to default" },
+        { command: "autoclean",         description: "🧹 Manually trigger memory + DB cleanup" },
         { command: "memstats",          description: "📊 Live RAM breakdown — all Maps, heap, RSS" },
-        { command: "setlogdest",        description: "📡 Set log destination (user/channel/reset)" },
-        // ── Security — 33 commands ──
-        { command: "securityhelp",      description: "🛡️ Full 40-cmd security reference" },
+        // ── Security (31) ──
+        { command: "securityhelp",      description: "🛡️ Full security command reference" },
         { command: "securitystats",     description: "📊 Full security dashboard" },
         { command: "emergencylock",     description: "🔒 Emergency lock — block all users" },
         { command: "emergencyunlock",   description: "🔓 Remove emergency lock" },
@@ -10049,7 +10065,7 @@ async function main() {
         { command: "honeypot",          description: "🍯 Enable/disable honeypot traps" },
         { command: "honeytrap",         description: "🍯 Add a honeypot trap command" },
         { command: "removetrap",        description: "🗑️ Remove a honeypot trap" },
-        { command: "listtraps",         description: "📋 List all active traps" },
+        { command: "listtraps",         description: "📋 List traps (paginated) — /listtraps [page]" },
         { command: "honeypotlist",      description: "🍯 Users who triggered honeypot traps" },
         { command: "warnuser",          description: "⚠️ Warn a user (tracked in DB)" },
         { command: "warnings",          description: "⚠️ Check user warning count + reasons" },
@@ -10069,7 +10085,7 @@ async function main() {
         { command: "unflaguser",        description: "🚩 Remove user flag" },
         { command: "blockword",         description: "🚫 Block a word/phrase in messages" },
         { command: "unblockword",       description: "✅ Unblock a word/phrase" },
-        { command: "blockedwords",      description: "🚫 List all blocked words" },
+        { command: "blockedwords",      description: "🚫 List blocked words (paginated)" },
         { command: "suspicious",        description: "🛡️ Last 20 security events" }
       ], { scope: { type: "chat", chat_id: ownerAdminId } });
 
@@ -10077,7 +10093,7 @@ async function main() {
     } catch (e) { console.error("setMyCommands error:", e.message); }
 
     console.log(`
-✅ DRS Giveaway Bot v3.0.4 Started!
+✅ DRS Giveaway Bot v3.0.8 Started!
 🤖 @${me.username}
 👑 Admin ID: ${MAIN_ADMIN_ID}
 💾 MongoDB: Connected
