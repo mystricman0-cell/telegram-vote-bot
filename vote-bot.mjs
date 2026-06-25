@@ -5225,11 +5225,15 @@ bot.onText(/\/myid/, async (msg) => {
 bot.onText(/\/botstatus/, async (msg) => {
   if (msg.chat.type !== "private") return;
   const chatId = msg.chat.id;
-  const totalGiveaways = giveaways.size;
+  // Real totals — query DB so evicted giveaways are counted correctly
+  const [totalGiveaways, totalUsers] = await Promise.all([
+    GiveawayModel.countDocuments().catch(() => giveaways.size),
+    BotUserModel.countDocuments().catch(() => botUsers.size),
+  ]);
   const activeGiveaways = [...giveaways.values()].filter(g => g.active).length;
-  const totalUsers = botUsers.size;
   const totalChannels = registeredChannels.size;
-  const vipCount = [...botUsers.values()].filter(u => getMembership(u.id)).length;
+  // Count active VIPs correctly — iterate vipUsers Map by userId key
+  const vipCount = [...vipUsers.entries()].filter(([uid]) => getMembership(uid) !== null).length;
   const pendingTotal = pendingPayments.size + pendingMembershipPayments.size;
   await bot.sendMessage(chatId,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
