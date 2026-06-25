@@ -48,6 +48,15 @@
 ✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦
 ```
 
+### 🗑️ &nbsp;Clear Channel Posts *(NEW in v3.0.5)*
+- **Deletes ALL bot messages** from the giveaway channel in one tap
+- Covers: giveaway announcement, every participant vote card, winner post
+- **Confirmation step** before deleting — shows exact count of messages to be deleted
+- Tracks announcement + winner message IDs automatically from creation
+- Shows result: how many deleted, how many failed (already removed / not found)
+- 50ms delay between deletes — respects Telegram rate limits
+- Available via "🗑️ CLEAR CHANNEL POSTS" button in giveaway management
+
 ### 📡 &nbsp;Log Destination Control *(NEW in v3.0.5)*
 - Route **all user logs, support messages, feedback & payment notifications** to any destination
 - Supports **private user ID** or **any channel** (public or private)
