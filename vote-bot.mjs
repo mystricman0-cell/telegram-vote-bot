@@ -1862,6 +1862,38 @@ bot.on("callback_query", async (query) => {
     ).catch(() => {});
   }
 
+  // ─── resetui: confirm / cancel ───
+  if (data === "resetui_confirm") {
+    if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!" }).catch(() => {});
+    await bot.answerCallbackQuery(query.id, { text: "⏳ Resetting..." }).catch(() => {});
+    try {
+      botCustomTexts.clear();
+      await BotConfigModel.deleteMany({ key: /^ui:/ });
+      await bot.editMessageText(
+        `✅ <b>Full UI Reset Done!</b>\n\n` +
+        `🎨 Saare custom texts delete ho gaye.\n` +
+        `🔄 Ab sab default values use ho rahe hain.\n\n` +
+        `<i>Restore karne ke liye: /cloneui import &lt;json&gt;</i>`,
+        { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+      ).catch(() => {});
+    } catch (e) {
+      await bot.editMessageText(
+        `❌ <b>Reset failed!</b>\n<code>${h(e.message)}</code>`,
+        { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+      ).catch(() => {});
+    }
+    return;
+  }
+  if (data === "resetui_cancel") {
+    if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!" }).catch(() => {});
+    await bot.answerCallbackQuery(query.id, { text: "❌ Reset cancelled." }).catch(() => {});
+    await bot.editMessageText(
+      `❌ <b>Reset cancelled.</b>\n\n<i>Koi bhi change nahi hua. Settings safe hain.</i>`,
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+    ).catch(() => {});
+    return;
+  }
+
   // ─── cleandb: callback handlers ───
   if (data.startsWith("cleandb:")) {
     if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!" }).catch(() => {});
@@ -8609,6 +8641,28 @@ bot.onText(/\/preview(?:\s+(\S+))?/, async (msg, match) => {
 });
 
 // ============================================================
+// /resetui — Reset ALL UI custom texts to default (with confirmation)
+// ============================================================
+bot.onText(/\/resetui/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const customCount = botCustomTexts.size;
+
+  await bot.sendMessage(chatId,
+    `⚠️ <b>Full UI Reset — Confirmation</b>\n\n` +
+    `Ye command <b>saare ${customCount} custom UI text</b> delete kar dega aur sab kuch default pe wapas le aayega.\n\n` +
+    `📦 <b>Pehle backup lo:</b> /cloneui export\n\n` +
+    `<b>Kya aap sure hain?</b>`,
+    {
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[
+        { text: "✅ Haan, sab reset karo", callback_data: "resetui_confirm" },
+        { text: "❌ Cancel", callback_data: "resetui_cancel" }
+      ]]}
+    });
+});
+
+// ============================================================
 // /cloneui — Export / Import all UI customizations as JSON
 // ============================================================
 bot.onText(/\/cloneui(?:\s+(export|import))?([\s\S]*)/, async (msg, match) => {
@@ -9119,6 +9173,7 @@ async function main() {
         { command: "preview",           description: "👁 Preview exactly how any UI key looks" },
         { command: "pushgithub",        description: "🚀 Push vote-bot.mjs to GitHub" },
         { command: "cloneui",           description: "📦 Export/Import all UI text settings (backup/transfer)" },
+        { command: "resetui",           description: "🔄 Reset ALL UI texts to default (with confirmation)" },
         // ── Security — 33 commands ──
         { command: "securityhelp",      description: "🛡️ Full 40-cmd security reference" },
         { command: "securitystats",     description: "📊 Full security dashboard" },
