@@ -19,6 +19,12 @@ if (!MONGODB_URI) { console.error("❌ MONGODB_URI not set!"); process.exit(1); 
 // Dynamic owner ID — starts from env, can be changed at runtime via /setownerid
 let ownerAdminId = MAIN_ADMIN_ID;
 
+// Log destination — where user logs/notifications are sent (user or channel). null = ownerAdminId
+let logDestId = null;
+
+// Returns the active log destination (channel or user)
+function getLogDest() { return logDestId || ownerAdminId; }
+
 // ============================================================
 // MONGODB SCHEMAS
 // ============================================================
@@ -652,6 +658,10 @@ async function loadStateFromDB() {
   const ownerCfg = await BotConfigModel.findOne({ key: "ownerAdminId" });
   if (ownerCfg?.value) ownerAdminId = Number(ownerCfg.value);
 
+  // Load log destination (channel or user ID for user logs/notifications)
+  const logDestCfg = await BotConfigModel.findOne({ key: "logDestId" });
+  if (logDestCfg?.value) logDestId = logDestCfg.value;
+
   console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users, ${botCustomTexts.size} custom UI texts, ${subAdmins.size} sub-admins`);
   // Seed defaults (one-time — skips if already done)
   await seedDefaultSecurity();
@@ -915,11 +925,11 @@ bot.processUpdate = function(update) {
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ============================================================
-// ADMIN NOTIFIER — sends every key event to admin
+// ADMIN NOTIFIER — sends every key event to log destination
 // ============================================================
 async function notifyAdmin(text) {
   try {
-    await bot.sendMessage(ownerAdminId,
+    await bot.sendMessage(getLogDest(),
       `<b>📡 EVENT</b>\n\n${text}`,
       { parse_mode: "HTML" }
     );
@@ -1296,7 +1306,7 @@ async function _addWarn(userId, username, reason, notifyChatId) {
     bannedUsers.add(userId);
     await saveConfig("bannedUsers", [...bannedUsers]);
     _secLog(userId, username, "AUTO-BAN", `${warn.count} warnings`);
-    bot.sendMessage(ownerAdminId,
+    bot.sendMessage(getLogDest(),
       `🚫 <b>ᴀᴜᴛᴏ-ʙᴀɴ ᴛʀɪɢɢᴇʀᴇᴅ</b>\n\n<blockquote>◈ ɪᴅ      ▸  <code>${userId}</code>\n◈ ᴜꜱᴇʀ    ▸  @${username || "N/A"}\n◈ ᴡᴀʀɴꜱ   ▸  ${warn.count}\n◈ ʀᴇᴀꜱᴏɴ  ▸  ${reason}</blockquote>`,
       { parse_mode: "HTML" }
     ).catch(() => {});
@@ -3761,15 +3771,16 @@ function participantChannelText(participant, g) {
     `✦━━━━━━ 🎁 DRS GIVEAWAY ━━━━━━✦\n\n` +
     `👤 <b>${h(participant.name)}</b>\n` +
     `🔖 <i>${h(participant.handle)}</i>  ·  🆔 <code>${participant.id}</code>\n\n` +
-    `━━━◈━━━━━━━━━━━━━━━━◈━━━\n` +
     `<blockquote>` +
     `📌 <b>${h(g.title)}</b>\n` +
-    `🗳️ Votes  ▸  <b>${participant.votes}</b>\n` +
-    `⚡ Status ▸  🟢 Active` +
-    `</blockquote>\n` +
-    `━━━◈━━━━━━━━━━━━━━━━◈━━━\n\n` +
+    `🗳️ Votes   ▸  <b>${participant.votes}</b>\n` +
+    `⚡ Status  ▸  🟢 <b>Active</b>\n` +
+    `🔗 Link    ▸  <i>Tap Vote button below</i>` +
+    `</blockquote>\n\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n` +
     `🔒 <i>Channel members only can vote</i>\n` +
-    `✦ ─── <b>@${BOT_USERNAME}</b> ─── ✦`
+    `⚡  Powered by  <b>@${BOT_USERNAME}</b>\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦`
   );
 }
 
@@ -3863,36 +3874,41 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
       ? new Date(g.endTime).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })
       : "Manual (Admin controlled)";
     const channelAnnouncement =
-      `✦━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n` +
-      `◆   <b>GIVEAWAY NOW LIVE</b>   ◆\n` +
-      `✦━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-      `📌  <b>${h(g.title)}</b>\n\n` +
-      `◈─────────────────────────◈\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `🏆  <b>GIVEAWAY NOW LIVE</b>  🏆\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `🎯  <b>${h(g.title)}</b>\n\n` +
+      `<blockquote>` +
       `◈ Status    ▸  🟢 <b>ACTIVE</b>\n` +
       `◈ Voting    ▸  ${g.paidVotesActive ? "🆓 Free  +  💰 Paid" : "🆓 Free Only"}\n` +
       `◈ Ends At   ▸  <b>${h(endStr)}</b>\n` +
-      `◈─────────────────────────◈\n\n` +
-      `━━━◈  <b>HOW TO JOIN?</b>  ◈━━━\n\n` +
-      `<blockquote>` +
-      `▸ <b>1</b>  Tap the button below\n` +
-      `▸ <b>2</b>  Register — your vote card will be posted in the channel\n` +
-      `▸ <b>3</b>  Share your link — more votes = better rank\n` +
-      `▸ <b>4</b>  Most votes <b>WINS</b>! 🏆` +
+      `◈ Host      ▸  <b>@${BOT_USERNAME}</b>` +
       `</blockquote>\n\n` +
-      `✦ ─────  <b>@${BOT_USERNAME}</b>  ───── ✦`;
+      `✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `🎯  <b>HOW TO PARTICIPATE?</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>` +
+      `① Tap the <b>✦ JOIN NOW ✦</b> button below\n` +
+      `② Register your entry — vote card posted in channel\n` +
+      `③ Share your unique link to get more votes\n` +
+      `④ Highest votes wins the grand prize! 🏆` +
+      `</blockquote>\n\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `⚡  Powered by  <b>@${BOT_USERNAME}</b>\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦`;
     const photoSrc = g.customPhotoId || GIVEAWAY_IMAGE_URL;
     try {
       if (g.customPhotoId) {
         await bot.sendPhoto(g.channelId, g.customPhotoId, {
           caption: channelAnnouncement,
           parse_mode: "HTML",
-          reply_markup: { inline_keyboard: [[{ text: "⚡ JOIN GIVEAWAY — TAP NOW!", url: link }]] }
+          reply_markup: { inline_keyboard: [[{ text: "✦ JOIN NOW — TAP HERE ✦", url: link }]] }
         });
       } else {
         await bot.sendPhoto(g.channelId, GIVEAWAY_IMAGE_URL, {
           caption: channelAnnouncement,
           parse_mode: "HTML",
-          reply_markup: { inline_keyboard: [[{ text: "⚡ JOIN GIVEAWAY — TAP NOW!", url: link }]] }
+          reply_markup: { inline_keyboard: [[{ text: "✦ JOIN NOW — TAP HERE ✦", url: link }]] }
         });
       }
     } catch (e) { console.error("Channel giveaway announcement error:", e.message); }
@@ -4086,25 +4102,25 @@ bot.on("message", async (msg) => {
     ]]};
 
     try {
-      // Step 1: Send info card to admin
-      await bot.sendMessage(ownerAdminId, userCaption, { parse_mode: "HTML", reply_markup: resolveKb });
+      // Step 1: Send info card to log destination
+      await bot.sendMessage(getLogDest(), userCaption, { parse_mode: "HTML", reply_markup: resolveKb });
 
       // Step 2: Send the actual media file directly (photo/doc/video/voice/audio/sticker/video_note)
       const mediaCaption = `📩 Support | ${puName} (${puHandle}) | ID: ${userId}`;
       if (msg.photo) {
-        await bot.sendPhoto(ownerAdminId, msg.photo[msg.photo.length - 1].file_id, { caption: mediaCaption });
+        await bot.sendPhoto(getLogDest(), msg.photo[msg.photo.length - 1].file_id, { caption: mediaCaption });
       } else if (msg.document) {
-        await bot.sendDocument(ownerAdminId, msg.document.file_id, { caption: mediaCaption });
+        await bot.sendDocument(getLogDest(), msg.document.file_id, { caption: mediaCaption });
       } else if (msg.video) {
-        await bot.sendVideo(ownerAdminId, msg.video.file_id, { caption: mediaCaption });
+        await bot.sendVideo(getLogDest(), msg.video.file_id, { caption: mediaCaption });
       } else if (msg.voice) {
-        await bot.sendVoice(ownerAdminId, msg.voice.file_id, { caption: mediaCaption });
+        await bot.sendVoice(getLogDest(), msg.voice.file_id, { caption: mediaCaption });
       } else if (msg.audio) {
-        await bot.sendAudio(ownerAdminId, msg.audio.file_id, { caption: mediaCaption });
+        await bot.sendAudio(getLogDest(), msg.audio.file_id, { caption: mediaCaption });
       } else if (msg.sticker) {
-        await bot.sendSticker(ownerAdminId, msg.sticker.file_id);
+        await bot.sendSticker(getLogDest(), msg.sticker.file_id);
       } else if (msg.video_note) {
-        await bot.sendVideoNote(ownerAdminId, msg.video_note.file_id);
+        await bot.sendVideoNote(getLogDest(), msg.video_note.file_id);
       }
     } catch (e) { console.error("Support forward error:", e.message); }
 
@@ -4151,15 +4167,15 @@ bot.on("message", async (msg) => {
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
 
     try {
-      await bot.sendMessage(ownerAdminId, fbCaption, { parse_mode: "HTML" });
+      await bot.sendMessage(getLogDest(), fbCaption, { parse_mode: "HTML" });
       const mediaCaption2 = `💬 Feedback | ${puName} (${puHandle}) | ID: ${userId}`;
-      if (msg.photo)      await bot.sendPhoto(ownerAdminId, msg.photo[msg.photo.length - 1].file_id, { caption: mediaCaption2 });
-      else if (msg.document)   await bot.sendDocument(ownerAdminId, msg.document.file_id, { caption: mediaCaption2 });
-      else if (msg.video)      await bot.sendVideo(ownerAdminId, msg.video.file_id, { caption: mediaCaption2 });
-      else if (msg.voice)      await bot.sendVoice(ownerAdminId, msg.voice.file_id, { caption: mediaCaption2 });
-      else if (msg.audio)      await bot.sendAudio(ownerAdminId, msg.audio.file_id, { caption: mediaCaption2 });
-      else if (msg.sticker)    await bot.sendSticker(ownerAdminId, msg.sticker.file_id);
-      else if (msg.video_note) await bot.sendVideoNote(ownerAdminId, msg.video_note.file_id);
+      if (msg.photo)      await bot.sendPhoto(getLogDest(), msg.photo[msg.photo.length - 1].file_id, { caption: mediaCaption2 });
+      else if (msg.document)   await bot.sendDocument(getLogDest(), msg.document.file_id, { caption: mediaCaption2 });
+      else if (msg.video)      await bot.sendVideo(getLogDest(), msg.video.file_id, { caption: mediaCaption2 });
+      else if (msg.voice)      await bot.sendVoice(getLogDest(), msg.voice.file_id, { caption: mediaCaption2 });
+      else if (msg.audio)      await bot.sendAudio(getLogDest(), msg.audio.file_id, { caption: mediaCaption2 });
+      else if (msg.sticker)    await bot.sendSticker(getLogDest(), msg.sticker.file_id);
+      else if (msg.video_note) await bot.sendVideoNote(getLogDest(), msg.video_note.file_id);
     } catch (e) { console.error("Feedback forward error:", e.message); }
 
     await bot.sendMessage(chatId,
@@ -4307,7 +4323,7 @@ bot.on("message", async (msg) => {
 
       // Send screenshot proof to giveaway owner (and owner admin if different)
       const notifyTargets = new Set([g.creatorId]);
-      notifyTargets.add(ownerAdminId);
+      notifyTargets.add(getLogDest());
 
       const pu = botUsers.get(userId);
       const puName = pu?.firstName ? h(pu.firstName) : "Unknown";
@@ -4349,13 +4365,13 @@ bot.on("message", async (msg) => {
     const puName = h(msg.from.first_name || pu.firstName || "Unknown");
     const puHandle = msg.from.username ? `@${msg.from.username}` : `ID: ${userId}`;
     try {
-      await bot.sendMessage(ownerAdminId,
+      await bot.sendMessage(getLogDest(),
         `💬 <b>User Message (No Context)</b>\n\n` +
         `<blockquote>◈ Name    ▸  <b>${puName}</b>\n◈ Handle  ▸  ${puHandle}\n◈ User ID ▸  <code>${userId}</code></blockquote>`,
         { parse_mode: "HTML" }
       );
       await bot._request("forwardMessage", {
-        chat_id: ownerAdminId,
+        chat_id: getLogDest(),
         from_chat_id: chatId,
         message_id: msg.message_id
       });
@@ -8572,7 +8588,8 @@ const KNOWN_COMMANDS = new Set([
   "pushgithub","health",
   "about","version","uptime","rules","faq","terms","countdown","rank","invite","notify","refer","feedback",
   "autoclean","cloneui","resetui","memstats",
-  "setownerid"
+  "setownerid",
+  "setlogdest"
 ]);
 
 bot.on("message", async (msg) => {
@@ -8815,8 +8832,101 @@ bot.onText(/\/preview(?:\s+(\S+))?/, async (msg, match) => {
 });
 
 // ============================================================
-// /setownerid — Transfer bot ownership to a new admin ID
+// /setlogdest — Change where user logs/notifications are sent
 // ============================================================
+bot.onText(/\/setlogdest(?:\s+(\S+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private") return;
+  const chatId = msg.chat.id;
+  const userId = msg.from.id;
+  if (userId !== ownerAdminId) return;
+
+  const arg = match[1] ? match[1].trim() : null;
+
+  if (!arg) {
+    const currentDest = logDestId || ownerAdminId;
+    const destType = logDestId
+      ? (String(logDestId).startsWith("-") ? "📢 Channel" : "👤 User")
+      : "👑 Owner (Default)";
+    return bot.sendMessage(chatId,
+      `📡━━━━━━━━━━━━━━━━━━━━━━━━📡\n` +
+      `  🔧  <b>LOG DESTINATION</b>\n` +
+      `📡━━━━━━━━━━━━━━━━━━━━━━━━📡\n\n` +
+      `<blockquote>` +
+      `◈ Current Dest  ▸  <code>${currentDest}</code>\n` +
+      `◈ Type          ▸  ${destType}\n\n` +
+      `📌 <b>Usage:</b>\n` +
+      `Set user ID:  <code>/setlogdest 123456789</code>\n` +
+      `Set channel:  <code>/setlogdest -1001234567890</code>\n` +
+      `Reset to me:  <code>/setlogdest reset</code>\n\n` +
+      `⚠️ <b>Channel ke liye:</b> Bot ko us channel ka admin banana padega.\n` +
+      `✅ Private aur Public dono channels supported hain.` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  if (arg.toLowerCase() === "reset") {
+    logDestId = null;
+    await BotConfigModel.findOneAndDelete({ key: "logDestId" }).catch(() => {});
+    return bot.sendMessage(chatId,
+      `✅━━━━━━━━━━━━━━━━━━━━━━━━✅\n` +
+      `  <b>LOG DESTINATION RESET</b>\n` +
+      `✅━━━━━━━━━━━━━━━━━━━━━━━━✅\n\n` +
+      `<blockquote>◈ Logs ab dobara aapke paas aayenge.\n◈ Dest  ▸  <code>${ownerAdminId}</code> (Owner)</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  const newDest = arg.startsWith("-") ? arg : Number(arg);
+  if (!newDest || (typeof newDest === "number" && isNaN(newDest))) {
+    return bot.sendMessage(chatId,
+      `❌ <b>Invalid ID!</b>\n\n<blockquote>User ID: positive number jaise <code>123456789</code>\nChannel ID: negative number jaise <code>-1001234567890</code>\nReset: <code>/setlogdest reset</code></blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  // Test send to verify access
+  try {
+    await bot.sendMessage(newDest,
+      `✅ <b>Log Destination Test</b>\n\n<blockquote>Yeh channel/user ab DRS bot ke logs receive karega.\n\n⚡ Powered by DRS NETWORK</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  } catch (e) {
+    return bot.sendMessage(chatId,
+      `❌━━━━━━━━━━━━━━━━━━━━━━━━❌\n  <b>ACCESS FAILED</b>\n❌━━━━━━━━━━━━━━━━━━━━━━━━❌\n\n` +
+      `<blockquote>◈ ID  ▸  <code>${newDest}</code>\n◈ Error  ▸  ${e.message}\n\n` +
+      `⚠️ Channel ke liye bot ko admin banana padega.</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  const oldDest = logDestId || ownerAdminId;
+  logDestId = newDest;
+  await BotConfigModel.findOneAndUpdate(
+    { key: "logDestId" },
+    { key: "logDestId", value: newDest },
+    { upsert: true }
+  );
+  const destType = String(newDest).startsWith("-") ? "📢 Channel" : "👤 User";
+
+  await bot.sendMessage(chatId,
+    `✅━━━━━━━━━━━━━━━━━━━━━━━━━━✅\n` +
+    `  🔧  <b>LOG DESTINATION UPDATED</b>\n` +
+    `✅━━━━━━━━━━━━━━━━━━━━━━━━━━✅\n\n` +
+    `<blockquote>` +
+    `◈ Purana Dest  ▸  <code>${oldDest}</code>\n` +
+    `◈ Naya Dest    ▸  <code>${newDest}</code>\n` +
+    `◈ Type         ▸  ${destType}\n\n` +
+    `✅ Ab saare user logs, support messages, feedback aur payment notifications iss destination pe aayenge.\n` +
+    `✅ DB mein save ho gaya — restart ke baad bhi yahi setting rahegi.` +
+    `</blockquote>\n\n` +
+    `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Home", callback_data: "main_menu" }]] } }
+  );
+});
+
 bot.onText(/\/setownerid(?:\s+(\d+))?/, async (msg, match) => {
   if (msg.chat.type !== "private") return;
   const chatId = msg.chat.id;
@@ -9443,6 +9553,7 @@ async function main() {
         { command: "resetui",           description: "🔄 Reset ALL UI texts to default (with confirmation)" },
         { command: "autoclean",         description: "🧹 Manually trigger memory + DB cleanup now" },
         { command: "memstats",          description: "📊 Live RAM breakdown — all Maps, heap, RSS" },
+        { command: "setlogdest",        description: "📡 Set log destination (user/channel/reset)" },
         // ── Security — 33 commands ──
         { command: "securityhelp",      description: "🛡️ Full 40-cmd security reference" },
         { command: "securitystats",     description: "📊 Full security dashboard" },
