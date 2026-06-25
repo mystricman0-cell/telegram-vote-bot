@@ -1765,16 +1765,53 @@ bot.on("callback_query", async (query) => {
   if (data.startsWith("cust_edit:")) {
     if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!" }).catch(() => {});
     const key = data.replace("cust_edit:", "");
-    const current = getUI(key);
     const isCustom = botCustomTexts.has(key);
+    // Set state so next message directly updates this key — no /settext needed
+    userState.set(userId, { step: "awaiting_ui_text", key });
     const editText =
+      `✏️━━━━━━━━━━━━━━━━━━━━━━✏️\n` +
+      `  🎨  <b>UI TEXT EDITOR</b>\n` +
+      `✏️━━━━━━━━━━━━━━━━━━━━━━✏️\n\n` +
       `🔑 <b>Key:</b> <code>${key}</code>\n\n` +
-      `📌 <b>Default:</b>\n<blockquote>${DEFAULT_UI_TEXTS[key] || "(none)"}</blockquote>\n\n` +
-      (isCustom ? `✏️ <b>Current (custom):</b>\n<blockquote>${current}</blockquote>\n\n` : "") +
-      `<b>Naya text bhejo:</b>\n<code>/settext ${key} naya text</code>\n\n` +
-      (isCustom ? `Default restore:\n<code>/resettext ${key}</code>` : "");
+      `🚀 <b>Default:</b>\n<blockquote>${h(DEFAULT_UI_TEXTS[key] || "(none)")}</blockquote>\n\n` +
+      (isCustom ? `✏️ <b>Current (custom):</b>\n<blockquote>${h(botCustomTexts.get(key) || "")}</blockquote>\n\n` : ``) +
+      `<blockquote>⬇️ Ab seedha <b>naya text type karke bhejo</b>\nJo bhi likhoge bilkul waisa hi set ho jayega ✅\n\nCancel karne ke liye /cancel bhejo</blockquote>`;
     await bot.answerCallbackQuery(query.id).catch(() => {});
-    return bot.sendMessage(chatId, editText, { parse_mode: "HTML" });
+    return bot.sendMessage(chatId, editText, {
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "cust_cancel" }]] }
+    });
+  }
+  if (data === "cust_cancel") {
+    if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id).catch(() => {});
+    userState.delete(userId);
+    await bot.deleteMessage(chatId, msgId).catch(() => {});
+    await bot.answerCallbackQuery(query.id, { text: "❌ Cancelled" }).catch(() => {});
+    return;
+  }
+  if (data === "cust_back") {
+    if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id).catch(() => {});
+    userState.delete(userId);
+    await bot.answerCallbackQuery(query.id).catch(() => {});
+    const text2 =
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+      `  🎨  <b>UI TEXT CUSTOMIZER</b>\n` +
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+      `Bot ke <b>${UI_KEYS.length}</b> customizable texts hain.\n` +
+      `✏️ = already customized\n\n` +
+      `Kisi bhi key par tap karo — seedha naya text bhejo.`;
+    return bot.sendMessage(chatId, text2, { parse_mode: "HTML", reply_markup: custKeyboard(0) });
+  }
+  if (data.startsWith("cust_reset:")) {
+    if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!" }).catch(() => {});
+    const key = data.replace("cust_reset:", "");
+    botCustomTexts.delete(key);
+    await BotConfigModel.deleteOne({ key: `ui:${key}` }).catch(() => {});
+    await bot.answerCallbackQuery(query.id, { text: `✅ Reset to default!` }).catch(() => {});
+    return bot.editMessageText(
+      `🔄 <b>Reset to default!</b>\n\n🔑 Key: <code>${h(key)}</code>\n📌 Default:\n<blockquote>${h(DEFAULT_UI_TEXTS[key] || "(none)")}</blockquote>`,
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+    ).catch(() => {});
   }
 
   // ─── cleandb: callback handlers ───
@@ -4457,6 +4494,32 @@ bot.on("message", async (msg) => {
     await bot.sendMessage(chatId,
       `✅ <b>Custom welcome message set!</b>\n\n<blockquote>${customWelcomeText?.slice(0, 300) || ""}</blockquote>\n\n<i>Preview dekhne ke liye /previewwelcome bhejo.</i>`,
       { parse_mode: "HTML" }
+    );
+    return;
+  }
+
+  // ─── Admin: awaiting_ui_text (from /customize tap) ───
+  if (state?.step === "awaiting_ui_text" && isAdmin(userId)) {
+    const key = state.key;
+    userState.delete(userId);
+    if (!DEFAULT_UI_TEXTS.hasOwnProperty(key)) {
+      return bot.sendMessage(chatId, `❌ Invalid key: <code>${h(key)}</code>`, { parse_mode: "HTML" });
+    }
+    const value = text.trim();
+    botCustomTexts.set(key, value);
+    await BotConfigModel.findOneAndUpdate(
+      { key: `ui:${key}` }, { key: `ui:${key}`, value }, { upsert: true }
+    ).catch(() => {});
+    await bot.sendMessage(chatId,
+      `✅━━━━━━━━━━━━━━━━━━━━━━✅\n` +
+      `  🎨  <b>TEXT UPDATED!</b>\n` +
+      `✅━━━━━━━━━━━━━━━━━━━━━━✅\n\n` +
+      `🔑 <b>Key:</b> <code>${h(key)}</code>\n\n` +
+      `📝 <b>New value:</b>\n<blockquote>${h(value)}</blockquote>\n\n` +
+      `<i>Bilkul waisa hi set ho gaya jaise bheja! ✅\nReset karne ke liye: /resettext ${h(key)}</i>`,
+      { parse_mode: "HTML",
+        reply_markup: { inline_keyboard: [[{ text: "🎨 Back to Customize", callback_data: "cust_back" }, { text: "🔄 Reset to Default", callback_data: `cust_reset:${key}` }]] }
+      }
     );
     return;
   }
