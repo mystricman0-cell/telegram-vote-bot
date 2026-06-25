@@ -4560,14 +4560,16 @@ bot.on("message", async (msg) => {
     await BotConfigModel.findOneAndUpdate(
       { key: `ui:${key}` }, { key: `ui:${key}`, value: htmlValue }, { upsert: true }
     ).catch(() => {});
-    const displayVal = stripTgEmoji(htmlValue);
     await bot.sendMessage(chatId,
       `✅━━━━━━━━━━━━━━━━━━━━━━✅\n` +
       `  🎨  <b>TEXT UPDATED!</b>\n` +
       `✅━━━━━━━━━━━━━━━━━━━━━━✅\n\n` +
       `🔑 <b>Key:</b> <code>${h(key)}</code>\n\n` +
-      `📝 <b>Exactly jo bheja wahi set hua:</b>\n<code>${h(displayVal)}</code>\n\n` +
-      `<i>Bilkul waisa hi set ho gaya jaise bheja! ✅\nReset karne ke liye: /resettext ${h(key)}</i>`,
+      `👁 <b>Aisa dikhega (premium emoji sahit):</b>\n` +
+      `┌───────────────────────┐\n` +
+      `  ${htmlValue}\n` +
+      `└───────────────────────┘\n\n` +
+      `<i>Bilkul waisa hi set ho gaya! ✅\nReset: /resettext ${h(key)}</i>`,
       { parse_mode: "HTML",
         reply_markup: { inline_keyboard: [[{ text: "🎨 Back to Customize", callback_data: "cust_back" }, { text: "🔄 Reset to Default", callback_data: `cust_reset:${key}` }]] }
       }
@@ -8504,9 +8506,13 @@ bot.onText(/\/settext\s+(\S+)\s+([\s\S]+)/, async (msg, match) => {
   await BotConfigModel.findOneAndUpdate(
     { key: `ui:${key}` }, { key: `ui:${key}`, value: htmlValue }, { upsert: true }
   );
-  const displayVal = stripTgEmoji(htmlValue);
   await bot.sendMessage(msg.chat.id,
-    `✅ <b>Text updated!</b>\n\n🔑 Key: <code>${h(key)}</code>\n\n📝 <b>Exactly jo bheja wahi set hua:</b>\n<code>${h(displayVal)}</code>`,
+    `✅ <b>Text updated!</b>\n\n🔑 Key: <code>${h(key)}</code>\n\n` +
+    `👁 <b>Aisa dikhega (premium emoji sahit):</b>\n` +
+    `┌───────────────────────┐\n` +
+    `  ${htmlValue}\n` +
+    `└───────────────────────┘\n\n` +
+    `<i>/previewwelcome se full welcome dekho</i>`,
     { parse_mode: "HTML" });
 });
 
