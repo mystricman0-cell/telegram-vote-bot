@@ -687,6 +687,73 @@ async function saveConfig(key, value) {
   } catch (e) { console.error("saveConfig error:", e.message); }
 }
 
+// ============================================================
+// MEMORY EVICTION — removes old ended giveaways from RAM
+// They stay in MongoDB; only deleted from in-memory Map
+// ============================================================
+const MEMORY_EVICT_AFTER_DAYS = 7;
+
+function runMemoryEviction() {
+  const cutoff = Date.now() - MEMORY_EVICT_AFTER_DAYS * 24 * 60 * 60 * 1000;
+  let evicted = 0;
+  for (const [id, g] of giveaways) {
+    if (!g.active && g.createdAt && new Date(g.createdAt).getTime() < cutoff) {
+      giveaways.delete(id);
+      evicted++;
+    }
+  }
+  if (evicted > 0) console.log(`🧹 Memory eviction: ${evicted} old ended giveaways removed from RAM`);
+  return evicted;
+}
+
+// ============================================================
+// DB AUTO-CLEANUP — trims collections that grow unbounded
+// USER DATA (BotUser, Vip, active giveaways) is NEVER touched
+// ============================================================
+async function runDBCleanup() {
+  const results = { secLogs: 0, payments: 0, membershipPayments: 0, giveawaysCompressed: 0 };
+  try {
+    // 1. Trim SecurityLog — keep latest 500 only
+    const totalLogs = await SecurityLogModel.countDocuments();
+    if (totalLogs > 500) {
+      const anchor = await SecurityLogModel.find({}).sort({ timestamp: -1 }).skip(500).limit(1).lean();
+      if (anchor[0]) {
+        const r = await SecurityLogModel.deleteMany({ timestamp: { $lte: anchor[0].timestamp } });
+        results.secLogs = r.deletedCount;
+      }
+    }
+
+    // 2. Delete resolved pending payments older than 30 days
+    const cutoff30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const pr = await PendingPaymentModel.deleteMany({ timestamp: { $lt: cutoff30d } });
+    results.payments = pr.deletedCount;
+
+    // 3. Delete resolved pending membership payments older than 30 days
+    const PendingMembershipModel = mongoose.model("PendingMembership");
+    if (PendingMembershipModel) {
+      const mr = await PendingMembershipModel.deleteMany({ timestamp: { $lt: cutoff30d } }).catch(() => ({ deletedCount: 0 }));
+      results.membershipPayments = mr.deletedCount;
+    }
+
+    // 4. Compress old ended giveaways (>60 days) — wipe participants/voterMap, keep metadata
+    const cutoff60d = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+    const oldEnded = await GiveawayModel.find({ active: false, createdAt: { $lt: cutoff60d } }).select("id participants voterMap").lean();
+    for (const g of oldEnded) {
+      const hasData = (g.participants && Object.keys(g.participants).length > 0) ||
+                      (g.voterMap && Object.keys(g.voterMap).length > 0);
+      if (hasData) {
+        await GiveawayModel.updateOne({ id: g.id }, { $set: { participants: {}, voterMap: {} } });
+        results.giveawaysCompressed++;
+      }
+    }
+
+    console.log(`🗄️ DB Cleanup: ${results.secLogs} sec logs, ${results.payments} payments, ${results.giveawaysCompressed} giveaways compressed`);
+  } catch (e) {
+    console.error("DB cleanup error:", e.message);
+  }
+  return results;
+}
+
 // Seeds DEFAULT_HONEYPOT_TRAPS + DEFAULT_BLOCKED_WORDS to MongoDB on first run
 // Bumping SECURITY_SEED_VERSION will re-seed new additions on next restart
 const SECURITY_SEED_VERSION = "v1";
@@ -8641,6 +8708,37 @@ bot.onText(/\/preview(?:\s+(\S+))?/, async (msg, match) => {
 });
 
 // ============================================================
+// /autoclean — Manually trigger memory eviction + DB cleanup
+// ============================================================
+bot.onText(/\/autoclean/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const statusMsg = await bot.sendMessage(chatId, "🧹 <b>Cleanup chal raha hai...</b>", { parse_mode: "HTML" });
+
+  const beforeHeap = process.memoryUsage().heapUsed;
+  const memEvicted = runMemoryEviction();
+  const db = await runDBCleanup();
+  const afterHeap = process.memoryUsage().heapUsed;
+  const freed = Math.max(0, beforeHeap - afterHeap);
+
+  await bot.editMessageText(
+    `✅ <b>Cleanup Complete!</b>\n\n` +
+    `🧠 <b>Memory (RAM):</b>\n` +
+    `  • Giveaways evicted from RAM: <b>${memEvicted}</b>\n` +
+    `  • Heap before: <b>${(beforeHeap / 1024 / 1024).toFixed(1)} MB</b>\n` +
+    `  • Heap after:  <b>${(afterHeap / 1024 / 1024).toFixed(1)} MB</b>\n` +
+    `  • Freed: <b>${(freed / 1024 / 1024).toFixed(2)} MB</b>\n\n` +
+    `🗄️ <b>MongoDB:</b>\n` +
+    `  • Security logs trimmed: <b>${db.secLogs}</b>\n` +
+    `  • Old payments deleted: <b>${db.payments + db.membershipPayments}</b>\n` +
+    `  • Old giveaways compressed: <b>${db.giveawaysCompressed}</b>\n\n` +
+    `<blockquote>👥 User data · VIP records · Active giveaways — sab safe hain ✅\n` +
+    `Auto-cleanup harta hai: RAM har 30 min, DB har 24 hrs</blockquote>`,
+    { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: "HTML" }
+  );
+});
+
+// ============================================================
 // /resetui — Reset ALL UI custom texts to default (with confirmation)
 // ============================================================
 bot.onText(/\/resetui/, async (msg) => {
@@ -9174,6 +9272,7 @@ async function main() {
         { command: "pushgithub",        description: "🚀 Push vote-bot.mjs to GitHub" },
         { command: "cloneui",           description: "📦 Export/Import all UI text settings (backup/transfer)" },
         { command: "resetui",           description: "🔄 Reset ALL UI texts to default (with confirmation)" },
+        { command: "autoclean",         description: "🧹 Manually trigger memory + DB cleanup now" },
         // ── Security — 33 commands ──
         { command: "securityhelp",      description: "🛡️ Full 40-cmd security reference" },
         { command: "securitystats",     description: "📊 Full security dashboard" },
@@ -9234,6 +9333,15 @@ Ready!
 
     // ⏳ Auto-Reminder — check every 2 minutes
     setInterval(checkAndSendReminders, 2 * 60 * 1000);
+
+    // 🧹 Memory Eviction — every 30 minutes (removes old ended giveaways from RAM)
+    setInterval(() => runMemoryEviction(), 30 * 60 * 1000);
+
+    // 🗄️ DB Auto-Cleanup — every 24 hours (trims logs, old payments, compresses old giveaways)
+    setInterval(() => runDBCleanup(), 24 * 60 * 60 * 1000);
+
+    // 🚀 Run cleanup once at startup (after 3 min delay to let bot settle)
+    setTimeout(() => { runMemoryEviction(); runDBCleanup(); }, 3 * 60 * 1000);
 
     // 👑 VIP Expiry Checker + 1-Day Warning — runs every 30 minutes
     setInterval(async () => {
