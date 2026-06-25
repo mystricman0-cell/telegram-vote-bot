@@ -8508,7 +8508,8 @@ const KNOWN_COMMANDS = new Set([
   "addadmin","removeadmin","listadmins","editadminperms",
   "customize","settext","resettext","listtext","preview",
   "pushgithub","health",
-  "about","version","uptime","rules","faq","terms","countdown","rank","invite","notify","refer","feedback"
+  "about","version","uptime","rules","faq","terms","countdown","rank","invite","notify","refer","feedback",
+  "autoclean","cloneui","resetui","memstats"
 ]);
 
 bot.on("message", async (msg) => {
