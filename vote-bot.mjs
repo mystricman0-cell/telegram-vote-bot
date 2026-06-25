@@ -160,6 +160,7 @@ let paymentCounter = 1;
 let membershipPayCounter = 1;
 let welcomeImageUrl = null;
 const voteVelocity = new Map(); // "gId:partId" → { count, windowStart, alerted }
+const pendingVoteMap = new Map(); // userId → { gId, participantUserId } — awaiting channel join before vote
 
 // ─── Security state ───
 const userWarnings      = new Map();   // userId → { count, reasons, lastWarnAt }
@@ -1670,7 +1671,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
       );
     }
 
-    // Channel membership check
+    // Channel membership check — must join channel before voting
     if (g.channelId) {
       const member = await isMember(g.channelId, userId);
       if (!member) {
@@ -1678,21 +1679,26 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
         if (!channelUrl) {
           try { channelUrl = await bot.exportChatInviteLink(g.channelId); } catch {}
         }
+        // Save pending vote so user can verify after joining
+        pendingVoteMap.set(userId, { gId, participantUserId });
+        const kb = [];
+        if (channelUrl) kb.push([{ text: "📢 Channel Join Karo", url: channelUrl }]);
+        kb.push([{ text: "✅ Join Ho Gaya — Vote Do", callback_data: `cpv:${gId}:${participantUserId}` }]);
         return bot.sendMessage(chatId,
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-          `  🔒  <b>CHANNEL REQUIRED</b>\n` +
+          `  🔒  <b>CHANNEL JOIN REQUIRED</b>\n` +
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
           `<blockquote>` +
-          `Vote karne ke liye pehle channel join karo.\n\n` +
-          (channelUrl ? `👉 Niche button dabao aur join karo.\n\n` : ``) +
-          `Join karne ke baad wapas link dabao!` +
-          `</blockquote>`,
-          {
-            parse_mode: "HTML",
-            reply_markup: channelUrl ? {
-              inline_keyboard: [[{ text: "📢 Channel Join Karo", url: channelUrl }]]
-            } : undefined
-          }
+          `◈ Giveaway  ▸  <b>${h(g.title)}</b>\n` +
+          `◈ Ke Liye   ▸  <b>${h(participant.name)}</b>\n\n` +
+          `⚠️ <b>Vote dene ke liye pehle channel join karna zaroori hai!</b>\n\n` +
+          `1️⃣ Niche "Channel Join Karo" button dabao\n` +
+          `2️⃣ Channel join karo\n` +
+          `3️⃣ Wapas aao aur "Join Ho Gaya" button dabao\n` +
+          `4️⃣ Tumhara vote automatically register ho jaayega! 🗳️` +
+          `</blockquote>\n\n` +
+          `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+          { parse_mode: "HTML", reply_markup: { inline_keyboard: kb } }
         );
       }
     }
@@ -2754,6 +2760,125 @@ bot.on("callback_query", async (query) => {
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { reply_markup: { inline_keyboard: joinKb } }
     );
+    return;
+  }
+
+  // ─── Cast Pending Vote (after channel join via vote link) ───
+  if (data.startsWith("cpv:")) {
+    const parts = data.split(":");
+    const gId = parts[1];
+    const participantUserId = Number(parts[2]);
+    const g = getGiveaway(gId);
+
+    if (!g || !g.active) {
+      await bot.answerCallbackQuery(query.id, { text: "⛔ Giveaway active nahi hai!", show_alert: true }).catch(() => {});
+      return;
+    }
+    const participant = g.participants.get(participantUserId);
+    if (!participant) {
+      await bot.answerCallbackQuery(query.id, { text: "❌ Participant nahi mila!", show_alert: true }).catch(() => {});
+      return;
+    }
+    if (userId === participantUserId) {
+      await bot.answerCallbackQuery(query.id, { text: "⛔ Tum apne aap ko vote nahi de sakte!", show_alert: true }).catch(() => {});
+      return;
+    }
+
+    // Verify they actually joined the channel
+    if (g.channelId) {
+      const member = await isMember(g.channelId, userId);
+      if (!member) {
+        let channelUrl = g.channelUsername ? `https://t.me/${g.channelUsername}` : null;
+        if (!channelUrl) {
+          try { channelUrl = await bot.exportChatInviteLink(g.channelId); } catch {}
+        }
+        const kb = [];
+        if (channelUrl) kb.push([{ text: "📢 Channel Join Karo", url: channelUrl }]);
+        kb.push([{ text: "✅ Join Ho Gaya — Vote Do", callback_data: `cpv:${gId}:${participantUserId}` }]);
+        await bot.answerCallbackQuery(query.id, { text: "⚠️ Pehle channel join karo, phir try karo!", show_alert: true }).catch(() => {});
+        await bot.editMessageReplyMarkup(
+          { inline_keyboard: kb },
+          { chat_id: chatId, message_id: msgId }
+        ).catch(() => {});
+        return;
+      }
+    }
+
+    // Channel joined — cast the vote
+    if (!g.voterMap) g.voterMap = new Map();
+    const existingVote = g.voterMap.get(userId);
+    const voterName = (query.from.first_name || "") + (query.from.last_name ? ` ${query.from.last_name}` : "");
+
+    // Toggle: already voted for this same participant
+    if (existingVote === participantUserId) {
+      participant.votes = Math.max(0, participant.votes - 1);
+      participant.voters.delete(userId);
+      g.voterMap.delete(userId);
+      await saveGiveaway(g);
+      await updateChannelPost(g, participant);
+      pendingVoteMap.delete(userId);
+      await bot.answerCallbackQuery(query.id, { text: "↩️ Vote wapas le liya gaya!", show_alert: true }).catch(() => {});
+      await bot.editMessageText(
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+        `  ↩️  <b>VOTE WAPAS LIYA</b>\n` +
+        `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+        `<blockquote>` +
+        `◈ Participant  ▸  <b>${h(participant.name)}</b>\n` +
+        `◈ Total Votes  ▸  <b>${participant.votes}</b>\n\n` +
+        `<i>Dobara vote dene ke liye link dubara dabao.</i>` +
+        `</blockquote>\n\n` +
+        `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+        { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+      ).catch(() => {});
+      return;
+    }
+
+    // Switch: voted for someone else before
+    if (existingVote) {
+      const oldP = g.participants.get(existingVote);
+      if (oldP) {
+        oldP.votes = Math.max(0, oldP.votes - 1);
+        oldP.voters.delete(userId);
+        await updateChannelPost(g, oldP);
+      }
+    }
+
+    // Cast new vote
+    participant.votes += 1;
+    participant.voters.add(userId);
+    g.voterMap.set(userId, participantUserId);
+    pendingVoteMap.delete(userId);
+    await saveGiveaway(g);
+    await updateChannelPost(g, participant);
+
+    await notifyAdmin(
+      `🗳️ <b>Vote Cast (Join → Verify)</b>\n` +
+      `<blockquote>` +
+      `◈ From      ▸  <b>${h(voterName)}</b> (<code>${userId}</code>)\n` +
+      `◈ For       ▸  <b>${h(participant.name)}</b>\n` +
+      `◈ Giveaway  ▸  <b>${h(g.title)}</b>\n` +
+      `◈ Total     ▸  <b>${participant.votes} votes</b>` +
+      `</blockquote>`
+    );
+
+    await bot.answerCallbackQuery(query.id, {
+      text: `✅ VOTE DIYA GAYA!\nFor: ${participant.name}\nTotal: ${participant.votes} votes`,
+      show_alert: true
+    }).catch(() => {});
+
+    await bot.editMessageText(
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+      `  ✅  <b>VOTE DIYA GAYA!</b>  ✅\n` +
+      `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+      `<blockquote>` +
+      `◈ Participant  ▸  <b>${h(participant.name)}</b>\n` +
+      `◈ Total Votes  ▸  <b>${participant.votes}</b>\n\n` +
+      `🎉 Channel join kiya aur vote bhi diya!\n` +
+      `Shukriya — DRS Giveaway mein active rahein! 🚀` +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+    ).catch(() => {});
     return;
   }
 
