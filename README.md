@@ -348,6 +348,13 @@
 - `/setwelcomemsg` — Set welcome text — **jo bhejo waisa hi dikhe** (exact text, emojis, symbols preserved)
 - After setting, `/previewwelcome` instantly shows you the result
 
+### 🔄 &nbsp;ResetUI — Full UI Reset with Confirmation *(NEW — v3.0.3)*
+- `/resetui` — Resets **all** custom UI texts back to default in one tap
+- Shows a **confirmation step** before doing anything — accidental reset impossible
+- Tells you exactly how many custom texts will be deleted before you confirm
+- After reset, bot shows restore tip: `/cloneui import <json>` to bring settings back
+- **Tip:** Always run `/cloneui export` first to save a backup before resetting
+
 ### 📦 &nbsp;CloneUI — Settings Backup & Transfer *(NEW — v3.0.3)*
 - `/cloneui export` — Export **all** UI customizations as a single JSON snapshot
   - Includes: all custom texts/emojis/buttons · welcome message · welcome image URL · membership plans & pricing · free giveaway limits
@@ -542,6 +549,7 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/listtext` | `/listtext` | List all UI text keys with current values |
 | `/preview` | `/preview <key>` | Preview exactly how any UI key looks with premium emojis |
 | `/cloneui` | `/cloneui export` · `/cloneui import <json>` | Export all UI settings as JSON backup · Import to restore or transfer to another bot |
+| `/resetui` | `/resetui` | Reset ALL custom UI texts to default in one tap (confirmation step included) |
 
 #### Admin Commands — Sub-Admin Management
 
