@@ -4515,7 +4515,7 @@ bot.on("message", async (msg) => {
       `  🎨  <b>TEXT UPDATED!</b>\n` +
       `✅━━━━━━━━━━━━━━━━━━━━━━✅\n\n` +
       `🔑 <b>Key:</b> <code>${h(key)}</code>\n\n` +
-      `📝 <b>New value:</b>\n<blockquote>${h(value)}</blockquote>\n\n` +
+      `📝 <b>Exactly jo bheja wahi set hua:</b>\n<code>${h(value)}</code>\n\n` +
       `<i>Bilkul waisa hi set ho gaya jaise bheja! ✅\nReset karne ke liye: /resettext ${h(key)}</i>`,
       { parse_mode: "HTML",
         reply_markup: { inline_keyboard: [[{ text: "🎨 Back to Customize", callback_data: "cust_back" }, { text: "🔄 Reset to Default", callback_data: `cust_reset:${key}` }]] }
@@ -8450,7 +8450,7 @@ bot.onText(/\/settext\s+(\S+)\s+([\s\S]+)/, async (msg, match) => {
     { key: `ui:${key}` }, { key: `ui:${key}`, value }, { upsert: true }
   );
   await bot.sendMessage(msg.chat.id,
-    `✅ <b>Text updated!</b>\n\n🔑 Key: <code>${key}</code>\n📝 New value:\n<blockquote>${value}</blockquote>`,
+    `✅ <b>Text updated!</b>\n\n🔑 Key: <code>${h(key)}</code>\n\n📝 <b>Exactly jo bheja wahi set hua:</b>\n<code>${h(value)}</code>`,
     { parse_mode: "HTML" });
 });
 
