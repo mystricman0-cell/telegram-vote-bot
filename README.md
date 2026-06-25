@@ -348,6 +348,23 @@
 - `/setwelcomemsg` — Set welcome text — **jo bhejo waisa hi dikhe** (exact text, emojis, symbols preserved)
 - After setting, `/previewwelcome` instantly shows you the result
 
+### 📦 &nbsp;CloneUI — Settings Backup & Transfer *(NEW — v3.0.3)*
+- `/cloneui export` — Export **all** UI customizations as a single JSON snapshot
+  - Includes: all custom texts/emojis/buttons · welcome message · welcome image URL · membership plans & pricing · free giveaway limits
+  - Large exports (>3800 chars) are sent as a downloadable `.json` file automatically
+- `/cloneui import <json>` — Paste the exported JSON to instantly restore all settings
+  - Safe: only known UI keys are applied; unknown keys are silently skipped
+  - Live confirmation showing how many texts were applied + what was restored
+- **Use cases:** backup before a big change · transfer settings to a new bot instance · share your theme with someone else
+
+```
+  /cloneui export
+  → Bot sends full JSON snapshot of all settings
+
+  /cloneui import {"version":1,"ui":{...},"membershipPlans":{...},...}
+  → All settings restored in one shot ✅
+```
+
 ---
 
 ```
@@ -523,6 +540,8 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/settext` | `/settext <key> <value>` | Set any UI text, emoji, or button label directly |
 | `/resettext` | `/resettext <key>` | Reset one UI text to its default value |
 | `/listtext` | `/listtext` | List all UI text keys with current values |
+| `/preview` | `/preview <key>` | Preview exactly how any UI key looks with premium emojis |
+| `/cloneui` | `/cloneui export` · `/cloneui import <json>` | Export all UI settings as JSON backup · Import to restore or transfer to another bot |
 
 #### Admin Commands — Sub-Admin Management
 
