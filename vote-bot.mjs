@@ -8609,6 +8609,163 @@ bot.onText(/\/preview(?:\s+(\S+))?/, async (msg, match) => {
 });
 
 // ============================================================
+// /cloneui — Export / Import all UI customizations as JSON
+// ============================================================
+bot.onText(/\/cloneui(?:\s+(export|import))?([\s\S]*)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const action = match?.[1]?.trim().toLowerCase();
+  const payload = match?.[2]?.trim();
+
+  if (!action) {
+    return bot.sendMessage(chatId,
+      `📦 <b>CloneUI — Settings Backup & Restore</b>\n\n` +
+      `<b>Export</b> (saari settings ka backup lo):\n` +
+      `<code>/cloneui export</code>\n\n` +
+      `<b>Import</b> (doosre bot pe restore karo):\n` +
+      `<code>/cloneui import {"ui":{...},...}</code>\n\n` +
+      `<i>Export karo → JSON copy karo → doosre bot pe import karo ✅</i>`,
+      { parse_mode: "HTML" });
+  }
+
+  // ── EXPORT ──
+  if (action === "export") {
+    const uiTexts = {};
+    for (const [k, v] of botCustomTexts.entries()) uiTexts[k] = v;
+
+    const exportData = {
+      version: 1,
+      exported_at: new Date().toISOString(),
+      ui: uiTexts,
+      customWelcomeText: customWelcomeText || null,
+      welcomeImageUrl: welcomeImageUrl || null,
+      membershipPlans: membershipPlans,
+      freeGiveawayLimit: freeGiveawayLimit ?? null,
+      freeUnlimited: freeUnlimited ?? false,
+    };
+
+    const json = JSON.stringify(exportData, null, 2);
+    const customCount = Object.keys(uiTexts).length;
+
+    if (json.length <= 3800) {
+      await bot.sendMessage(chatId,
+        `📦 <b>CloneUI Export</b> ✅\n\n` +
+        `✏️ Custom UI texts: <b>${customCount}</b>\n` +
+        `📋 Ye JSON copy karo aur doosre bot pe <code>/cloneui import</code> se import karo:\n\n` +
+        `<pre><code>${h(json)}</code></pre>`,
+        { parse_mode: "HTML" });
+    } else {
+      // Send as file for large exports
+      const buf = Buffer.from(json, "utf8");
+      await bot.sendDocument(chatId, buf, {
+        caption: `📦 <b>CloneUI Export</b> ✅\n✏️ Custom UI texts: <b>${customCount}</b>\n\n<i>File download karo, content copy karo, aur <code>/cloneui import &lt;json&gt;</code> se import karo.</i>`,
+        parse_mode: "HTML"
+      }, { filename: "cloneui-export.json", contentType: "application/json" });
+    }
+    return;
+  }
+
+  // ── IMPORT ──
+  if (action === "import") {
+    if (!payload) {
+      return bot.sendMessage(chatId,
+        `❌ JSON payload missing!\n\nUsage:\n<code>/cloneui import {"version":1,...}</code>`,
+        { parse_mode: "HTML" });
+    }
+
+    let data;
+    try {
+      data = JSON.parse(payload);
+    } catch (e) {
+      return bot.sendMessage(chatId,
+        `❌ <b>Invalid JSON!</b>\n\n<code>${h(e.message)}</code>\n\n<i>Export ka pura JSON paste karo.</i>`,
+        { parse_mode: "HTML" });
+    }
+
+    if (!data || typeof data !== "object") {
+      return bot.sendMessage(chatId, `❌ Invalid export data format.`, { parse_mode: "HTML" });
+    }
+
+    const statusMsg = await bot.sendMessage(chatId, "⏳ Import ho raha hai...", { parse_mode: "HTML" });
+    let applied = 0;
+    const errors = [];
+
+    try {
+      // Import UI texts
+      if (data.ui && typeof data.ui === "object") {
+        for (const [key, value] of Object.entries(data.ui)) {
+          if (!DEFAULT_UI_TEXTS.hasOwnProperty(key)) continue;
+          try {
+            botCustomTexts.set(key, value);
+            await BotConfigModel.findOneAndUpdate(
+              { key: `ui:${key}` }, { key: `ui:${key}`, value }, { upsert: true }
+            );
+            applied++;
+          } catch (e) { errors.push(`ui:${key}`); }
+        }
+      }
+
+      // Import customWelcomeText
+      if (typeof data.customWelcomeText === "string" && data.customWelcomeText) {
+        customWelcomeText = data.customWelcomeText;
+        await saveConfig("customWelcomeText", customWelcomeText);
+      } else if (data.customWelcomeText === null) {
+        customWelcomeText = null;
+        await saveConfig("customWelcomeText", null);
+      }
+
+      // Import welcomeImageUrl
+      if (typeof data.welcomeImageUrl === "string" && data.welcomeImageUrl) {
+        welcomeImageUrl = data.welcomeImageUrl;
+        await saveConfig("welcomeImageUrl", welcomeImageUrl);
+      } else if (data.welcomeImageUrl === null) {
+        welcomeImageUrl = null;
+        await saveConfig("welcomeImageUrl", null);
+      }
+
+      // Import membershipPlans
+      if (data.membershipPlans && typeof data.membershipPlans === "object") {
+        Object.assign(membershipPlans, data.membershipPlans);
+        await saveConfig("membershipPlans", membershipPlans);
+      }
+
+      // Import freeGiveawayLimit
+      if (typeof data.freeGiveawayLimit === "number") {
+        freeGiveawayLimit = data.freeGiveawayLimit;
+        await saveConfig("freeGiveawayLimit", freeGiveawayLimit);
+      }
+
+      // Import freeUnlimited
+      if (typeof data.freeUnlimited === "boolean") {
+        freeUnlimited = data.freeUnlimited;
+        await saveConfig("freeUnlimited", freeUnlimited);
+      }
+
+      const errText = errors.length > 0 ? `\n⚠️ Errors: ${errors.length} keys skip kiye` : "";
+      await bot.editMessageText(
+        `✅ <b>CloneUI Import Done!</b>\n\n` +
+        `✏️ UI texts applied: <b>${applied}</b>${errText}\n` +
+        `🖼️ Welcome image: ${welcomeImageUrl ? "✅ Set" : "❌ Not set"}\n` +
+        `💬 Custom welcome: ${customWelcomeText ? "✅ Set" : "❌ Not set"}\n` +
+        `💰 Membership plans: ✅ Updated\n\n` +
+        `<i>Sab changes live ho gaye! /previewwelcome se check karo.</i>`,
+        { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: "HTML" }
+      );
+    } catch (e) {
+      await bot.editMessageText(
+        `❌ <b>Import failed!</b>\n\n<code>${h(e.message)}</code>`,
+        { chat_id: chatId, message_id: statusMsg.message_id, parse_mode: "HTML" }
+      );
+    }
+    return;
+  }
+
+  bot.sendMessage(chatId,
+    `❓ Unknown action. Use:\n<code>/cloneui export</code>\n<code>/cloneui import &lt;json&gt;</code>`,
+    { parse_mode: "HTML" });
+});
+
+// ============================================================
 // /pushgithub — Push current vote-bot.mjs to GitHub
 // ============================================================
 bot.onText(/\/pushgithub(?:\s+([\s\S]+))?/, async (msg, match) => {
@@ -8961,6 +9118,7 @@ async function main() {
         { command: "listtext",          description: "📋 List all UI text keys & current values" },
         { command: "preview",           description: "👁 Preview exactly how any UI key looks" },
         { command: "pushgithub",        description: "🚀 Push vote-bot.mjs to GitHub" },
+        { command: "cloneui",           description: "📦 Export/Import all UI text settings (backup/transfer)" },
         // ── Security — 33 commands ──
         { command: "securityhelp",      description: "🛡️ Full 40-cmd security reference" },
         { command: "securitystats",     description: "📊 Full security dashboard" },
