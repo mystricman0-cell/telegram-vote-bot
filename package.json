@@ -1,6 +1,6 @@
 {
   "name": "telegram-vote-bot",
-  "version": "3.0.0",
+  "version": "3.0.4",
   "description": "DRS Giveaway Bot — MongoDB Persistent | Force Join | Stylish Animations | Spoiler Image",
   "type": "module",
   "scripts": {
