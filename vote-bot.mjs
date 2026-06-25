@@ -1,5 +1,5 @@
 /**
- * 🎁 DRS GIVEAWAY BOT v3.0
+ * 🎁 DRS GIVEAWAY BOT v3.0.4
  * Full-featured Telegram Giveaway & Voting System
  * DRS Branding — Fair · Fast · Automated
  * MongoDB Persistent Storage | Force Join | Stylish Animations
@@ -8293,12 +8293,51 @@ bot.onText(/\/securityreport/, async (msg) => {
 // NEW USER COMMANDS
 // ============================================================
 
+// ─── /memstats ─── (admin only)
+bot.onText(/\/memstats/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const mem = process.memoryUsage();
+  const toMB = b => (b / 1024 / 1024).toFixed(2);
+
+  const activeGiveaways   = [...giveaways.values()].filter(g => g.active).length;
+  const endedGiveaways    = [...giveaways.values()].filter(g => !g.active).length;
+  const totalParticipants = [...giveaways.values()].reduce((s, g) => s + (g.participants?.size || 0), 0);
+
+  await bot.sendMessage(msg.chat.id,
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  📊  <b>MEMORY STATS</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `🧠 <b>Node.js Heap:</b>\n` +
+    `  • Used:     <b>${toMB(mem.heapUsed)} MB</b>\n` +
+    `  • Total:    <b>${toMB(mem.heapTotal)} MB</b>\n` +
+    `  • RSS:      <b>${toMB(mem.rss)} MB</b>\n` +
+    `  • External: <b>${toMB(mem.external)} MB</b>\n\n` +
+    `📦 <b>In-Memory Maps:</b>\n` +
+    `  • 🎁 Giveaways (total in RAM): <b>${giveaways.size}</b>\n` +
+    `    ↳ Active: <b>${activeGiveaways}</b> · Ended: <b>${endedGiveaways}</b>\n` +
+    `    ↳ Total participants in RAM: <b>${totalParticipants}</b>\n` +
+    `  • 👥 Bot Users:      <b>${botUsers.size}</b>\n` +
+    `  • 👑 VIP Users:      <b>${vipUsers.size}</b>\n` +
+    `  • 📢 Channels:       <b>${registeredChannels.size}</b>\n` +
+    `  • 💳 Pending Pays:   <b>${pendingPayments.size}</b>\n` +
+    `  • 🎨 Custom Texts:   <b>${botCustomTexts.size}</b>\n` +
+    `  • 👑 Sub-Admins:     <b>${subAdmins.size}</b>\n` +
+    `  • ⚠️ Warnings:       <b>${userWarnings.size}</b>\n` +
+    `  • 🔇 Muted:          <b>${mutedUsers.size}</b>\n` +
+    `  • 👻 Shadow Banned:  <b>${shadowBanned.size}</b>\n` +
+    `  • 🍯 Honeypot Hits:  <b>${honeypotTripped.size}</b>\n` +
+    `  • ⏰ Scheduled Msgs: <b>${scheduledMessages.size}</b>\n\n` +
+    `<blockquote>🧹 Eviction: ended giveaways &gt;7 days auto-removed from RAM every 30 min\n` +
+    `🔄 Manual: /autoclean — run cleanup now</blockquote>`,
+    { parse_mode: "HTML" });
+});
+
 // ─── /about ───
 bot.onText(/\/about/, async (msg) => {
   if (msg.chat.type !== "private") return;
   await bot.sendMessage(msg.chat.id,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n   ℹ️  <b>𝐀𝐁𝐎𝐔𝐓 𝐃𝐑𝐒 𝐁𝐎𝐓</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-    `<blockquote>◈ ɴᴀᴍᴇ     ▸  <b>DRS Giveaway Bot</b>\n◈ ᴠᴇʀꜱɪᴏɴ  ▸  <b>v3.0</b>\n◈ ɴᴇᴛᴡᴏʀᴋ  ▸  <a href="https://t.me/rchiex">DRS Network</a>\n◈ ꜱᴜᴘᴘᴏʀᴛ  ▸  <a href="https://t.me/drssupport">@drssupport</a>\n◈ ʙᴀꜱᴇ    ▸  MongoDB · Node.js · Telegram API\n◈ ꜰᴇᴀᴛᴜʀᴇꜱ ▸  Giveaway · Voting · VIP · Anti-Cheat · Security Engine</blockquote>\n\n✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
+    `<blockquote>◈ ɴᴀᴍᴇ     ▸  <b>DRS Giveaway Bot</b>\n◈ ᴠᴇʀꜱɪᴏɴ  ▸  <b>v3.0.4</b>\n◈ ɴᴇᴛᴡᴏʀᴋ  ▸  <a href="https://t.me/rchiex">DRS Network</a>\n◈ ꜱᴜᴘᴘᴏʀᴛ  ▸  <a href="https://t.me/drssupport">@drssupport</a>\n◈ ʙᴀꜱᴇ    ▸  MongoDB · Node.js · Telegram API\n◈ ꜰᴇᴀᴛᴜʀᴇꜱ ▸  Giveaway · Voting · VIP · Anti-Cheat · Security Engine</blockquote>\n\n✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } });
 });
 
@@ -8309,7 +8348,7 @@ bot.onText(/\/version/, async (msg) => {
   const uptimeStr = `${Math.floor(uptime/3600)}h ${Math.floor((uptime%3600)/60)}m ${uptime%60}s`;
   await bot.sendMessage(msg.chat.id,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n   🔢  <b>ʙᴏᴛ ᴠᴇʀꜱɪᴏɴ</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-    `<blockquote>◈ ᴠᴇʀꜱɪᴏɴ  ▸  <b>v3.0</b>\n◈ ᴜᴘᴛɪᴍᴇ   ▸  ${uptimeStr}\n◈ ᴅʙ       ▸  MongoDB\n◈ ʀᴜɴᴛɪᴍᴇ  ▸  Node.js 18+\n◈ ꜰʀᴀᴍᴇᴡᴏʀᴋ ▸  node-telegram-bot-api</blockquote>`,
+    `<blockquote>◈ ᴠᴇʀꜱɪᴏɴ  ▸  <b>v3.0.4</b>\n◈ ᴜᴘᴛɪᴍᴇ   ▸  ${uptimeStr}\n◈ ᴅʙ       ▸  MongoDB\n◈ ʀᴜɴᴛɪᴍᴇ  ▸  Node.js 18+\n◈ ꜰʀᴀᴍᴇᴡᴏʀᴋ ▸  node-telegram-bot-api</blockquote>`,
     { parse_mode: "HTML" });
 });
 
@@ -9273,6 +9312,7 @@ async function main() {
         { command: "cloneui",           description: "📦 Export/Import all UI text settings (backup/transfer)" },
         { command: "resetui",           description: "🔄 Reset ALL UI texts to default (with confirmation)" },
         { command: "autoclean",         description: "🧹 Manually trigger memory + DB cleanup now" },
+        { command: "memstats",          description: "📊 Live RAM breakdown — all Maps, heap, RSS" },
         // ── Security — 33 commands ──
         { command: "securityhelp",      description: "🛡️ Full 40-cmd security reference" },
         { command: "securitystats",     description: "📊 Full security dashboard" },
@@ -9311,7 +9351,7 @@ async function main() {
     } catch (e) { console.error("setMyCommands error:", e.message); }
 
     console.log(`
-✅ DRS Giveaway Bot v3.0 Started!
+✅ DRS Giveaway Bot v3.0.4 Started!
 🤖 @${me.username}
 👑 Admin ID: ${MAIN_ADMIN_ID}
 💾 MongoDB: Connected
