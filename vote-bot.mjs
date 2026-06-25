@@ -1133,6 +1133,52 @@ function h(t) {
   return String(t ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+// UTF-16 length (Telegram entity offsets use UTF-16 code units)
+function utf16Len(str) {
+  let n = 0;
+  for (const c of String(str)) n += c.codePointAt(0) > 0xFFFF ? 2 : 1;
+  return n;
+}
+
+// Build HTML string from text+entities, preserving <tg-emoji> for premium custom emojis.
+// valueText     : the plain text of the value portion
+// entities      : msg.entities array
+// valueStartU16 : UTF-16 offset of valueText within the original message
+function buildHtmlValue(valueText, entities, valueStartU16) {
+  const custom = (entities || [])
+    .filter(e => e.type === "custom_emoji" && e.offset >= valueStartU16 && e.offset < valueStartU16 + utf16Len(valueText))
+    .sort((a, b) => a.offset - b.offset);
+  if (!custom.length) return h(valueText);
+
+  // Map UTF-16 offset (relative to valueText start) → char index in [...valueText]
+  const chars = [...valueText];
+  const u16Map = new Map();
+  let u = 0;
+  for (let i = 0; i < chars.length; i++) {
+    u16Map.set(u, i);
+    u += chars[i].codePointAt(0) > 0xFFFF ? 2 : 1;
+  }
+  u16Map.set(u, chars.length);
+
+  let html = "", ci = 0;
+  for (const e of custom) {
+    const rs = e.offset - valueStartU16;
+    const re = rs + e.length;
+    const si = u16Map.get(rs) ?? ci;
+    const ei = u16Map.get(re) ?? chars.length;
+    html += h(chars.slice(ci, si).join(""));
+    html += `<tg-emoji emoji-id="${e.custom_emoji_id}">${h(chars.slice(si, ei).join(""))}</tg-emoji>`;
+    ci = ei;
+  }
+  html += h(chars.slice(ci).join(""));
+  return html;
+}
+
+// Strip <tg-emoji> tags for plain-text display (code blocks etc.)
+function stripTgEmoji(html) {
+  return String(html).replace(/<tg-emoji[^>]*>([^<]*)<\/tg-emoji>/g, "$1");
+}
+
 function getGiveaway(id) { return giveaways.get(String(id)); }
 function isAdmin(uid) {
   if (uid === MAIN_ADMIN_ID) return true;
@@ -1774,7 +1820,7 @@ bot.on("callback_query", async (query) => {
       `✏️━━━━━━━━━━━━━━━━━━━━━━✏️\n\n` +
       `🔑 <b>Key:</b> <code>${key}</code>\n\n` +
       `🚀 <b>Default:</b>\n<blockquote>${h(DEFAULT_UI_TEXTS[key] || "(none)")}</blockquote>\n\n` +
-      (isCustom ? `✏️ <b>Current (custom):</b>\n<blockquote>${h(botCustomTexts.get(key) || "")}</blockquote>\n\n` : ``) +
+      (isCustom ? `✏️ <b>Current (custom):</b>\n<blockquote>${botCustomTexts.get(key) || ""}</blockquote>\n\n` : ``) +
       `<blockquote>⬇️ Ab seedha <b>naya text type karke bhejo</b>\nJo bhi likhoge bilkul waisa hi set ho jayega ✅\n\nCancel karne ke liye /cancel bhejo</blockquote>`;
     await bot.answerCallbackQuery(query.id).catch(() => {});
     return bot.sendMessage(chatId, editText, {
@@ -4505,17 +4551,22 @@ bot.on("message", async (msg) => {
     if (!DEFAULT_UI_TEXTS.hasOwnProperty(key)) {
       return bot.sendMessage(chatId, `❌ Invalid key: <code>${h(key)}</code>`, { parse_mode: "HTML" });
     }
-    const value = text.trim();
-    botCustomTexts.set(key, value);
+    const rawText  = msg.text || "";
+    const value    = rawText.trim();
+    // Leading whitespace = UTF-16 offset where value starts (ASCII spaces)
+    const leadingWs  = rawText.length - rawText.trimStart().length;
+    const htmlValue  = buildHtmlValue(value, msg.entities, leadingWs);
+    botCustomTexts.set(key, htmlValue);
     await BotConfigModel.findOneAndUpdate(
-      { key: `ui:${key}` }, { key: `ui:${key}`, value }, { upsert: true }
+      { key: `ui:${key}` }, { key: `ui:${key}`, value: htmlValue }, { upsert: true }
     ).catch(() => {});
+    const displayVal = stripTgEmoji(htmlValue);
     await bot.sendMessage(chatId,
       `✅━━━━━━━━━━━━━━━━━━━━━━✅\n` +
       `  🎨  <b>TEXT UPDATED!</b>\n` +
       `✅━━━━━━━━━━━━━━━━━━━━━━✅\n\n` +
       `🔑 <b>Key:</b> <code>${h(key)}</code>\n\n` +
-      `📝 <b>Exactly jo bheja wahi set hua:</b>\n<code>${h(value)}</code>\n\n` +
+      `📝 <b>Exactly jo bheja wahi set hua:</b>\n<code>${h(displayVal)}</code>\n\n` +
       `<i>Bilkul waisa hi set ho gaya jaise bheja! ✅\nReset karne ke liye: /resettext ${h(key)}</i>`,
       { parse_mode: "HTML",
         reply_markup: { inline_keyboard: [[{ text: "🎨 Back to Customize", callback_data: "cust_back" }, { text: "🔄 Reset to Default", callback_data: `cust_reset:${key}` }]] }
@@ -8437,20 +8488,25 @@ bot.onText(/\/customize/, async (msg) => {
 // /settext <key> <value>
 bot.onText(/\/settext\s+(\S+)\s+([\s\S]+)/, async (msg, match) => {
   if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
-  const key   = match[1].trim();
-  const value = match[2].trim();
+  const key      = match[1].trim();
+  const rawMatch = match[2];           // untrimmed captured group
+  const value    = rawMatch.trim();    // actual value text
   if (!DEFAULT_UI_TEXTS.hasOwnProperty(key)) {
     const validKeys = UI_KEYS.join("\n• ");
     return bot.sendMessage(msg.chat.id,
-      `❌ Unknown key: <code>${key}</code>\n\nValid keys:\n• ${validKeys}`,
+      `❌ Unknown key: <code>${h(key)}</code>\n\nValid keys:\n• ${validKeys}`,
       { parse_mode: "HTML" });
   }
-  botCustomTexts.set(key, value);
+  // Compute UTF-16 offset where value starts (prefix is ASCII so char = UTF-16 units)
+  const prefixLen    = utf16Len(msg.text) - utf16Len(rawMatch) + (rawMatch.length - rawMatch.trimStart().length);
+  const htmlValue    = buildHtmlValue(value, msg.entities, prefixLen);
+  botCustomTexts.set(key, htmlValue);
   await BotConfigModel.findOneAndUpdate(
-    { key: `ui:${key}` }, { key: `ui:${key}`, value }, { upsert: true }
+    { key: `ui:${key}` }, { key: `ui:${key}`, value: htmlValue }, { upsert: true }
   );
+  const displayVal = stripTgEmoji(htmlValue);
   await bot.sendMessage(msg.chat.id,
-    `✅ <b>Text updated!</b>\n\n🔑 Key: <code>${h(key)}</code>\n\n📝 <b>Exactly jo bheja wahi set hua:</b>\n<code>${h(value)}</code>`,
+    `✅ <b>Text updated!</b>\n\n🔑 Key: <code>${h(key)}</code>\n\n📝 <b>Exactly jo bheja wahi set hua:</b>\n<code>${h(displayVal)}</code>`,
     { parse_mode: "HTML" });
 });
 
