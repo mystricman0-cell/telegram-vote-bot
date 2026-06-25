@@ -48,6 +48,18 @@
 ✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦
 ```
 
+### 🗳️ &nbsp;Vote via Share Link *(NEW in v3.0.6)*
+- Participants get a **dedicated vote link**: `https://t.me/bot?start=v_gId_userId`
+- Anyone who clicks it → **directly votes** for that participant (no participation prompt)
+- **Two separate links** shown in "Your Links" panel:
+  - 🗳️ **Vote Link** — share to collect votes (clicking = instant vote)
+  - 📋 **Join Link** — for new participants to register in the giveaway
+- Channel membership still required to vote (prevents outside abuse)
+- Self-vote blocked with clear error message
+- Vote toggle & switch supported (click again = remove vote, click another = switch)
+- Channel vote card updates live after every link vote
+- All vote logic identical to channel button votes (velocity alerts, admin notify, etc.)
+
 ### 🗑️ &nbsp;Clear Channel Posts *(NEW in v3.0.5)*
 - **Deletes ALL bot messages** from the giveaway channel in one tap
 - Covers: giveaway announcement, every participant vote card, winner post
