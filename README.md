@@ -12,7 +12,7 @@
 ║                                                      ║
 ║    ✦  N  E  T  W  O  R  K  ✦                        ║
 ║    ─────────────────────────                         ║
-║    🎁  GIVEAWAY & VOTE BOT  v3.0  🏆                 ║
+║    🎁  GIVEAWAY & VOTE BOT  v3.0.4  🏆               ║
 ║                                                      ║
 ╚══════════════════════════════════════════════════════╝
 ```
@@ -348,6 +348,12 @@
 - `/setwelcomemsg` — Set welcome text — **jo bhejo waisa hi dikhe** (exact text, emojis, symbols preserved)
 - After setting, `/previewwelcome` instantly shows you the result
 
+### 📊 &nbsp;Memory Stats Live Monitor *(NEW — v3.0.4)*
+- `/memstats` — Real-time RAM breakdown in one command
+  - Node.js heap used / total / RSS / external (in MB)
+  - Count of every in-memory Map: giveaways (active vs ended), users, VIP, channels, payments, custom texts, sub-admins, warnings, muted, shadow-banned, honeypot hits, scheduled messages
+  - Quick tip linking to `/autoclean` if memory is high
+
 ### 🧹 &nbsp;Auto Memory & DB Cleanup *(NEW — v3.0.4)*
 
 **Memory Management (automatic — every 30 min):**
@@ -573,6 +579,7 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/cloneui` | `/cloneui export` · `/cloneui import <json>` | Export all UI settings as JSON backup · Import to restore or transfer to another bot |
 | `/resetui` | `/resetui` | Reset ALL custom UI texts to default in one tap (confirmation step included) |
 | `/autoclean` | `/autoclean` | Manually trigger RAM eviction + MongoDB cleanup — shows exact bytes freed |
+| `/memstats` | `/memstats` | Live RAM breakdown — heap used/total/RSS + size of every in-memory Map |
 
 #### Admin Commands — Sub-Admin Management
 
