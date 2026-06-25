@@ -12,7 +12,7 @@
 ║                                                      ║
 ║    ✦  N  E  T  W  O  R  K  ✦                        ║
 ║    ─────────────────────────                         ║
-║    🎁  GIVEAWAY & VOTE BOT  v3.0.6  🏆               ║
+║    🎁  GIVEAWAY & VOTE BOT  v3.0.8  🏆               ║
 ║                                                      ║
 ╚══════════════════════════════════════════════════════╝
 ```
@@ -105,6 +105,16 @@
   - **⚠️ Warn** — send a warning DM to the participant
   - **✅ Dismiss** — ignore alert (legitimate votes)
 - Detection window resets after 90 seconds (catches repeated panel bursts)
+
+### 🔧 &nbsp;Critical Bug Fixes *(v3.0.8)*
+- **`/listtraps` fixed** — was crashing silently (561 traps exceeded Telegram's 4096 char limit). Now **paginated**: `/listtraps [page]`, 50 traps per page
+- **`/blockedwords` fixed** — same crash (177 words over limit). Now **paginated**: `/blockedwords [page]`, 60 words per page  
+- **`/honeypotlist` fixed** — capped at 30 users to prevent message overflow
+- **`/allgiveaways` paginated** — `/allgiveaways [page]`, 20 per page
+- **`/listmem` paginated** — `/listmem [page]`, 10 per page with cleaner compact layout
+- **`setMyCommands` fixed** — was 109 commands (Telegram max = 100) → trimmed to exactly 100, resolving startup error and restoring the command menu for admin
+- All list commands wrapped in `try-catch` — errors now show descriptive message instead of silent crash
+- Version bumped to **v3.0.8**
 
 ### 📡 &nbsp;Auto Leaderboard Broadcast *(NEW — v3.0.7)*
 - **Auto-post live top-10 leaderboard** to the giveaway channel every X hours
