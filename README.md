@@ -50,14 +50,18 @@
 
 ### 🗳️ &nbsp;Vote via Share Link *(NEW in v3.0.6)*
 - Participants get a **dedicated vote link**: `https://t.me/bot?start=v_gId_userId`
-- Anyone who clicks it → **directly votes** for that participant (no participation prompt)
+- Anyone who clicks it → **must join the channel first**, then votes for that participant
 - **Two separate links** shown in "Your Links" panel:
-  - 🗳️ **Vote Link** — share to collect votes (clicking = instant vote)
+  - 🗳️ **Vote Link** — share to collect votes
   - 📋 **Join Link** — for new participants to register in the giveaway
-- Channel membership still required to vote (prevents outside abuse)
+- **Channel join enforced before voting** — "Join Channel → Verify → Vote" flow:
+  1. Voter clicks vote link
+  2. If not in channel → shown join button + "I Joined — Cast Vote" verify button
+  3. Bot re-checks membership on verify tap
+  4. Only after confirmed join → vote is registered
 - Self-vote blocked with clear error message
 - Vote toggle & switch supported (click again = remove vote, click another = switch)
-- Channel vote card updates live after every link vote
+- Channel vote card updates live after every vote
 - All vote logic identical to channel button votes (velocity alerts, admin notify, etc.)
 
 ### 🗑️ &nbsp;Clear Channel Posts *(NEW in v3.0.5)*
