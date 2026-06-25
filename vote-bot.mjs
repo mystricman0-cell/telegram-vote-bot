@@ -2703,7 +2703,7 @@ bot.on("callback_query", async (query) => {
           ]
         };
 
-        const notifySet = new Set([MAIN_ADMIN_ID]);
+        const notifySet = new Set([ownerAdminId]);
         if (g.creatorId) notifySet.add(g.creatorId);
         for (const target of notifySet) {
           try {
@@ -4002,7 +4002,7 @@ bot.on("message", async (msg) => {
       traps.push({ command: hCmd, at: new Date() });
       honeypotTripped.set(userId, traps);
       _secLog(userId, msg.from.username, "HONEYPOT", `Triggered: /${hCmd}`);
-      bot.sendMessage(MAIN_ADMIN_ID,
+      bot.sendMessage(ownerAdminId,
         `🍯 <b>ʜᴏɴᴇʏᴘᴏᴛ ᴛʀɪɢɢᴇʀᴇᴅ</b>\n\n<blockquote>◈ ᴜꜱᴇʀ    ▸  <a href="tg://user?id=${userId}">${msg.from.first_name}</a> (<code>${userId}</code>)\n◈ ᴄᴏᴍᴍᴀɴᴅ ▸  /${hCmd}\n◈ ᴛᴏᴛᴀʟ   ▸  ${traps.length} trap(s)\n◈ ᴛɪᴍᴇ    ▸  ${new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })}</blockquote>`,
         { parse_mode: "HTML" }
       ).catch(() => {});
@@ -4087,24 +4087,24 @@ bot.on("message", async (msg) => {
 
     try {
       // Step 1: Send info card to admin
-      await bot.sendMessage(MAIN_ADMIN_ID, userCaption, { parse_mode: "HTML", reply_markup: resolveKb });
+      await bot.sendMessage(ownerAdminId, userCaption, { parse_mode: "HTML", reply_markup: resolveKb });
 
       // Step 2: Send the actual media file directly (photo/doc/video/voice/audio/sticker/video_note)
       const mediaCaption = `📩 Support | ${puName} (${puHandle}) | ID: ${userId}`;
       if (msg.photo) {
-        await bot.sendPhoto(MAIN_ADMIN_ID, msg.photo[msg.photo.length - 1].file_id, { caption: mediaCaption });
+        await bot.sendPhoto(ownerAdminId, msg.photo[msg.photo.length - 1].file_id, { caption: mediaCaption });
       } else if (msg.document) {
-        await bot.sendDocument(MAIN_ADMIN_ID, msg.document.file_id, { caption: mediaCaption });
+        await bot.sendDocument(ownerAdminId, msg.document.file_id, { caption: mediaCaption });
       } else if (msg.video) {
-        await bot.sendVideo(MAIN_ADMIN_ID, msg.video.file_id, { caption: mediaCaption });
+        await bot.sendVideo(ownerAdminId, msg.video.file_id, { caption: mediaCaption });
       } else if (msg.voice) {
-        await bot.sendVoice(MAIN_ADMIN_ID, msg.voice.file_id, { caption: mediaCaption });
+        await bot.sendVoice(ownerAdminId, msg.voice.file_id, { caption: mediaCaption });
       } else if (msg.audio) {
-        await bot.sendAudio(MAIN_ADMIN_ID, msg.audio.file_id, { caption: mediaCaption });
+        await bot.sendAudio(ownerAdminId, msg.audio.file_id, { caption: mediaCaption });
       } else if (msg.sticker) {
-        await bot.sendSticker(MAIN_ADMIN_ID, msg.sticker.file_id);
+        await bot.sendSticker(ownerAdminId, msg.sticker.file_id);
       } else if (msg.video_note) {
-        await bot.sendVideoNote(MAIN_ADMIN_ID, msg.video_note.file_id);
+        await bot.sendVideoNote(ownerAdminId, msg.video_note.file_id);
       }
     } catch (e) { console.error("Support forward error:", e.message); }
 
@@ -4113,6 +4113,60 @@ bot.on("message", async (msg) => {
       `  ✅  <b>MESSAGE SENT!</b>\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `<blockquote>Aapka message admin ko bhej diya gaya hai.\nJald hi reply milega. 🙏</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+    );
+    return;
+  }
+
+  // ─── Feedback message handler ───
+  if (state?.step === "awaiting_feedback_message") {
+    userState.delete(userId);
+    const pu = botUsers.get(userId) || {};
+    const puName  = h(msg.from.first_name || pu.firstName || "Unknown");
+    const puHandle = msg.from.username ? `@${msg.from.username}` : (pu.username ? `@${pu.username}` : `ID: ${userId}`);
+    const vipTag   = getMembership(userId) ? " 👑 VIP" : "";
+
+    let mediaType = "Text";
+    if      (msg.photo)      mediaType = "📷 Photo";
+    else if (msg.document)   mediaType = "📄 Document / File";
+    else if (msg.video)      mediaType = "🎥 Video";
+    else if (msg.voice)      mediaType = "🎙️ Voice";
+    else if (msg.audio)      mediaType = "🎵 Audio";
+    else if (msg.sticker)    mediaType = "🎭 Sticker";
+    else if (msg.video_note) mediaType = "📹 Video Note";
+
+    const fbCaption =
+      `💬━━━━━━━━━━━━━━━━━━━━━━💬\n` +
+      `   <b>USER FEEDBACK</b>\n` +
+      `💬━━━━━━━━━━━━━━━━━━━━━━💬\n\n` +
+      `<blockquote>` +
+      `◈ Name    ▸  <b>${puName}</b>${vipTag}\n` +
+      `◈ Handle  ▸  ${puHandle}\n` +
+      `◈ User ID ▸  <code>${userId}</code>\n` +
+      `◈ Type    ▸  ${mediaType}` +
+      (msg.caption ? `\n◈ Caption ▸  ${h(msg.caption)}` : "") +
+      (msg.text    ? `\n◈ Message ▸  ${h(msg.text)}`    : "") +
+      `</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
+
+    try {
+      await bot.sendMessage(ownerAdminId, fbCaption, { parse_mode: "HTML" });
+      const mediaCaption2 = `💬 Feedback | ${puName} (${puHandle}) | ID: ${userId}`;
+      if (msg.photo)      await bot.sendPhoto(ownerAdminId, msg.photo[msg.photo.length - 1].file_id, { caption: mediaCaption2 });
+      else if (msg.document)   await bot.sendDocument(ownerAdminId, msg.document.file_id, { caption: mediaCaption2 });
+      else if (msg.video)      await bot.sendVideo(ownerAdminId, msg.video.file_id, { caption: mediaCaption2 });
+      else if (msg.voice)      await bot.sendVoice(ownerAdminId, msg.voice.file_id, { caption: mediaCaption2 });
+      else if (msg.audio)      await bot.sendAudio(ownerAdminId, msg.audio.file_id, { caption: mediaCaption2 });
+      else if (msg.sticker)    await bot.sendSticker(ownerAdminId, msg.sticker.file_id);
+      else if (msg.video_note) await bot.sendVideoNote(ownerAdminId, msg.video_note.file_id);
+    } catch (e) { console.error("Feedback forward error:", e.message); }
+
+    await bot.sendMessage(chatId,
+      `💬━━━━━━━━━━━━━━━━━━━━━━💬\n` +
+      `  ✅  <b>FEEDBACK SENT!</b>\n` +
+      `💬━━━━━━━━━━━━━━━━━━━━━━💬\n\n` +
+      `<blockquote>Shukriya! Aapka feedback admin tak pahuch gaya.\nHum ise zaroor consider karenge. 🙏</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
     );
@@ -4203,7 +4257,7 @@ bot.on("message", async (msg) => {
         const pu = botUsers.get(userId);
         const puName = pu?.firstName ? h(pu.firstName) : "Unknown";
         const puHandle = pu?.username ? `@${pu.username}` : `ID: ${userId}`;
-        await bot.sendPhoto(MAIN_ADMIN_ID, fileId, {
+        await bot.sendPhoto(ownerAdminId, fileId, {
           caption:
             `<b>💳 New Membership Payment Claim</b>\n\n` +
             `<blockquote>` +
@@ -4251,10 +4305,9 @@ bot.on("message", async (msg) => {
         { parse_mode: "HTML" }
       );
 
-      // Send screenshot proof to giveaway owner (and main admin if different)
+      // Send screenshot proof to giveaway owner (and owner admin if different)
       const notifyTargets = new Set([g.creatorId]);
-      if (isAdmin(g.creatorId)) notifyTargets.add(MAIN_ADMIN_ID);
-      else notifyTargets.add(MAIN_ADMIN_ID);
+      notifyTargets.add(ownerAdminId);
 
       const pu = botUsers.get(userId);
       const puName = pu?.firstName ? h(pu.firstName) : "Unknown";
@@ -4296,13 +4349,13 @@ bot.on("message", async (msg) => {
     const puName = h(msg.from.first_name || pu.firstName || "Unknown");
     const puHandle = msg.from.username ? `@${msg.from.username}` : `ID: ${userId}`;
     try {
-      await bot.sendMessage(MAIN_ADMIN_ID,
+      await bot.sendMessage(ownerAdminId,
         `💬 <b>User Message (No Context)</b>\n\n` +
         `<blockquote>◈ Name    ▸  <b>${puName}</b>\n◈ Handle  ▸  ${puHandle}\n◈ User ID ▸  <code>${userId}</code></blockquote>`,
         { parse_mode: "HTML" }
       );
       await bot._request("forwardMessage", {
-        chat_id: MAIN_ADMIN_ID,
+        chat_id: ownerAdminId,
         from_chat_id: chatId,
         message_id: msg.message_id
       });
@@ -8474,10 +8527,12 @@ bot.onText(/\/refer/, async (msg) => {
 bot.onText(/\/feedback/, async (msg) => {
   if (msg.chat.type !== "private") return;
   const userId = msg.from.id;
-  userState.set(userId, { step: "awaiting_support_message" });
+  userState.set(userId, { step: "awaiting_feedback_message" });
   await bot.sendMessage(msg.chat.id,
     `💬━━━━━━━━━━━━━━━━━━━━━━💬\n   <b>ꜱᴇɴᴅ ꜰᴇᴇᴅʙᴀᴄᴋ</b>\n💬━━━━━━━━━━━━━━━━━━━━━━💬\n\n` +
-    `<blockquote>Apna feedback bhejo — improvements, bugs, suggestions sab welcome hain!\n\nAdmin dekh lega aur reply karega. 🙏</blockquote>`,
+    `<blockquote>Apna feedback bhejo — improvements, bugs, suggestions sab welcome hain!\n\n` +
+    `Aap bhej sakte ho:\n▸ Text message\n▸ Screenshot / Photo\n▸ Video ya Document\n\n` +
+    `Admin dekh lega aur reply karega. 🙏</blockquote>`,
     { parse_mode: "HTML", reply_markup: cancelKeyboard() });
 });
 
@@ -9112,7 +9167,7 @@ bot.onText(/\/pushgithub(?:\s+([\s\S]+))?/, async (msg, match) => {
 // /addadmin — MAIN ADMIN ONLY: Add a sub-admin with specific permissions
 bot.onText(/\/addadmin(?:\s+(\d+))?(?:\s+([\w,]+))?/, async (msg, match) => {
   const userId = msg.from.id;
-  if (userId !== MAIN_ADMIN_ID) return;
+  if (userId !== ownerAdminId) return;
   const chatId = msg.chat.id;
 
   if (!match[1]) {
@@ -9131,7 +9186,7 @@ bot.onText(/\/addadmin(?:\s+(\d+))?(?:\s+([\w,]+))?/, async (msg, match) => {
   }
 
   const targetId = Number(match[1]);
-  if (targetId === MAIN_ADMIN_ID) {
+  if (targetId === ownerAdminId) {
     return bot.sendMessage(chatId, `❌ Main admin already has full access.`, { parse_mode: "HTML" });
   }
 
@@ -9179,7 +9234,7 @@ bot.onText(/\/addadmin(?:\s+(\d+))?(?:\s+([\w,]+))?/, async (msg, match) => {
 // /removeadmin — MAIN ADMIN ONLY: Remove a sub-admin
 bot.onText(/\/removeadmin\s+(\d+)/, async (msg, match) => {
   const userId = msg.from.id;
-  if (userId !== MAIN_ADMIN_ID) return;
+  if (userId !== ownerAdminId) return;
   const chatId = msg.chat.id;
   const targetId = Number(match[1]);
 
@@ -9208,7 +9263,7 @@ bot.onText(/\/removeadmin\s+(\d+)/, async (msg, match) => {
 // /listadmins — MAIN ADMIN ONLY: List all sub-admins
 bot.onText(/\/listadmins/, async (msg) => {
   const userId = msg.from.id;
-  if (userId !== MAIN_ADMIN_ID) return;
+  if (userId !== ownerAdminId) return;
   const chatId = msg.chat.id;
 
   if (subAdmins.size === 0) {
@@ -9237,7 +9292,7 @@ bot.onText(/\/listadmins/, async (msg) => {
 // /editadminperms — MAIN ADMIN ONLY: Interactive permission editor
 bot.onText(/\/editadminperms\s+(\d+)/, async (msg, match) => {
   const userId = msg.from.id;
-  if (userId !== MAIN_ADMIN_ID) return;
+  if (userId !== ownerAdminId) return;
   const chatId = msg.chat.id;
   const targetId = Number(match[1]);
 
@@ -9420,7 +9475,7 @@ async function main() {
         { command: "unblockword",       description: "✅ Unblock a word/phrase" },
         { command: "blockedwords",      description: "🚫 List all blocked words" },
         { command: "suspicious",        description: "🛡️ Last 20 security events" }
-      ], { scope: { type: "chat", chat_id: MAIN_ADMIN_ID } });
+      ], { scope: { type: "chat", chat_id: ownerAdminId } });
 
       console.log("✅ Bot commands registered!");
     } catch (e) { console.error("setMyCommands error:", e.message); }
