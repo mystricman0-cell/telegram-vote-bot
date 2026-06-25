@@ -348,6 +348,28 @@
 - `/setwelcomemsg` — Set welcome text — **jo bhejo waisa hi dikhe** (exact text, emojis, symbols preserved)
 - After setting, `/previewwelcome` instantly shows you the result
 
+### 🧹 &nbsp;Auto Memory & DB Cleanup *(NEW — v3.0.4)*
+
+**Memory Management (automatic — every 30 min):**
+- Ended giveaways older than 7 days are automatically evicted from RAM
+- They stay in MongoDB — history preserved, memory freed
+- Prevents RAM from filling up on long-running bots
+
+**MongoDB Auto-Cleanup (automatic — every 24 hours):**
+- SecurityLog trimmed to last 500 entries (old logs deleted)
+- Resolved pending payments older than 30 days deleted
+- Ended giveaways older than 60 days compressed — participant/vote data wiped, metadata kept
+- **👥 User data (BotUser, VIP), active giveaways — NEVER touched**
+
+**`/autoclean` — Manual Trigger:**
+```
+/autoclean
+→ Runs memory eviction + full DB cleanup instantly
+→ Shows exactly what was freed: RAM, logs, payments, giveaways compressed
+```
+
+> Also runs automatically once 3 minutes after every bot restart.
+
 ### 🔄 &nbsp;ResetUI — Full UI Reset with Confirmation *(NEW — v3.0.3)*
 - `/resetui` — Resets **all** custom UI texts back to default in one tap
 - Shows a **confirmation step** before doing anything — accidental reset impossible
@@ -550,6 +572,7 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/preview` | `/preview <key>` | Preview exactly how any UI key looks with premium emojis |
 | `/cloneui` | `/cloneui export` · `/cloneui import <json>` | Export all UI settings as JSON backup · Import to restore or transfer to another bot |
 | `/resetui` | `/resetui` | Reset ALL custom UI texts to default in one tap (confirmation step included) |
+| `/autoclean` | `/autoclean` | Manually trigger RAM eviction + MongoDB cleanup — shows exact bytes freed |
 
 #### Admin Commands — Sub-Admin Management
 
