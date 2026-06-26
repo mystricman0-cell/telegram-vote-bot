@@ -3107,23 +3107,16 @@ bot.on("callback_query", async (query) => {
       await bot.answerCallbackQuery(query.id, { text: "❌ INR payment is not set up for this giveaway!", show_alert: true }).catch(() => {});
       return;
     }
-    userState.set(userId, { step: "awaiting_inr_screenshot", giveawayId: gId });
-    try {
-      await bot.sendPhoto(chatId, g.qrFileId, {
-        caption:
-          `🇮🇳 <b>PAY VIA UPI/QR</b>\n\n` +
-          `━━━━━━━━━━━━━━━━━━━━\n` +
-          `<blockquote>◈ Rate: <b>${g.votesPerInr} Votes</b> per ₹1\n` +
-          (g.upiId ? `◈ UPI ID: <code>${h(g.upiId)}</code>\n` : "") +
-          `\nSteps:\n1️⃣ Scan the QR code above\n2️⃣ Pay your desired amount\n` +
-          (g.upiId ? `   (or send directly to UPI ID above)\n` : "") +
-          `3️⃣ Take screenshot of payment\n4️⃣ Send screenshot here ↓</blockquote>\n` +
-          `━━━━━━━━━━━━━━━━━━━━`,
-        parse_mode: "HTML"
-      });
-    } catch (e) { console.error("QR send error:", e.message); }
+    userState.set(userId, { step: "awaiting_inr_amount", giveawayId: gId });
+    await bot.answerCallbackQuery(query.id).catch(() => {});
     await bot.sendMessage(chatId,
-      `📸 <b>Send your payment screenshot</b> (as a photo, not a file):`,
+      `🇮🇳 <b>BUY VOTES WITH INR</b>\n` +
+      `<i>${h(g.title)}</i>\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `<blockquote>◈ Rate: <b>${g.votesPerInr} votes</b> per ₹1\n\n` +
+      `Kitna paisa dena chahte ho?\n\nExample: <code>50</code> → ₹50 = ${g.votesPerInr * 50} votes</blockquote>\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n\n` +
+      `📝 <b>₹ amount type karo neeche:</b>`,
       { parse_mode: "HTML", reply_markup: backKeyboard(`buy_votes:${gId}`) }
     );
     return;
@@ -4788,8 +4781,10 @@ bot.on("message", async (msg) => {
       const g = getGiveaway(gId);
       if (!g) return;
 
+      const inrAmount = state.inrAmount || null;
+      const votesExpected = state.votesExpected || null;
       const payId = String(paymentCounter++);
-      const payData = { userId, giveawayId: gId, creatorId: g.creatorId || null, screenshotFileId: fileId, timestamp: new Date() };
+      const payData = { userId, giveawayId: gId, creatorId: g.creatorId || null, screenshotFileId: fileId, inrAmount, votesExpected, timestamp: new Date() };
       pendingPayments.set(payId, payData);
       try {
         await PendingPaymentModel.create({ payId, ...payData });
@@ -4802,9 +4797,11 @@ bot.on("message", async (msg) => {
       userState.delete(userId);
 
       await bot.sendMessage(chatId,
-        `<b>✅ Screenshot Received!</b>\n\n` +
-        `Admin is verifying your payment. Votes will be added once approved.\n\n` +
-        `Payment ID: <code>${payId}</code>`,
+        `✅ <b>Screenshot Received!</b>\n\n` +
+        `<blockquote>◈ Amount   ▸  <b>₹${inrAmount || "?"}</b>\n` +
+        `◈ Votes    ▸  <b>+${votesExpected || "?"}</b> (pending approval)\n` +
+        `◈ Pay ID   ▸  <code>${payId}</code>\n\n` +
+        `Admin verify kar raha hai — approve hone par votes add ho jayenge.</blockquote>`,
         { parse_mode: "HTML" }
       );
 
@@ -4821,9 +4818,11 @@ bot.on("message", async (msg) => {
         `◈ Name     ▸  <b>${puName}</b> (${puHandle})\n` +
         `◈ User ID  ▸  <code>${userId}</code>\n` +
         `◈ Giveaway ▸  <b>${h(g.title)}</b> (<code>${gId}</code>)\n` +
+        (inrAmount ? `◈ Amount   ▸  <b>₹${inrAmount}</b>\n` : "") +
+        (votesExpected ? `◈ Expected ▸  <b>+${votesExpected} votes</b>\n` : "") +
         `◈ Pay ID   ▸  <code>${payId}</code>` +
         `</blockquote>\n\n` +
-        `Kitne votes approve karein?`;
+        `Approve karein? (quick buttons ya Approve tap karke number type karein)`;
       const notifMarkup = {
         inline_keyboard: [[
           { text: "✅ Approve", callback_data: `approve_pay:${payId}` },
@@ -5073,6 +5072,44 @@ bot.on("message", async (msg) => {
     userState.set(userId, state);
     await bot.sendMessage(chatId, `✅ <b>Will end on: ${h(formatted)} IST</b>`, { parse_mode: "HTML" });
     await askPaidVotes(chatId);
+    return;
+  }
+
+  // ─── INR: User typed amount → show QR with calculated votes ───
+  if (state.step === "awaiting_inr_amount") {
+    const amt = parseInt(text, 10);
+    if (isNaN(amt) || amt < 1) {
+      await bot.sendMessage(chatId, "❌ Valid ₹ amount type karo (minimum ₹1).", { parse_mode: "HTML" });
+      return;
+    }
+    const gId = state.giveawayId;
+    const g = getGiveaway(gId);
+    if (!g) { userState.delete(userId); return; }
+    const votesCalc = amt * (g.votesPerInr || 1);
+    // Update state: save amount + move to screenshot step
+    userState.set(userId, { step: "awaiting_inr_screenshot", giveawayId: gId, inrAmount: amt, votesExpected: votesCalc });
+    try {
+      await bot.sendPhoto(chatId, g.qrFileId, {
+        caption:
+          `🇮🇳 <b>PAY VIA UPI/QR</b>\n\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `<blockquote>◈ Amount   : <b>₹${amt}</b>\n` +
+          `◈ Votes    : <b>+${votesCalc} votes</b> milenge ✅\n` +
+          `◈ Rate     : ${g.votesPerInr} votes per ₹1\n` +
+          (g.upiId ? `◈ UPI ID   : <code>${h(g.upiId)}</code>\n` : "") +
+          `\nSteps:\n1️⃣ Scan the QR code above\n` +
+          `2️⃣ ₹${amt} send karo` +
+          (g.upiId ? ` (ya UPI ID pe directly)\n` : `\n`) +
+          `3️⃣ Payment screenshot lo\n` +
+          `4️⃣ Screenshot yahan bhejo ↓</blockquote>\n` +
+          `━━━━━━━━━━━━━━━━━━━━`,
+        parse_mode: "HTML"
+      });
+    } catch (e) { console.error("QR send error:", e.message); }
+    await bot.sendMessage(chatId,
+      `📸 <b>Send your payment screenshot</b> (photo ke roop mein, file nahi):`,
+      { parse_mode: "HTML", reply_markup: backKeyboard(`buy_votes:${gId}`) }
+    );
     return;
   }
 
@@ -9899,8 +9936,8 @@ bot.onText(/\/pushgithub(?:\s+([\s\S]+))?/, async (msg, match) => {
         message: commitMsg,
         content: encoded,
         sha: getJson.sha,
-        committer: { name: "drs", email: "drs@drsnetwork.com" },
-        author:    { name: "drs", email: "drs@drsnetwork.com" }
+        committer: { name: "mystricman0-cell", email: "mystricman0-cell@users.noreply.github.com" },
+        author:    { name: "mystricman0-cell", email: "mystricman0-cell@users.noreply.github.com" }
       })
     });
     const putJson = await putResp.json();
