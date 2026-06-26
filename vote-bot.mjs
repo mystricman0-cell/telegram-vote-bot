@@ -8043,9 +8043,18 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/setlbbroadcast &lt;gId&gt; &lt;hours&gt;\n  → Auto-post live leaderboard to channel every X hours\n  Range: 0.5–24h · Posts immediately + on interval\n  Example: /setlbbroadcast ABC123 2\n\n` +
     `/stoplbbroadcast &lt;gId&gt;\n  → Stop auto leaderboard broadcast for a giveaway\n\n` +
     `/listlbbroadcast\n  → View all active leaderboard broadcasts\n\n` +
-    `/setstar &lt;gId&gt; &lt;votes&gt;\n  → Votes per ⭐ Star\n\n` +
-    `/setinr &lt;gId&gt; &lt;votes&gt;\n  → Votes per ₹1 INR\n\n` +
-    `/setpanelthreshold &lt;gId&gt; &lt;votes&gt; [seconds]\n  → Vote panel alert threshold\n  Default: 15 votes / 90s\n  Example: /setpanelthreshold ABC123 20 60` +
+    `/setstar &lt;gId&gt; &lt;votes&gt;\n  → Votes per ⭐ Star\n  Example: /setstar ABC123 3 → 1 ⭐ = 3 votes\n\n` +
+    `/setinr &lt;gId&gt; &lt;votes&gt;\n  → Votes per ₹1 INR\n  Example: /setinr ABC123 5 → ₹1 = 5 votes, ₹100 = 500 votes\n\n` +
+    `<b>🚨 ANTI-CHEAT (Vote Panel Detection)</b>\n` +
+    `Agar koi ek participant ko 15+ votes 90 seconds mein milte hain,\ntumhe turant alert milega with these action buttons:\n` +
+    `  ➖ Votes Minus  — kitne bhi votes deduct karo\n` +
+    `  🗑️ Hatao        — giveaway se remove + user ko DM\n` +
+    `  🚫 Ban + Remove — bot se ban + giveaway se remove\n` +
+    `  ⚠️ Warn Karo   — fair play warning DM bhejo\n` +
+    `  ✅ Dismiss      — ignore karo (genuine spike tha)\n\n` +
+    `/setpanelthreshold &lt;gId&gt; &lt;votes&gt; [seconds]\n  → Custom alert threshold per giveaway\n  Default: 15 votes / 90s\n  Example: /setpanelthreshold ABC123 20 60\n  → 20 votes in 60s pe alert\n\n` +
+    `/removevotes &lt;gId&gt; &lt;userId&gt; &lt;count&gt;\n  → Manually votes deduct karo (cheating fix)\n\n` +
+    `/flaguser &lt;userId&gt; [reason]\n  → Suspicious user ko monitor karo (koi action nahi, bas label)` +
     `</blockquote>\n\n` +
     `<b>📢 BROADCAST</b>\n` +
     `<blockquote>` +
