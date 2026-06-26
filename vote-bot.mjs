@@ -3905,20 +3905,129 @@ bot.on("callback_query", async (query) => {
     if (!isAdmin(userId) && !isOwner) {
       return bot.answerCallbackQuery(query.id, { text: "❌ Sirf giveaway owner ya admin approve kar sakta hai!", show_alert: true }).catch(() => {});
     }
-    userState.set(userId, { step: "approve_votes", paymentId: payId, approverChatId: chatId });
     await bot.answerCallbackQuery(query.id).catch(() => {});
     const _approveG = getGiveaway(payment.giveawayId);
-    const _rateHint = _approveG?.votesPerInr
-      ? `\n\n💡 <b>Rate:</b> ${_approveG.votesPerInr} votes per ₹1\n` +
-        `   → ₹10 = <b>${_approveG.votesPerInr * 10}</b> votes\n` +
-        `   → ₹50 = <b>${_approveG.votesPerInr * 50}</b> votes\n` +
-        `   → ₹100 = <b>${_approveG.votesPerInr * 100}</b> votes`
-      : "";
+    const _rate = _approveG?.votesPerInr || 0;
+
+    if (_rate > 0) {
+      // Show quick-tap amount buttons with auto-calculated votes
+      const _amounts = [10, 50, 100, 200, 500];
+      const _rows = [];
+      for (let i = 0; i < _amounts.length; i += 2) {
+        const row = [];
+        for (let j = i; j < Math.min(i + 2, _amounts.length); j++) {
+          const amt = _amounts[j];
+          const v = _rate * amt;
+          row.push({ text: `₹${amt} = ${v} votes`, callback_data: `quick_approve:${payId}:${v}` });
+        }
+        _rows.push(row);
+      }
+      _rows.push([{ text: "✏️ Custom Amount (Type Below)", callback_data: `approve_custom:${payId}` }]);
+
+      await bot.sendMessage(chatId,
+        `✅ <b>Approve Payment</b>\n\n` +
+        `<blockquote>` +
+        `◈ Giveaway ▸ <b>${h(_approveG.title)}</b> (<code>${payment.giveawayId}</code>)\n` +
+        `◈ User ID  ▸ <code>${payment.userId}</code>\n` +
+        `◈ Rate     ▸ <b>${_rate} votes</b> per ₹1\n\n` +
+        `Screenshot mein kitna amount diya hai — woh button tap karo:\n` +
+        `(ya custom amount ke liye neeche ka button dabao)</blockquote>`,
+        { parse_mode: "HTML", reply_markup: { inline_keyboard: _rows } }
+      );
+    } else {
+      // No rate set — fallback to text input
+      userState.set(userId, { step: "approve_votes", paymentId: payId, approverChatId: chatId });
+      await bot.sendMessage(chatId,
+        `✅ <b>Approve Payment</b>\n\n` +
+        `<blockquote>◈ Giveaway ▸ <b>${_approveG ? h(_approveG.title) : payment.giveawayId}</b> (<code>${payment.giveawayId}</code>)\n` +
+        `◈ User ID  ▸ <code>${payment.userId}</code>\n\n` +
+        `💡 Tip: Pehle /setinr set karo to get quick-tap buttons!\n\n` +
+        `Kitne votes add karein? (number type karo)</blockquote>`,
+        { parse_mode: "HTML" }
+      );
+    }
+    return;
+  }
+
+  // ─── Quick Approve: tap button → instant vote credit ───
+  if (data.startsWith("quick_approve:")) {
+    const parts = data.split(":");
+    const payId = parts[1];
+    const votes = parseInt(parts[2], 10);
+    const payment = pendingPayments.get(payId);
+    if (!payment) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ Payment expired or already processed!", show_alert: true }).catch(() => {});
+    }
+    const isOwner = payment.creatorId && userId === payment.creatorId;
+    if (!isAdmin(userId) && !isOwner) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ Permission denied!", show_alert: true }).catch(() => {});
+    }
+    await bot.answerCallbackQuery(query.id, { text: `✅ Adding ${votes} votes...` }).catch(() => {});
+    pendingPayments.delete(payId);
+    await PendingPaymentModel.deleteOne({ payId });
+
+    const g = getGiveaway(payment.giveawayId);
+    if (!g) return bot.editMessageText("❌ Giveaway not found.", { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }).catch(() => {});
+
+    let participant = g.participants.get(payment.userId);
+    if (!participant) {
+      const user = await bot.getChat(payment.userId).catch(() => null);
+      const name = user ? ((user.first_name || "") + (user.last_name ? ` ${user.last_name}` : "")) : String(payment.userId);
+      participant = { id: payment.userId, name, handle: `@${user?.username || "NoUser"}`, votes: 0, voters: new Set(), channelMsgId: null };
+      g.participants.set(payment.userId, participant);
+    }
+    participant.votes += votes;
+    await saveGiveaway(g);
+    await updateChannelPost(g, participant);
+
+    await bot.editMessageText(
+      `✅ <b>Payment Approved!</b>\n\n` +
+      `<blockquote>◈ Participant ▸ <b>${h(participant.name)}</b>\n` +
+      `◈ Votes Added ▸ +<b>${votes}</b> 🗳️\n` +
+      `◈ Total Votes ▸ <b>${participant.votes}</b>\n` +
+      `◈ Giveaway   ▸ <b>${h(g.title)}</b></blockquote>`,
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+    ).catch(() => {});
+
+    try {
+      await bot.sendMessage(payment.userId,
+        `✅ <b>Payment Approved!</b>\n\n` +
+        `<blockquote>◈ Giveaway ▸ <b>${h(g.title)}</b>\n` +
+        `◈ Votes Added ▸ +<b>${votes}</b> 🗳️\n` +
+        `◈ Total Votes ▸ <b>${participant.votes}</b></blockquote>`,
+        { parse_mode: "HTML" }
+      );
+    } catch {}
+    if (g.channelId) {
+      try {
+        await bot.sendMessage(g.channelId,
+          `💰 <b>Paid Votes Purchased!</b>\n\n` +
+          `<blockquote>◈ Participant ▸ <b>${h(participant.name)}</b>\n` +
+          `◈ Votes Added ▸ +<b>${votes}</b> 🗳️\n` +
+          `◈ Method     ▸ 🇮🇳 INR/UPI\n` +
+          `◈ Giveaway   ▸ <b>${h(g.title)}</b></blockquote>`,
+          { parse_mode: "HTML" }
+        );
+      } catch {}
+    }
+    return;
+  }
+
+  // ─── Custom Amount: switch to text input mode ───
+  if (data.startsWith("approve_custom:")) {
+    const payId = data.split(":")[1];
+    const payment = pendingPayments.get(payId);
+    if (!payment) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ Payment expired!", show_alert: true }).catch(() => {});
+    }
+    const isOwner = payment.creatorId && userId === payment.creatorId;
+    if (!isAdmin(userId) && !isOwner) {
+      return bot.answerCallbackQuery(query.id, { text: "❌ Permission denied!", show_alert: true }).catch(() => {});
+    }
+    userState.set(userId, { step: "approve_votes", paymentId: payId, approverChatId: chatId });
+    await bot.answerCallbackQuery(query.id).catch(() => {});
     await bot.sendMessage(chatId,
-      `✅ <b>Approve Payment</b>\n\n` +
-      `<blockquote>◈ Giveaway ▸ <b>${_approveG ? h(_approveG.title) : payment.giveawayId}</b> (<code>${payment.giveawayId}</code>)\n` +
-      `◈ User ID  ▸ <code>${payment.userId}</code>${_rateHint}\n\n` +
-      `Kitne votes add karein? (number type karo)</blockquote>`,
+      `✏️ <b>Custom Votes</b>\n\n<blockquote>Kitne votes add karein? Number type karo:</blockquote>`,
       { parse_mode: "HTML" }
     );
     return;
