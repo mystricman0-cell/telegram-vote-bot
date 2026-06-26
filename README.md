@@ -96,15 +96,119 @@
 - Auto vote-deduction when a user leaves the channel *(VIP)*
 - Only channel members can vote — enforced automatically
 
-### 🚨 &nbsp;Anti-Panel / Anti-Cheat System *(NEW)*
-- **Automatic vote panel detection** — if 15+ votes arrive within 90 seconds for one participant, giveaway owner + admin are instantly alerted
-- One-tap action buttons sent to owner/admin:
-  - **➖ Votes Minus** — deduct any number of votes
-  - **🗑️ Remove Participant** — remove from giveaway + notify user
-  - **🚫 Ban + Remove** — ban user from bot + remove from giveaway
-  - **⚠️ Warn** — send a warning DM to the participant
-  - **✅ Dismiss** — ignore alert (legitimate votes)
-- Detection window resets after 90 seconds (catches repeated panel bursts)
+### 💰 &nbsp;Paid Votes System — Full Flow
+
+Giveaway participants can buy extra votes using real money (INR/UPI) or Telegram Stars.
+
+#### Setting Rates (Admin Commands)
+
+| Command | Example | What it does |
+|---|---|---|
+| `/setinr <gId> <votes>` | `/setinr ABC123 5` | 1 rupee = 5 votes (INR rate) |
+| `/setstar <gId> <votes>` | `/setstar ABC123 3` | 1 Star = 3 votes (Stars rate) |
+
+> Run `/allgiveaways` to find the giveaway ID (gId).
+
+#### INR/UPI Payment Flow (Manual)
+
+```
+User clicks "💰 Buy Paid Votes" in the giveaway menu
+         ↓
+Selects "🇮🇳 Pay via INR/UPI (QR)"
+         ↓
+Bot shows the QR code + rate (e.g. "5 votes per ₹1")
+  → User pays desired amount via UPI/QR
+  → Takes a screenshot of the payment
+  → Sends screenshot to bot
+         ↓
+Admin/Owner gets a notification with:
+  - Screenshot proof
+  - Giveaway name + User ID
+  - Rate hint (₹10 = 50 votes, ₹50 = 250 votes, ₹100 = 500 votes)
+  - [✅ Approve] [❌ Reject] buttons
+         ↓
+Admin types how many votes to add → Votes credited instantly
+         ↓
+User gets "✅ Payment Approved!" notification
+Channel gets "💰 Paid Votes Purchased!" announcement
+```
+
+**On Rejection:**
+- User gets a DM: giveaway name + Pay ID + reason
+- Channel gets "❌ Payment Rejected" notification
+
+#### Stars Payment Flow (Automatic — Telegram handles it)
+
+```
+User selects "⭐ Pay via Telegram Stars"
+         ↓
+Bot shows rate + asks: "How many Stars to spend?"
+  → User types number (e.g. 10)
+  → Bot launches Telegram's native Stars payment
+         ↓
+On successful payment → Votes added automatically (no admin needed)
+         ↓
+User gets "⭐ Stars Payment Successful!" summary
+Channel gets "⭐ Stars Votes Purchased!" announcement
+Admin gets notification log
+```
+
+#### Channel Notifications (Automatic)
+
+All paid vote events send a public announcement to the giveaway channel:
+
+| Event | Channel Message |
+|---|---|
+| INR Approved | `💰 Paid Votes Purchased! · Participant · Votes Added · Method: INR/UPI` |
+| Stars Paid | `⭐ Stars Votes Purchased! · Participant · Stars Spent · Votes Added` |
+| INR Rejected | `❌ Payment Rejected · User ID · Giveaway name` |
+
+### 🚨 &nbsp;Anti-Cheat & Fake Vote Detection
+
+The bot has a built-in automatic system to detect vote panels (bots/services that send many votes rapidly).
+
+#### How Detection Works
+
+- **Default threshold:** 15 votes in 90 seconds for one participant = alert triggered
+- Alert is sent to giveaway **owner + admin** with full details
+- Detection window resets every 90 seconds (catches repeated bursts)
+- Each giveaway can have its own custom threshold
+
+#### Admin Alert Buttons (one tap action)
+
+When a panel is detected, you get these buttons instantly:
+
+| Button | Action |
+|---|---|
+| **➖ Votes Minus Karo** | Type how many to deduct — removes from participant's total |
+| **🗑️ Hatao Participant** | Removes from giveaway + sends DM to participant explaining removal |
+| **🚫 Ban + Remove** | Permanently bans user from bot + removes from giveaway |
+| **⚠️ Warn Karo** | Sends a "fair play" warning DM to the participant |
+| **✅ Dismiss (Ignore)** | Alert closed — no action (for legitimate spikes) |
+
+#### Commands for Anti-Cheat
+
+| Command | Usage | Description |
+|---|---|---|
+| `/setpanelthreshold` | `/setpanelthreshold <gId> <votes> [seconds]` | Custom threshold per giveaway |
+| `/removevotes` | `/removevotes <gId> <userId> <count>` | Manually deduct votes |
+| `/addvotes` | `/addvotes <gId> <userId> <count>` | Manually add votes |
+| `/flaguser` | `/flaguser <userId> [reason]` | Flag user for monitoring (no ban, just a label) |
+| `/warnuser` | `/warnuser <userId> [reason]` | Send manual warning |
+| `/ban` | `/ban <userId> [reason]` | Permanently ban from bot |
+
+#### Setting a Custom Threshold
+
+```
+/setpanelthreshold ABC123 20 60
+→ Alert when 20+ votes in 60 seconds for one participant
+
+/setpanelthreshold ABC123 30
+→ Alert when 30+ votes in 90 seconds (default window)
+```
+
+- Only giveaway owner or admin can set the threshold
+- Change takes effect immediately — no restart needed
 
 ### 🔧 &nbsp;Critical Bug Fixes *(v3.0.8)*
 - **`/listtraps` fixed** — was crashing silently (561 traps exceeded Telegram's 4096 char limit). Now **paginated**: `/listtraps [page]`, 50 traps per page
@@ -336,8 +440,8 @@
 - **561 honeypot traps** pre-loaded on first startup — covers hacking, exploits, userbots, scams, adult, gambling, carding, tools and more
 - **177 blocked words** — Hindi (Devanagari), Hinglish transliterated, and English abuses all blocked automatically
 - Traps and words are seeded to MongoDB once and **treated like manually added ones** — `/removetrap` permanently removes them
-- `/listtraps` shows all 561 active traps
-- `/blockedwords` shows all 177 blocked words
+- `/listtraps [page]` — paginated, 50 traps per page (e.g. `/listtraps 2` for page 2)
+- `/blockedwords [page]` — paginated, 60 words per page (e.g. `/blockedwords 2` for page 2)
 - Any user who triggers a honeypot trap → **instant admin alert + automatic warning**
 - Any user who types a blocked word → **warning logged + message blocked**
 
@@ -595,6 +699,7 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/voteleaderboard` | `/voteleaderboard` | Global top 20 voters across all giveaways |
 | `/setstar` | `/setstar <giveawayId> <votes>` | Votes per Telegram ⭐ Star |
 | `/setinr` | `/setinr <giveawayId> <votes>` | Votes per ₹1 INR paid |
+| `/setpanelthreshold` | `/setpanelthreshold <gId> <votes> [seconds]` | Anti-cheat: custom vote-panel detection threshold (default: 15 votes / 90s) |
 
 #### Admin Commands — Broadcast & Messaging
 
@@ -669,8 +774,8 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/honeypot` | `/honeypot on\|off` | Enable/disable honeypot trap system |
 | `/honeytrap` | `/honeytrap <cmd>` | Add a fake command as honeypot trap |
 | `/removetrap` | `/removetrap <cmd>` | Remove a honeypot trap |
-| `/listtraps` | `/listtraps` | List all active honeypot traps |
-| `/honeypotlist` | `/honeypotlist` | Users who triggered traps + timestamps |
+| `/listtraps` | `/listtraps [page]` | List honeypot traps — paginated, 50 per page |
+| `/honeypotlist` | `/honeypotlist` | Users who triggered traps + timestamps (capped at 30) |
 | `/cleanhoneypot` | `/cleanhoneypot` | Clear honeypot triggered-users list |
 | `/warnuser` | `/warnuser <id> [reason]` | Manually warn a user |
 | `/warnings` | `/warnings <id>` | Check user's warning count + reasons |
@@ -701,7 +806,7 @@ Then add the bot as **Admin** to your Telegram channel — it registers automati
 | `/userhistory` | `/userhistory <id>` | Last 30 commands sent by a user |
 | `/blockword` | `/blockword <word>` | Block a word/phrase from all messages |
 | `/unblockword` | `/unblockword <word>` | Unblock a word/phrase |
-| `/blockedwords` | `/blockedwords` | List all blocked words/phrases |
+| `/blockedwords` | `/blockedwords [page]` | List blocked words — paginated, 60 per page |
 | `/ratelimitreset` | `/ratelimitreset <id>` | Reset user's rate limit counter |
 | `/securityreport` | `/securityreport` | Download full security report as .txt — includes summary, banned/muted/shadow/flagged/warned/trusted users, honeypot hits, blocked words, and last 100 security log events |
 
