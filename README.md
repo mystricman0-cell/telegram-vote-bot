@@ -116,20 +116,35 @@ User clicks "💰 Buy Paid Votes" in the giveaway menu
          ↓
 Selects "🇮🇳 Pay via INR/UPI (QR)"
          ↓
-Bot shows the QR code + rate (e.g. "5 votes per ₹1")
-  → User pays desired amount via UPI/QR
-  → Takes a screenshot of the payment
-  → Sends screenshot to bot
+Bot asks: "Kitna paisa dena chahte ho? (₹ amount type karo)"
+  e.g. type "50"  →  Bot shows: ₹50 = 250 votes
          ↓
-Admin/Owner gets a notification with:
-  - Screenshot proof
-  - Giveaway name + User ID
-  - Rate hint (₹10 = 50 votes, ₹50 = 250 votes, ₹100 = 500 votes)
-  - [✅ Approve] [❌ Reject] buttons
+Bot shows QR code with full summary:
+  ◈ Amount  : ₹50
+  ◈ Votes   : +250 votes milenge ✅
+  ◈ UPI ID  : shown if set
+  Steps 1–4 clearly listed
          ↓
-Admin types how many votes to add → Votes credited instantly
+User pays ₹50 via UPI/QR → takes screenshot → sends it to bot
          ↓
-User gets "✅ Payment Approved!" notification
+User gets confirmation:
+  ◈ Amount  ▸  ₹50
+  ◈ Votes   ▸  +250 (pending approval)
+  ◈ Pay ID  ▸  5
+         ↓
+Admin/Owner gets notification with screenshot + details:
+  ◈ Name     ▸  User Name (@handle)
+  ◈ User ID  ▸  123456789
+  ◈ Giveaway ▸  Summer Giveaway (ABC123)
+  ◈ Amount   ▸  ₹50          ← user ne jo likha
+  ◈ Expected ▸  +250 votes   ← calculated from rate
+  ◈ Pay ID   ▸  5
+  [✅ Approve] [❌ Reject]
+         ↓
+Admin taps amount button (₹50 = 250 votes) → ONE TAP → done!
+  OR types custom number for any override
+         ↓
+User gets "✅ Payment Approved!" DM
 Channel gets "💰 Paid Votes Purchased!" announcement
 ```
 
@@ -502,7 +517,7 @@ When a panel is detected, you get these buttons instantly:
 ### 🚀 &nbsp;GitHub Push from Telegram *(NEW — v3.0.1)*
 - `/pushgithub [commit message]` — Push `vote-bot.mjs` to your GitHub repo directly from Telegram
 - Requires `GITHUB_TOKEN` + `GITHUB_REPO_URL` set as environment variables
-- All commits made as author **drs**
+- All commits made as author **mystricman0-cell**
 
 ### 👑 &nbsp;Sub-Admin Management *(NEW — v3.0.2)*
 - Add trusted sub-admins with specific permission sets — no need to share main admin access
