@@ -3907,8 +3907,18 @@ bot.on("callback_query", async (query) => {
     }
     userState.set(userId, { step: "approve_votes", paymentId: payId, approverChatId: chatId });
     await bot.answerCallbackQuery(query.id).catch(() => {});
+    const _approveG = getGiveaway(payment.giveawayId);
+    const _rateHint = _approveG?.votesPerInr
+      ? `\n\n💡 <b>Rate:</b> ${_approveG.votesPerInr} votes per ₹1\n` +
+        `   → ₹10 = <b>${_approveG.votesPerInr * 10}</b> votes\n` +
+        `   → ₹50 = <b>${_approveG.votesPerInr * 50}</b> votes\n` +
+        `   → ₹100 = <b>${_approveG.votesPerInr * 100}</b> votes`
+      : "";
     await bot.sendMessage(chatId,
-      `✅ <b>Approve Payment</b>\n\n<blockquote>Giveaway: <b>${payment.giveawayId}</b>\nUser ID: <code>${payment.userId}</code>\n\nKitne votes add karein? (number type karo)</blockquote>`,
+      `✅ <b>Approve Payment</b>\n\n` +
+      `<blockquote>◈ Giveaway ▸ <b>${_approveG ? h(_approveG.title) : payment.giveawayId}</b> (<code>${payment.giveawayId}</code>)\n` +
+      `◈ User ID  ▸ <code>${payment.userId}</code>${_rateHint}\n\n` +
+      `Kitne votes add karein? (number type karo)</blockquote>`,
       { parse_mode: "HTML" }
     );
     return;
@@ -3923,6 +3933,7 @@ bot.on("callback_query", async (query) => {
     if (!isAdmin(userId) && !isOwner) {
       return bot.answerCallbackQuery(query.id, { text: "❌ Sirf giveaway owner ya admin reject kar sakta hai!", show_alert: true }).catch(() => {});
     }
+    const _rejG = getGiveaway(payment.giveawayId);
     pendingPayments.delete(payId);
     await PendingPaymentModel.deleteOne({ payId });
     await bot.answerCallbackQuery(query.id, { text: "Payment rejected!" }).catch(() => {});
@@ -3930,12 +3941,29 @@ bot.on("callback_query", async (query) => {
       `❌ Payment Rejected — ID: ${payId}`,
       { chat_id: chatId, message_id: msgId }
     ).catch(() => {});
+    // Notify user with giveaway name
     try {
       await bot.sendMessage(payment.userId,
-        `<b>❌ Payment Rejected</b>\n\nYour payment could not be verified.\nPayment ID: <code>${payId}</code>\n\nPlease try again or contact support.`,
+        `❌ <b>Payment Rejected</b>\n\n` +
+        `<blockquote>◈ Giveaway ▸ <b>${_rejG ? h(_rejG.title) : payment.giveawayId}</b>\n` +
+        `◈ Pay ID   ▸ <code>${payId}</code>\n\n` +
+        `Aapka payment verify nahi ho saka. Sahi screenshot bhejein ya support se contact karein.\n` +
+        `📩 @drssupport</blockquote>`,
         { parse_mode: "HTML" }
       );
     } catch {}
+    // Channel notification for rejected payment
+    if (_rejG?.channelId) {
+      try {
+        await bot.sendMessage(_rejG.channelId,
+          `❌ <b>Payment Rejected</b>\n\n` +
+          `<blockquote>◈ User ID  ▸ <code>${payment.userId}</code>\n` +
+          `◈ Giveaway ▸ <b>${h(_rejG.title)}</b>\n` +
+          `◈ Reason   ▸ Payment could not be verified</blockquote>`,
+          { parse_mode: "HTML" }
+        );
+      } catch {}
+    }
     return;
   }
   } catch (e) { console.error("⚠️ callback_query handler error:", e.message, "| data:", query?.data); }
