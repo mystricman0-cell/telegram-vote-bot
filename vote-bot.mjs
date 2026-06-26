@@ -3903,9 +3903,21 @@ bot.on("callback_query", async (query) => {
     const _rate = _approveG?.votesPerInr || 0;
 
     if (_rate > 0) {
-      // Show quick-tap amount buttons with auto-calculated votes
-      const _amounts = [10, 50, 100, 200, 500];
+      // Build quick-tap buttons — user's declared amount FIRST (highlighted)
       const _rows = [];
+      const _userAmt = payment.inrAmount || null;
+      const _userVotes = payment.votesExpected || null;
+
+      if (_userAmt && _userVotes) {
+        // Top row: user's own declared amount — most likely correct
+        _rows.push([{
+          text: `⭐ ₹${_userAmt} = ${_userVotes} votes  ← User ne bheja`,
+          callback_data: `quick_approve:${payId}:${_userVotes}`
+        }]);
+      }
+
+      // Other common amounts (skip if same as user's amount)
+      const _amounts = [10, 50, 100, 200, 500].filter(a => a !== _userAmt);
       for (let i = 0; i < _amounts.length; i += 2) {
         const row = [];
         for (let j = i; j < Math.min(i + 2, _amounts.length); j++) {
@@ -3922,9 +3934,9 @@ bot.on("callback_query", async (query) => {
         `<blockquote>` +
         `◈ Giveaway ▸ <b>${h(_approveG.title)}</b> (<code>${payment.giveawayId}</code>)\n` +
         `◈ User ID  ▸ <code>${payment.userId}</code>\n` +
-        `◈ Rate     ▸ <b>${_rate} votes</b> per ₹1\n\n` +
-        `Screenshot mein kitna amount diya hai — woh button tap karo:\n` +
-        `(ya custom amount ke liye neeche ka button dabao)</blockquote>`,
+        `◈ Rate     ▸ <b>${_rate} votes</b> per ₹1\n` +
+        (_userAmt ? `◈ Claimed  ▸ <b>₹${_userAmt}</b> → <b>${_userVotes} votes</b>\n` : ``) +
+        `\n⭐ User ka amount top pe hai — ek tap mein approve karo:</blockquote>`,
         { parse_mode: "HTML", reply_markup: { inline_keyboard: _rows } }
       );
     } else {
