@@ -225,7 +225,6 @@ let honeypotEnabled     = true;
 let maxWarnings         = 3;
 let autobanEnabled      = true;
 let emergencyLocked     = false;
-const botStartTime      = Date.now();
 
 // ============================================================
 // DEFAULT SECURITY: HONEYPOT TRAPS + BLOCKED WORDS
