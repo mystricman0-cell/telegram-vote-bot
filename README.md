@@ -48,6 +48,31 @@
 ✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦
 ```
 
+### 🎨 &nbsp;Colored Button UI Theme System *(NEW in v3.1.0)*
+
+Every button across the entire bot now has a **visual color style** — no more plain grey buttons:
+
+| Color | Style | Used For |
+|-------|-------|----------|
+| 🔵 **Blue** | `primary` | Navigation, back, leaderboard, channel selection, links |
+| 🟢 **Green** | `success` | Confirm, join, enable, approve, automatic end, INR pay |
+| 🔴 **Red** | `danger` | Cancel, stop, reject, manual end, free-only, VIP upsell |
+
+**Theme Command (Admin only):**
+- `/theme` — View current theme + switch between `default`, `red`, `blue`, `green`
+- Colors update **instantly** for all future button messages
+- Theme persists in MongoDB — survives bot restarts
+
+**Screens with full color styling:**
+- Main Menu, My Giveaways, Channel Selection
+- Giveaway Creation (all 5 steps)
+- End Type (Automatic 🟢 / Manual 🔴)
+- Payment Method, Enable/Disable Paid Votes
+- Admin Approve/Reject panels
+- VIP Membership, Permissions, Support
+
+---
+
 ### 🌟 &nbsp;Premium Emoji System *(NEW in v3.1.0)*
 - **Permanent storage** — Admin sets premium emoji IDs via `/setpremiumemoji <emoji_id> [label]`; stored in MongoDB forever
 - **Survives premium expiry** — Even if admin's Telegram Premium expires, all saved emoji IDs remain active in the bot
