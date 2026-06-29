@@ -396,11 +396,11 @@ const DEFAULT_UI_TEXTS = {
   "welcome.btn_create":        "➕ Create Giveaway",
   "welcome.btn_help":          "📖 Help & Guide",
   "welcome.btn_support":       "💬 Support",
-  "welcome.btn_leaderboard":   "🏆 Leaderboard",
+  "welcome.btn_leaderboard":   "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆",
   // Giveaway UI
   "giveaway.btn_participate":  "🎯 Participate",
   "giveaway.btn_vote":         "🗳️ Vote Now!",
-  "giveaway.btn_leaderboard":  "🏆 ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ",
+  "giveaway.btn_leaderboard":  "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆",
   "giveaway.btn_share":        "📤 Share",
   "giveaway.winner_header":    "🏆 <b>WINNERS ANNOUNCED!</b> 🏆",
   "giveaway.active_header":    "🔷 <b>LIVE GIVEAWAYS</b>",
@@ -1193,7 +1193,7 @@ function buildPlanButtons() {
       { text: `7D - ₹${membershipPlans["7d"].price}`, callback_data: "buy_mem:7d" }
     ],
     [{ text: `30D - ₹${membershipPlans["30d"].price}`, callback_data: "buy_mem:30d" }],
-    [{ text: "◀️ Back", callback_data: "main_menu" }]
+    [{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "main_menu" }]
   ];
 }
 
@@ -1454,22 +1454,19 @@ function mainMenuKeyboard() {
   const btn = key => stripTgEmoji(getUI(key));
   return {
     inline_keyboard: [
-      // Row 1 — full-width main CTA (blue feel)
-      [{ text: btn("welcome.btn_new_giveaway"), callback_data: "new_giveaway" }],
-      // Row 2 — two side-by-side (green | red feel)
       [
-        { text: btn("welcome.btn_my_giveaways"), callback_data: "my_giveaways" },
-        { text: btn("welcome.btn_add_channel"),  callback_data: "add_channel" }
+        { text: btn("welcome.btn_new_giveaway"), callback_data: "new_giveaway" },
+        { text: btn("welcome.btn_my_giveaways"), callback_data: "my_giveaways" }
       ],
-      // Row 3 — full-width (green feel)
-      [{ text: btn("welcome.btn_add_group"),    callback_data: "add_group" }],
-      // Row 4 — full-width (red feel)
-      [{ text: btn("welcome.btn_vip"),          callback_data: "vip_membership" }],
-      // Row 5 — two side-by-side
       [
-        { text: btn("welcome.btn_create_post"), callback_data: "create_post" },
-        { text: btn("welcome.btn_guide"),       callback_data: "how_to_use" }
-      ]
+        { text: btn("welcome.btn_add_channel"), callback_data: "add_channel" },
+        { text: btn("welcome.btn_add_group"),   callback_data: "add_group" }
+      ],
+      [
+        { text: btn("welcome.btn_vip"),         callback_data: "vip_membership" },
+        { text: btn("welcome.btn_create_post"), callback_data: "create_post" }
+      ],
+      [{ text: btn("welcome.btn_guide"),        callback_data: "how_to_use" }]
     ]
   };
 }
@@ -1490,16 +1487,16 @@ function cpComposePrompt(title, username, chId) {
 }
 
 function cancelKeyboard() {
-  return { inline_keyboard: [[{ text: "✖️ ᴄᴀɴᴄᴇʟ", callback_data: "cancel_flow" }]] };
+  return { inline_keyboard: [[{ text: "`ᴄᴀɴᴄᴇʟ, ✖️", callback_data: "cancel_flow" }]] };
 }
 
 function backKeyboard(cb = "main_menu") {
-  return { inline_keyboard: [[{ text: "◀️ ʙᴀᴄᴋ", callback_data: cb }]] };
+  return { inline_keyboard: [[{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: cb }]] };
 }
 
 function mgmtKeyboard(gId, g, showVipControls = false) {
   const rows = [
-    [{ text: "🏆 ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ", callback_data: `lb:${gId}` }, { text: "📊 ᴛᴏᴘ ᴘᴀʀᴛɪᴄɪᴘᴀɴᴛꜱ", callback_data: `topvoters:${gId}` }],
+    [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }, { text: "`ᴛᴏᴘ ᴘᴀʀᴛɪᴄɪᴘᴀɴᴛꜱ, 📊", callback_data: `topvoters:${gId}` }],
     [{ text: `${g.paidVotesActive ? "⏹ ꜱᴛᴏᴘ ᴘᴀɪᴅ ᴠᴏᴛᴇꜱ" : "▶️ ꜱᴛᴀʀᴛ ᴘᴀɪᴅ ᴠᴏᴛᴇꜱ"}`, callback_data: `toggle_paid:${gId}` }],
     [{ text: `${g.participationOpen ? "⏹ ꜱᴛᴏᴘ ᴘᴀʀᴛɪᴄɪᴘᴀᴛɪᴏɴ" : "▶️ ᴏᴘᴇɴ ᴘᴀʀᴛɪᴄɪᴘᴀᴛɪᴏɴ"}`, callback_data: `toggle_part:${gId}` }],
   ];
@@ -1511,12 +1508,12 @@ function mgmtKeyboard(gId, g, showVipControls = false) {
       callback_data: `set_gj:${gId}`
     }]);
     if (g.extraForceJoin) {
-      rows.push([{ text: "✖️ ʀᴇᴍᴏᴠᴇ ꜰᴏʀᴄᴇ ᴊᴏɪɴ", callback_data: `clear_gj:${gId}` }]);
+      rows.push([{ text: "`ʀᴇᴍᴏᴠᴇ ꜰᴏʀᴄᴇ ᴊᴏɪɴ, ✖️", callback_data: `clear_gj:${gId}` }]);
     }
   }
-  rows.push([{ text: "🏁 ᴇɴᴅ ɢɪᴠᴇᴀᴡᴀʏ", callback_data: `end_giveaway:${gId}` }]);
-  rows.push([{ text: "🗑️ ᴄʟᴇᴀʀ ᴄʜᴀɴɴᴇʟ ᴘᴏꜱᴛꜱ", callback_data: `clear_posts:${gId}` }]);
-  rows.push([{ text: "◀️ ʙᴀᴄᴋ", callback_data: "my_giveaways" }]);
+  rows.push([{ text: "`ᴇɴᴅ ɢɪᴠᴇᴀᴡᴀʏ, 🏁", callback_data: `end_giveaway:${gId}` }]);
+  rows.push([{ text: "`ᴄʟᴇᴀʀ ᴘᴏꜱᴛꜱ, 🗑️", callback_data: `clear_posts:${gId}` }]);
+  rows.push([{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "my_giveaways" }]);
   return { inline_keyboard: rows };
 }
 
@@ -1857,8 +1854,8 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
           reply_markup: {
             inline_keyboard: [
               [{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${g.id}` }],
-              [{ text: "🏆 Leaderboard", callback_data: `lb:${g.id}` }],
-              [{ text: "🔄 Get Links Again", callback_data: `my_links:${g.id}` }]
+              [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${g.id}` }],
+              [{ text: "`ɢᴇᴛ ʟɪɴᴋꜱ, 🔄", callback_data: `my_links:${g.id}` }]
             ]
           }
         }
@@ -1874,7 +1871,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "🔥 Confirm & Participate", callback_data: `confirm_join:${g.id}` },
+              { text: "`ᴄᴏɴꜰɪʀᴍ & ᴊᴏɪɴ, 🔥", callback_data: `confirm_join:${g.id}` },
               { text: "❌ Cancel", callback_data: "main_menu" }
             ]
           ]
@@ -2302,7 +2299,7 @@ bot.on("callback_query", async (query) => {
           { text: "🤝 Joined (Active)", callback_data: "mglist:joined_active" },
           { text: "📂 Joined (Past)", callback_data: "mglist:joined_past" }
         ],
-        [{ text: "◀️ Back", callback_data: "main_menu" }]
+        [{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "main_menu" }]
       ]
     };
     const caption =
@@ -2344,7 +2341,7 @@ bot.on("callback_query", async (query) => {
       text: `${g.active ? "✅" : "🚫"} ${g.title}  ·  ${g.participants.size} 👥  ·  ${[...g.participants.values()].reduce((s, p) => s + p.votes, 0)} 🗳️`,
       callback_data: `mgmt:${g.id}`
     }]));
-    btns.push([{ text: "◀️ Back", callback_data: "my_giveaways" }]);
+    btns.push([{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "my_giveaways" }]);
     await animAction(chatId,
       `${icon} <b>${label}</b>\n\n` +
       `◆ ─────────────────── ◆\n` +
@@ -2471,7 +2468,7 @@ bot.on("callback_query", async (query) => {
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
     await bot.editMessageText(text, {
       chat_id: chatId, message_id: msgId, parse_mode: "HTML",
-      reply_markup: { inline_keyboard: [[{ text: "◀️ Back", callback_data: `mgmt:${gId}` }]] }
+      reply_markup: { inline_keyboard: [[{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: `mgmt:${gId}` }]] }
     }).catch(() => {});
     return;
   }
@@ -2549,8 +2546,8 @@ bot.on("callback_query", async (query) => {
         chat_id: chatId, message_id: msgId, parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🏆 Full Leaderboard", callback_data: `lb:${gId}` }],
-            [{ text: "◀️ My Giveaways", callback_data: "my_giveaways" }]
+            [{ text: "`ꜰᴜʟʟ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }],
+            [{ text: "`ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ, ◀️", callback_data: "my_giveaways" }]
           ]
         }
       }
@@ -2639,11 +2636,11 @@ bot.on("callback_query", async (query) => {
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { chat_id: chatId, message_id: query.message.message_id, parse_mode: "HTML",
-        reply_markup: { inline_keyboard: [[{ text: "◀️ My Giveaways", callback_data: `my_giveaways` }]] } }
+        reply_markup: { inline_keyboard: [[{ text: "`ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ, ◀️", callback_data: `my_giveaways` }]] } }
     ).catch(async () => {
       await bot.sendMessage(chatId,
         `✅ <b>Channel cleared!</b>\n<blockquote>◈ ${cleared} messages delete kiye\n◈ ${failed} failed/already deleted</blockquote>`,
-        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "◀️ My Giveaways", callback_data: `my_giveaways` }]] } }
+        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "`ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ, ◀️", callback_data: `my_giveaways` }]] } }
       );
     });
     return;
@@ -2682,8 +2679,8 @@ bot.on("callback_query", async (query) => {
           chat_id: chatId, message_id: msgId, parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }],
-              [{ text: "🔄 Get Links Again", callback_data: `my_links:${gId}` }]
+              [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }],
+              [{ text: "`ɢᴇᴛ ʟɪɴᴋꜱ, 🔄", callback_data: `my_links:${gId}` }]
             ]
           }
         }
@@ -2746,8 +2743,8 @@ bot.on("callback_query", async (query) => {
     if (chOpenUrl) joinKb.push([{ text: "📢 Open Channel", url: chOpenUrl }]);
     joinKb.push([{ text: "🗳️ Copy Vote Link", switch_inline_query: voteLink }]);
     joinKb.push([{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}` }]);
-    joinKb.push([{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }]);
-    joinKb.push([{ text: "🔄 Get Links Again", callback_data: `my_links:${gId}` }]);
+    joinKb.push([{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }]);
+    joinKb.push([{ text: "`ɢᴇᴛ ʟɪɴᴋꜱ, 🔄", callback_data: `my_links:${gId}` }]);
 
     await animSuccess(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
@@ -3084,7 +3081,7 @@ bot.on("callback_query", async (query) => {
       btns.push([{ text: "🇮🇳 Pay via INR/UPI (QR)", callback_data: `pay_inr:${gId}` }]);
     if (g.paymentMode === "stars" || g.paymentMode === "both")
       btns.push([{ text: "⭐ Pay via Telegram Stars", callback_data: `pay_stars:${gId}` }]);
-    btns.push([{ text: "◀️ Back", callback_data: `my_links:${gId}` }]);
+    btns.push([{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: `my_links:${gId}` }]);
 
     await animLoading(chatId, msgId);
     await bot.editMessageText(
@@ -3182,7 +3179,7 @@ bot.on("callback_query", async (query) => {
             [{ text: "🗳️ Copy Vote Link", switch_inline_query: voteLink }],
             [{ text: "📋 Copy Join Link", switch_inline_query: joinLink }],
             [{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}` }],
-            [{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }]
+            [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }]
           ]
         }
       }
@@ -3261,7 +3258,7 @@ bot.on("callback_query", async (query) => {
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
 
     const kb = m
-      ? { inline_keyboard: [[{ text: "◀️ Back", callback_data: "main_menu" }]] }
+      ? { inline_keyboard: [[{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "main_menu" }]] }
       : { inline_keyboard: buildPlanButtons() };
 
     await animFresh(chatId, msgId, featuresText, { reply_markup: kb });
@@ -3651,7 +3648,7 @@ bot.on("callback_query", async (query) => {
               { text: "🤖 Automatic End", callback_data: "end_auto" },
               { text: "✋ Manual End", callback_data: "end_manual" }
             ],
-            [{ text: "◀️ Back", callback_data: "cancel_flow" }]
+            [{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "cancel_flow" }]
           ]
         }
       }
@@ -3727,7 +3724,7 @@ bot.on("callback_query", async (query) => {
               [{ text: "🇮🇳 INR via UPI/QR", callback_data: "cur_inr" }],
               [{ text: "⭐ Telegram Stars", callback_data: "cur_stars" }],
               [{ text: "🔄 Both (INR + Stars)", callback_data: "cur_both" }],
-              [{ text: "◀️ Back", callback_data: "cancel_flow" }]
+              [{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "cancel_flow" }]
             ]
           }
         }
@@ -4104,7 +4101,7 @@ async function askPaidVotes(chatId) {
           [{ text: "✅ Enable Paid Votes", callback_data: "paid_yes" }],
           [
             { text: "❌ Free Voting Only", callback_data: "paid_no" },
-            { text: "◀️ Back", callback_data: "cancel_flow" }
+            { text: "`ʙᴀᴄᴋ, ◀️", callback_data: "cancel_flow" }
           ]
         ]
       }
@@ -4433,7 +4430,7 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
       reply_markup: {
         inline_keyboard: [
           [{ text: "⚙️ Manage Giveaway", callback_data: `mgmt:${gId}` }],
-          [{ text: "🏆 Leaderboard", callback_data: `lb:${gId}` }],
+          [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }],
           [{ text: "📋 Copy Link", switch_inline_query: link }]
         ]
       }
@@ -5031,7 +5028,7 @@ bot.on("message", async (msg) => {
     const myChans = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
     const btns = myChans.map(([id, c]) => ([{ text: `📢 ${c.title}`, callback_data: `sel_ch:${id}` }]));
     btns.push([{ text: "✏️ Enter Manually", callback_data: "ch_manual" }]);
-    btns.push([{ text: "◀️ Back", callback_data: "cancel_flow" }]);
+    btns.push([{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "cancel_flow" }]);
 
     await bot.sendMessage(chatId,
       `<b>📢 Select Target Channel</b>\n\nChoose the channel where the giveaway will be posted.\n<i>Only channels where I am an Admin are shown below.</i>\n\n<b>Found: ${myChans.length} Channel${myChans.length !== 1 ? "s" : ""}</b>`,
@@ -5067,7 +5064,7 @@ bot.on("message", async (msg) => {
               { text: "🤖 Automatic End", callback_data: "end_auto" },
               { text: "✋ Manual End", callback_data: "end_manual" }
             ],
-            [{ text: "◀️ Back", callback_data: "cancel_flow" }]
+            [{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "cancel_flow" }]
           ]
         }
       }
@@ -5537,7 +5534,7 @@ bot.onText(/\/membership/, async (msg) => {
     `──────────◈◈◈──────────\n` +
     `Upgrade to unlock 🤌 <b>full control &amp; maximum reach</b> 👁️`;
   const kb = m
-    ? { inline_keyboard: [[{ text: "◀️ Back", callback_data: "main_menu" }]] }
+    ? { inline_keyboard: [[{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "main_menu" }]] }
     : { inline_keyboard: buildPlanButtons() };
   await bot.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: kb });
 });
@@ -10476,7 +10473,7 @@ async function checkAndSendReminders() {
             reply_markup: {
               inline_keyboard: [[
                 { text: "🗳️ Vote Now!", url: link },
-                { text: "🏆 Leaderboard", callback_data: `lb:${gId}` }
+                { text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }
               ]]
             }
           });
