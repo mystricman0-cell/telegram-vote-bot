@@ -6145,27 +6145,68 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
     // FloodWait-aware send loop (NOBITA_MUSIC style)
     while (!succeeded && retries < 3) {
       try {
+        // Premium emoji decoration — always injected
+        const premiumDeco = premiumEmojis.length > 0
+          ? premiumEmojis.slice(0, 3).map(e => `<tg-emoji emoji-id="${e.id}">⭐</tg-emoji>`).join("") + " "
+          : "";
+        const bcHeader =
+          `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+          `${premiumDeco}  📢  <b>DRS BROADCAST</b>  ${premiumDeco}\n` +
+          `✦━━━━━━━━━━━━━━━━━━━━━✦`;
+        const bcFooter = `✦ ─── <b>@${BOT_USERNAME || "DRS_GiveawayBot"}</b> ─── ✦`;
+
         if (composeMsg) {
-          // Premium stickers, animated stickers, all types preserved via copyMessage
-          sentMsg = await bot.copyMessage(id, composeMsg.chat.id, composeMsg.message_id, {
-            disable_notification: silent
-          });
+          if (composeMsg.text) {
+            // Text compose — rebuild with premium emoji header preserving admin's custom emoji entities
+            const bodyHtml = buildHtmlValue(composeMsg.text, composeMsg.entities || [], 0);
+            sentMsg = await bot.sendMessage(id,
+              `${bcHeader}\n\n<blockquote>${bodyHtml}</blockquote>\n\n${bcFooter}`,
+              { parse_mode: "HTML", disable_notification: silent }
+            );
+          } else if (composeMsg.photo) {
+            // Photo compose — send with premium emoji injected into caption
+            const rawCap = composeMsg.caption || "";
+            const capHtml = rawCap
+              ? buildHtmlValue(rawCap, composeMsg.caption_entities || [], 0)
+              : "";
+            const fullCap = `${bcHeader}\n\n${capHtml ? `<blockquote>${capHtml}</blockquote>\n\n` : ""}${bcFooter}`;
+            const photoId = composeMsg.photo[composeMsg.photo.length - 1].file_id;
+            sentMsg = await bot.sendPhoto(id, photoId, {
+              caption: fullCap, parse_mode: "HTML", disable_notification: silent,
+              ...(composeMsg.has_spoiler ? { has_spoiler: true } : {})
+            });
+          } else {
+            // Video / sticker / document / voice / audio — copyMessage preserves all types
+            sentMsg = await bot.copyMessage(id, composeMsg.chat.id, composeMsg.message_id, {
+              disable_notification: silent
+            });
+          }
         } else if (replyTo) {
-          // Reply-to forward mode
-          sentMsg = await bot.copyMessage(id, adminMsg.chat.id, replyTo.message_id, {
-            disable_notification: silent
-          });
+          if (replyTo.text) {
+            const bodyHtml = buildHtmlValue(replyTo.text, replyTo.entities || [], 0);
+            sentMsg = await bot.sendMessage(id,
+              `${bcHeader}\n\n<blockquote>${bodyHtml}</blockquote>\n\n${bcFooter}`,
+              { parse_mode: "HTML", disable_notification: silent }
+            );
+          } else if (replyTo.photo) {
+            const rawCap = replyTo.caption || "";
+            const capHtml = rawCap ? buildHtmlValue(rawCap, replyTo.caption_entities || [], 0) : "";
+            const fullCap = `${bcHeader}\n\n${capHtml ? `<blockquote>${capHtml}</blockquote>\n\n` : ""}${bcFooter}`;
+            const photoId = replyTo.photo[replyTo.photo.length - 1].file_id;
+            sentMsg = await bot.sendPhoto(id, photoId, {
+              caption: fullCap, parse_mode: "HTML", disable_notification: silent
+            });
+          } else {
+            sentMsg = await bot.copyMessage(id, adminMsg.chat.id, replyTo.message_id, {
+              disable_notification: silent
+            });
+          }
         } else {
           // Image+Text mode — auto-inject premium emojis
-          const premiumDeco = premiumEmojis.length > 0
-            ? premiumEmojis.slice(0, 3).map(e => `<tg-emoji emoji-id="${e.id}">⭐</tg-emoji>`).join("") + " "
-            : "";
           const caption =
-            `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-            `${premiumDeco}  📢  <b>DRS BROADCAST</b>  ${premiumDeco}\n` +
-            `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+            `${bcHeader}\n\n` +
             `<blockquote>${h(textContent)}</blockquote>\n\n` +
-            `✦ ─── <b>@${BOT_USERNAME || "DRS_GiveawayBot"}</b> ─── ✦`;
+            `${bcFooter}`;
           sentMsg = await bot.sendPhoto(id, GIVEAWAY_IMAGE_URL, {
             caption, parse_mode: "HTML", disable_notification: silent
           });
