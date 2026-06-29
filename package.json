@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "mongoose": "^8.24.0",
-    "node-telegram-bot-api": "^1.1.0"
+    "node-telegram-bot-api": "^1.1.0",
+    "telegram": "^2.26.22"
   },
   "engines": {
     "node": ">=18.0.0"

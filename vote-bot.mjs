@@ -1455,18 +1455,18 @@ function mainMenuKeyboard() {
   return {
     inline_keyboard: [
       [
-        { text: btn("welcome.btn_new_giveaway"), callback_data: "new_giveaway" },
-        { text: btn("welcome.btn_my_giveaways"), callback_data: "my_giveaways" }
+        { text: btn("welcome.btn_new_giveaway"), callback_data: "new_giveaway", style: "primary" },
+        { text: btn("welcome.btn_my_giveaways"), callback_data: "my_giveaways", style: "success" }
       ],
       [
-        { text: btn("welcome.btn_add_channel"), callback_data: "add_channel" },
-        { text: btn("welcome.btn_add_group"),   callback_data: "add_group" }
+        { text: btn("welcome.btn_add_channel"), callback_data: "add_channel", style: "success" },
+        { text: btn("welcome.btn_add_group"),   callback_data: "add_group",   style: "danger"  }
       ],
       [
-        { text: btn("welcome.btn_vip"),         callback_data: "vip_membership" },
-        { text: btn("welcome.btn_create_post"), callback_data: "create_post" }
+        { text: btn("welcome.btn_vip"),         callback_data: "vip_membership", style: "danger"  },
+        { text: btn("welcome.btn_create_post"), callback_data: "create_post",    style: "primary" }
       ],
-      [{ text: btn("welcome.btn_guide"),        callback_data: "how_to_use" }]
+      [{ text: btn("welcome.btn_guide"),        callback_data: "how_to_use",     style: "success" }]
     ]
   };
 }
@@ -1487,33 +1487,37 @@ function cpComposePrompt(title, username, chId) {
 }
 
 function cancelKeyboard() {
-  return { inline_keyboard: [[{ text: "`ᴄᴀɴᴄᴇʟ, ✖️", callback_data: "cancel_flow" }]] };
+  return { inline_keyboard: [[{ text: "`ᴄᴀɴᴄᴇʟ, ✖️", callback_data: "cancel_flow", style: "danger" }]] };
 }
 
 function backKeyboard(cb = "main_menu") {
-  return { inline_keyboard: [[{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: cb }]] };
+  return { inline_keyboard: [[{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: cb, style: "primary" }]] };
 }
 
 function mgmtKeyboard(gId, g, showVipControls = false) {
   const rows = [
-    [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }, { text: "`ᴛᴏᴘ ᴘᴀʀᴛɪᴄɪᴘᴀɴᴛꜱ, 📊", callback_data: `topvoters:${gId}` }],
-    [{ text: `${g.paidVotesActive ? "⏹ ꜱᴛᴏᴘ ᴘᴀɪᴅ ᴠᴏᴛᴇꜱ" : "▶️ ꜱᴛᴀʀᴛ ᴘᴀɪᴅ ᴠᴏᴛᴇꜱ"}`, callback_data: `toggle_paid:${gId}` }],
-    [{ text: `${g.participationOpen ? "⏹ ꜱᴛᴏᴘ ᴘᴀʀᴛɪᴄɪᴘᴀᴛɪᴏɴ" : "▶️ ᴏᴘᴇɴ ᴘᴀʀᴛɪᴄɪᴘᴀᴛɪᴏɴ"}`, callback_data: `toggle_part:${gId}` }],
+    [
+      { text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}`, style: "primary" },
+      { text: "`ᴛᴏᴘ ᴘᴀʀᴛɪᴄɪᴘᴀɴᴛꜱ, 📊", callback_data: `topvoters:${gId}`, style: "success" }
+    ],
+    [{ text: `${g.paidVotesActive ? "⏹ ꜱᴛᴏᴘ ᴘᴀɪᴅ ᴠᴏᴛᴇꜱ" : "▶️ ꜱᴛᴀʀᴛ ᴘᴀɪᴅ ᴠᴏᴛᴇꜱ"}`, callback_data: `toggle_paid:${gId}`, style: g.paidVotesActive ? "danger" : "success" }],
+    [{ text: `${g.participationOpen ? "⏹ ꜱᴛᴏᴘ ᴘᴀʀᴛɪᴄɪᴘᴀᴛɪᴏɴ" : "▶️ ᴏᴘᴇɴ ᴘᴀʀᴛɪᴄɪᴘᴀᴛɪᴏɴ"}`, callback_data: `toggle_part:${gId}`, style: g.participationOpen ? "danger" : "success" }],
   ];
   if (showVipControls) {
     rows.push([{
       text: g.extraForceJoin
         ? `🔗 ꜰᴏʀᴄᴇ ᴊᴏɪɴ: ${g.extraForceJoin.channelUsername ? "@" + g.extraForceJoin.channelUsername : "ꜱᴇᴛ ✅"} — ᴄʜᴀɴɢᴇ`
         : "🔗 ꜱᴇᴛ ꜰᴏʀᴄᴇ ᴊᴏɪɴ ᴄʜᴀɴɴᴇʟ (ᴠɪᴘ)",
-      callback_data: `set_gj:${gId}`
+      callback_data: `set_gj:${gId}`,
+      style: "primary"
     }]);
     if (g.extraForceJoin) {
-      rows.push([{ text: "`ʀᴇᴍᴏᴠᴇ ꜰᴏʀᴄᴇ ᴊᴏɪɴ, ✖️", callback_data: `clear_gj:${gId}` }]);
+      rows.push([{ text: "`ʀᴇᴍᴏᴠᴇ ꜰᴏʀᴄᴇ ᴊᴏɪɴ, ✖️", callback_data: `clear_gj:${gId}`, style: "danger" }]);
     }
   }
-  rows.push([{ text: "`ᴇɴᴅ ɢɪᴠᴇᴀᴡᴀʏ, 🏁", callback_data: `end_giveaway:${gId}` }]);
-  rows.push([{ text: "`ᴄʟᴇᴀʀ ᴘᴏꜱᴛꜱ, 🗑️", callback_data: `clear_posts:${gId}` }]);
-  rows.push([{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "my_giveaways" }]);
+  rows.push([{ text: "`ᴇɴᴅ ɢɪᴠᴇᴀᴡᴀʏ, 🏁", callback_data: `end_giveaway:${gId}`, style: "danger" }]);
+  rows.push([{ text: "`ᴄʟᴇᴀʀ ᴘᴏꜱᴛꜱ, 🗑️", callback_data: `clear_posts:${gId}`, style: "danger" }]);
+  rows.push([{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "my_giveaways", style: "primary" }]);
   return { inline_keyboard: rows };
 }
 
@@ -1854,8 +1858,8 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
           reply_markup: {
             inline_keyboard: [
               [{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${g.id}` }],
-              [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${g.id}` }],
-              [{ text: "`ɢᴇᴛ ʟɪɴᴋꜱ, 🔄", callback_data: `my_links:${g.id}` }]
+              [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${g.id}`, style: "primary" }],
+              [{ text: "`ɢᴇᴛ ʟɪɴᴋꜱ, 🔄", style: "primary", callback_data: `my_links:${g.id}` }]
             ]
           }
         }
@@ -1871,7 +1875,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "`ᴄᴏɴꜰɪʀᴍ & ᴊᴏɪɴ, 🔥", callback_data: `confirm_join:${g.id}` },
+              { text: "`ᴄᴏɴꜰɪʀᴍ & ᴊᴏɪɴ, 🔥", style: "success", callback_data: `confirm_join:${g.id}` },
               { text: "❌ Cancel", callback_data: "main_menu" }
             ]
           ]
@@ -2253,7 +2257,7 @@ bot.on("callback_query", async (query) => {
             parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [
-                [{ text: "👑 Get VIP Membership", callback_data: "vip_membership" }],
+                [{ text: "👑 Get VIP Membership", callback_data: "vip_membership", style: "danger" }],
                 [{ text: "◀️ Back to Menu", callback_data: "main_menu" }]
               ]
             }
@@ -2546,8 +2550,8 @@ bot.on("callback_query", async (query) => {
         chat_id: chatId, message_id: msgId, parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "`ꜰᴜʟʟ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }],
-            [{ text: "`ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ, ◀️", callback_data: "my_giveaways" }]
+            [{ text: "`ꜰᴜʟʟ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", style: "primary", callback_data: `lb:${gId}` }],
+            [{ text: "`ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ, ◀️", style: "primary", callback_data: "my_giveaways" }]
           ]
         }
       }
@@ -2636,11 +2640,11 @@ bot.on("callback_query", async (query) => {
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { chat_id: chatId, message_id: query.message.message_id, parse_mode: "HTML",
-        reply_markup: { inline_keyboard: [[{ text: "`ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ, ◀️", callback_data: `my_giveaways` }]] } }
+        reply_markup: { inline_keyboard: [[{ text: "`ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ, ◀️", style: "primary", callback_data: `my_giveaways` }]] } }
     ).catch(async () => {
       await bot.sendMessage(chatId,
         `✅ <b>Channel cleared!</b>\n<blockquote>◈ ${cleared} messages delete kiye\n◈ ${failed} failed/already deleted</blockquote>`,
-        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "`ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ, ◀️", callback_data: `my_giveaways` }]] } }
+        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "`ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ, ◀️", style: "primary", callback_data: `my_giveaways` }]] } }
       );
     });
     return;
@@ -2679,8 +2683,8 @@ bot.on("callback_query", async (query) => {
           chat_id: chatId, message_id: msgId, parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }],
-              [{ text: "`ɢᴇᴛ ʟɪɴᴋꜱ, 🔄", callback_data: `my_links:${gId}` }]
+              [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}`, style: "primary" }],
+              [{ text: "`ɢᴇᴛ ʟɪɴᴋꜱ, 🔄", style: "primary", callback_data: `my_links:${gId}` }]
             ]
           }
         }
@@ -2743,8 +2747,8 @@ bot.on("callback_query", async (query) => {
     if (chOpenUrl) joinKb.push([{ text: "📢 Open Channel", url: chOpenUrl }]);
     joinKb.push([{ text: "🗳️ Copy Vote Link", switch_inline_query: voteLink }]);
     joinKb.push([{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}` }]);
-    joinKb.push([{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }]);
-    joinKb.push([{ text: "`ɢᴇᴛ ʟɪɴᴋꜱ, 🔄", callback_data: `my_links:${gId}` }]);
+    joinKb.push([{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}`, style: "primary" }]);
+    joinKb.push([{ text: "`ɢᴇᴛ ʟɪɴᴋꜱ, 🔄", style: "primary", callback_data: `my_links:${gId}` }]);
 
     await animSuccess(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
@@ -3078,9 +3082,9 @@ bot.on("callback_query", async (query) => {
 
     const btns = [];
     if (g.paymentMode === "inr" || g.paymentMode === "both")
-      btns.push([{ text: "🇮🇳 Pay via INR/UPI (QR)", callback_data: `pay_inr:${gId}` }]);
+      btns.push([{ text: "🇮🇳 Pay via INR/UPI (QR)", callback_data: `pay_inr:${gId}`, style: "success" }]);
     if (g.paymentMode === "stars" || g.paymentMode === "both")
-      btns.push([{ text: "⭐ Pay via Telegram Stars", callback_data: `pay_stars:${gId}` }]);
+      btns.push([{ text: "⭐ Pay via Telegram Stars", style: "primary", callback_data: `pay_stars:${gId}` }]);
     btns.push([{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: `my_links:${gId}` }]);
 
     await animLoading(chatId, msgId);
@@ -3179,7 +3183,7 @@ bot.on("callback_query", async (query) => {
             [{ text: "🗳️ Copy Vote Link", switch_inline_query: voteLink }],
             [{ text: "📋 Copy Join Link", switch_inline_query: joinLink }],
             [{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}` }],
-            [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }]
+            [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}`, style: "primary" }]
           ]
         }
       }
@@ -4430,7 +4434,7 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
       reply_markup: {
         inline_keyboard: [
           [{ text: "⚙️ Manage Giveaway", callback_data: `mgmt:${gId}` }],
-          [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }],
+          [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}`, style: "primary" }],
           [{ text: "📋 Copy Link", switch_inline_query: link }]
         ]
       }
@@ -10473,7 +10477,7 @@ async function checkAndSendReminders() {
             reply_markup: {
               inline_keyboard: [[
                 { text: "🗳️ Vote Now!", url: link },
-                { text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}` }
+                { text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}`, style: "primary" }
               ]]
             }
           });
