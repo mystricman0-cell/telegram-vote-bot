@@ -375,10 +375,10 @@ const DEFAULT_UI_TEXTS = {
   "welcome.tip2":              "🔺 ᴛᴀᴘ 📂 ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ ʙᴜᴛᴛᴏɴ ᴛᴏ ᴠɪᴇᴡ ʏᴏᴜʀ ɢɪᴠᴇᴀᴡᴀʏꜱ ⭐️",
   "welcome.divider":           "✈️━━━━━ 𝐃𝐑𝐒 ━━━━━✈️",
   "welcome.divider_url":       "https://t.me/rchiex",
-  "welcome.powered":           "⚡️ ᴘᴏᴡᴇʀᴇᴅ : 𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ ❤️‍🔥",
+  "welcome.powered":           "⚡️ ᴘᴏᴡᴇʀᴇᴅ : 𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ 🔥",
   "welcome.powered_url":       "https://t.me/rchiex",
   "welcome.powered_name":      "𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ",
-  "welcome.support":           "❤️ ꜱᴜᴘᴘᴏʀᴛ :— 𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊 ❤️‍🔥",
+  "welcome.support":           "🔥 ꜱᴜᴘᴘᴏʀᴛ :— 𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊 🔥",
   "welcome.support_url":       "https://t.me/drssupport",
   "welcome.support_name":      "𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊",
   // ── Welcome Screen — Buttons ──
@@ -400,10 +400,10 @@ const DEFAULT_UI_TEXTS = {
   // Giveaway UI
   "giveaway.btn_participate":  "🎯 Participate",
   "giveaway.btn_vote":         "🗳️ Vote Now!",
-  "giveaway.btn_leaderboard":  "🏆 Leaderboard",
+  "giveaway.btn_leaderboard":  "🏆 ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ",
   "giveaway.btn_share":        "📤 Share",
   "giveaway.winner_header":    "🏆 <b>WINNERS ANNOUNCED!</b> 🏆",
-  "giveaway.active_header":    "🟢 <b>LIVE GIVEAWAYS</b>",
+  "giveaway.active_header":    "🔷 <b>LIVE GIVEAWAYS</b>",
   "giveaway.ended_tag":        "🏁 Ended",
   "giveaway.label_votes":      "🗳️ Votes",
   "giveaway.label_rank":       "🏅 Rank",
@@ -1128,7 +1128,7 @@ async function animCreate(chatId, finalText, opts = {}) {
   return msg;
 }
 
-// 🔴 Error/Cancel animation
+// 🚫 Error/Cancel animation
 async function animCancel(chatId, msgId, finalText, opts = {}) {
   const frames = ["⚠️", "❌ ─── ⚠️", "🚫 <b>Cancelling...</b>"];
   const delays = [100, 130];
@@ -1547,8 +1547,8 @@ async function sendWelcome(chatId, userId) {
     `${getUI("welcome.tip2")}\n\n` +
     `<a href="${getUI("welcome.divider_url")}">${getUI("welcome.divider")}</a>\n` +
     `<blockquote>` +
-    `⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="${getUI("welcome.powered_url")}">${getUI("welcome.powered_name")}</a> ❤️‍🔥\n` +
-    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="${getUI("welcome.support_url")}">${getUI("welcome.support_name")}</a> ❤️‍🔥` +
+    `⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="${getUI("welcome.powered_url")}">${getUI("welcome.powered_name")}</a> 🔥\n` +
+    `🔥 ꜱᴜᴘᴘᴏʀᴛ :— <a href="${getUI("welcome.support_url")}">${getUI("welcome.support_name")}</a> 🔥` +
     `</blockquote>`;
 
   // Send photo first with spoiler + first animation frame as caption
@@ -2338,7 +2338,7 @@ bot.on("callback_query", async (query) => {
       return;
     }
     const btns = list.map(g => ([{
-      text: `${g.active ? "🟢" : "🔴"} ${g.title}  ·  ${g.participants.size} 👥  ·  ${[...g.participants.values()].reduce((s, p) => s + p.votes, 0)} 🗳️`,
+      text: `${g.active ? "✅" : "🚫"} ${g.title}  ·  ${g.participants.size} 👥  ·  ${[...g.participants.values()].reduce((s, p) => s + p.votes, 0)} 🗳️`,
       callback_data: `mgmt:${g.id}`
     }]));
     btns.push([{ text: "◀️ Back", callback_data: "my_giveaways" }]);
@@ -2365,11 +2365,11 @@ bot.on("callback_query", async (query) => {
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `📌 <b>${h(g.title)}</b>\n\n` +
       `<blockquote>` +
-      `◈ Status        ▸  ${g.active ? "🟢 ACTIVE" : "🔴 ENDED"}\n` +
+      `◈ Status        ▸  ${g.active ? "✅ ACTIVE" : "🚫 ENDED"}\n` +
       `◈ Participants  ▸  <b>${g.participants.size}</b> 👥\n` +
       `◈ Total Votes   ▸  <b>${totalVotes}</b> 🗳️\n` +
-      `◈ Paid Votes    ▸  ${g.paidVotesActive ? "🟢 ON" : "🔴 OFF"}\n` +
-      `◈ Participation ▸  ${g.participationOpen ? "🟢 OPEN" : "🔴 CLOSED"}\n` +
+      `◈ Paid Votes    ▸  ${g.paidVotesActive ? "✅ ON" : "🚫 OFF"}\n` +
+      `◈ Participation ▸  ${g.participationOpen ? "✅ OPEN" : "🚫 CLOSED"}\n` +
       `◈ ID            ▸  <code>${gId}</code>` +
       `</blockquote>\n\n` +
       `🔗 <a href="${link}">▸ Participation Link</a>\n\n` +
@@ -2533,7 +2533,7 @@ bot.on("callback_query", async (query) => {
       `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `📌 <b>${h(g.title)}</b>\n\n` +
       `<blockquote>` +
-      `◈ Status       ▸  🔴 ENDED\n` +
+      `◈ Status       ▸  🚫 ENDED\n` +
       `◈ Participants ▸  <b>${g.participants.size}</b> 👥\n` +
       `◈ Total Votes  ▸  <b>${totalVotes}</b> 🗳️` +
       `</blockquote>\n\n` +
@@ -2671,7 +2671,7 @@ bot.on("callback_query", async (query) => {
         `<blockquote>` +
         `◈ Votes Now  ▸  <b>${existing.votes}</b>\n` +
         (chLink ? `◈ Vote Card  ▸  <a href="${chLink}">View in Channel</a>\n` : "") +
-        `◈ Status     ▸  🟢 Active` +
+        `◈ Status     ▸  ✅ Active` +
         `</blockquote>\n\n` +
         `◈ <i>Share your link to collect more votes!</i>\n` +
         `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
@@ -2754,7 +2754,7 @@ bot.on("callback_query", async (query) => {
       `<blockquote>` +
       (chLink ? `🃏 Vote Card ▸  <a href="${chLink}">View My Card</a>\n` : "") +
       `🗳️ Votes     ▸  <b>0</b> <i>(grow by sharing!)</i>\n` +
-      `⚡ Status    ▸  🟢 Active` +
+      `⚡ Status    ▸  ✅ Active` +
       `</blockquote>\n\n` +
       `━━━◈━━━━━━━━━━━━━━━━◈━━━\n` +
       `◈ <i>Share your link to collect more votes!</i>\n` +
@@ -4260,7 +4260,7 @@ function participantChannelText(participant, g) {
     `<blockquote>` +
     `📌 <b>${h(g.title)}</b>\n` +
     `🗳️ Votes   ▸  <b>${participant.votes}</b>\n` +
-    `⚡ Status  ▸  🟢 <b>Active</b>\n` +
+    `⚡ Status  ▸  ✅ <b>Active</b>\n` +
     `🔗 Link    ▸  <i>Tap Vote button below</i>` +
     `</blockquote>\n\n` +
     `✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n` +
@@ -4365,7 +4365,7 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
       `✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `🎯  <b>${h(g.title)}</b>\n\n` +
       `<blockquote>` +
-      `◈ Status    ▸  🟢 <b>ACTIVE</b>\n` +
+      `◈ Status    ▸  ✅ <b>ACTIVE</b>\n` +
       `◈ Voting    ▸  ${g.paidVotesActive ? "🆓 Free  +  💰 Paid" : "🆓 Free Only"}\n` +
       `◈ Ends At   ▸  <b>${h(endStr)}</b>\n` +
       `◈ Host      ▸  <b>@${BOT_USERNAME}</b>` +
@@ -4419,7 +4419,7 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
     `<blockquote>` +
     `📌 Title   ▸  <b>${h(g.title)}</b>\n` +
     `🆔 ID      ▸  <code>${gId}</code>\n` +
-    `⚡ Status  ▸  🟢 ACTIVE\n` +
+    `⚡ Status  ▸  ✅ ACTIVE\n` +
     `💰 Paid    ▸  ${g.paidVotesActive ? "◈ Enabled" : "◆ Disabled"}\n` +
     (g.endTime ? `⏳ Ends    ▸  ${g.endTime.toLocaleString("en-IN")}` : `⏳ Ends    ▸  Manual`) +
     `</blockquote>\n\n` +
@@ -4708,7 +4708,7 @@ bot.on("message", async (msg) => {
       `<blockquote>` +
       `◈ Channel  ▸  <b>${h(chTitle)}</b>\n` +
       `◈ Type     ▸  ${msgType}\n` +
-      `◈ Status   ▸  ${sent ? "🟢 Published" : "🔴 Failed (bot may lack post permission)"}` +
+      `◈ Status   ▸  ${sent ? "✅ Published" : "🚫 Failed (bot may lack post permission)"}` +
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "◀️ Main Menu", callback_data: "main_menu" }]] } }
@@ -5661,7 +5661,7 @@ bot.onText(/\/topvoters/, async (msg) => {
   }
 
   const buttons = userGiveaways.map(([gId, g]) => [{
-    text: `${g.active ? "🟢" : "🔴"} ${g.title.slice(0, 28)}  ·  ${g.participants.size} 👥`,
+    text: `${g.active ? "✅" : "🚫"} ${g.title.slice(0, 28)}  ·  ${g.participants.size} 👥`,
     callback_data: `topvoters:${gId}`
   }]);
 
@@ -5733,8 +5733,8 @@ bot.onText(/\/help/, async (msg) => {
     `▸ ᴜɴʟɪᴍɪᴛᴇᴅ ɢɪᴠᴇᴀᴡᴀʏꜱ` +
     `</blockquote>\n\n` +
     `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
-    `<blockquote>⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/rchiex">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> ❤️‍🔥\n` +
-    `❤️ ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> ❤️‍🔥</blockquote>`,
+    `<blockquote>⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/rchiex">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> 🔥\n` +
+    `🔥 ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> 🔥</blockquote>`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
   );
 });
@@ -5757,7 +5757,7 @@ bot.onText(/\/leaderboard/, async (msg) => {
     );
   }
   const buttons = active.map(([gId, g]) => [{
-    text: `🟢 ${g.title.slice(0, 28)} · ${g.participants.size} 👥`,
+    text: `✅ ${g.title.slice(0, 28)} · ${g.participants.size} 👥`,
     callback_data: `lb:${gId}`
   }]);
   await bot.sendMessage(chatId,
@@ -6264,7 +6264,7 @@ bot.onText(/\/allgiveaways(?:\s+(\d+))?/, async (msg, match) => {
     let text = `<b>📋 All Giveaways (${total})</b> — Page ${pg}/${totalPages}\n\n`;
     for (const [id, g] of slice) {
       const votes = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
-      text += `${g.active ? "🟢" : "🔴"} <b>${h(g.title)}</b>\n   ID: <code>${id}</code> · ${g.participants.size} 👥 · ${votes} 🗳️\n`;
+      text += `${g.active ? "✅" : "🚫"} <b>${h(g.title)}</b>\n   ID: <code>${id}</code> · ${g.participants.size} 👥 · ${votes} 🗳️\n`;
     }
     if (pg < totalPages) text += `\nNext page: /allgiveaways ${pg + 1}`;
     await bot.sendMessage(msg.chat.id, text, { parse_mode: "HTML" });
@@ -7436,7 +7436,7 @@ bot.onText(/\/giveawayreport\s+(\S+)/, async (msg, match) => {
   let lines = [];
   lines.push(`📊 GIVEAWAY REPORT — ${g.title}`);
   lines.push(`ID: ${gId}`);
-  lines.push(`Status: ${g.active ? "🟢 Active" : "🔴 Ended"}`);
+  lines.push(`Status: ${g.active ? "✅ Active" : "🚫 Ended"}`);
   lines.push(`Winners: ${g.winnersCount}`);
   lines.push(`Total Participants: ${participants.length}`);
   lines.push(`Total Votes Cast: ${totalVotes}`);
@@ -7975,7 +7975,7 @@ bot.onText(/\/winners(?:\s+(\S+))?/, async (msg, match) => {
       }).join("\n")
     : `<i>No participants yet</i>`;
 
-  const status = g.active ? `🟢 Active` : `🔴 Ended`;
+  const status = g.active ? `✅ Active` : `🚫 Ended`;
   const endedAt = !g.active
     ? new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" })
     : `Still running`;
@@ -8027,7 +8027,7 @@ bot.onText(/\/glink(?:\s+(\S+))?/, async (msg, match) => {
     `🆔 <code>${resolvedId}</code>\n\n` +
     `<blockquote>` +
     `👥 Participants ▸  <b>${g.participants.size}</b>\n` +
-    `🟢 Status       ▸  ${g.active ? "Active" : "Ended"}` +
+    `✅ Status       ▸  ${g.active ? "Active" : "Ended"}` +
     `</blockquote>\n\n` +
     `🔗 <b>Link:</b>\n${link}\n\n` +
     `<i>Is link ko share karo — log seedha participate kar sakte hain!</i>`,
@@ -8052,7 +8052,7 @@ bot.onText(/\/active/, async (msg) => {
     const votes = [...g.participants.values()].reduce((s, p) => s + p.votes, 0);
     const link = `https://t.me/${BOT_USERNAME}?start=${gId}`;
     return (
-      `🟢 <b>${h(g.title)}</b>\n` +
+      `✅ <b>${h(g.title)}</b>\n` +
       `   🆔 <code>${gId}</code>  ·  👥 ${g.participants.size}  ·  🗳️ ${votes}\n` +
       `   ⏳ ${timeLeft}  ·  <a href="${link}">Join</a>`
     );
@@ -8060,7 +8060,7 @@ bot.onText(/\/active/, async (msg) => {
 
   await bot.sendMessage(chatId,
     `✦━━━━━━━━━━━━━━━━━━━━━━✦\n` +
-    `  🟢  <b>ACTIVE GIVEAWAYS (${running.length})</b>\n` +
+    `  ✅  <b>ACTIVE GIVEAWAYS (${running.length})</b>\n` +
     `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
     `${lines}`,
     { parse_mode: "HTML", disable_web_page_preview: true,
@@ -9364,8 +9364,8 @@ bot.onText(/\/health/, async (msg) => {
     `🎁 Giveaways   » <b>${activeG} active / ${totalG} total</b>\n` +
     `👥 Users       » <b>${botUsers.size}</b>\n` +
     `👑 VIP         » <b>${vipUsers.size}</b>\n` +
-    `🔧 Maintenance » <b>${maintenanceMode ? "🔴 ON" : "🟢 OFF"}</b>\n` +
-    `🔒 EmergencyLock» <b>${emergencyLocked ? "🔴 ON" : "🟢 OFF"}</b>\n` +
+    `🔧 Maintenance » <b>${maintenanceMode ? "🚫 ON" : "✅ OFF"}</b>\n` +
+    `🔒 EmergencyLock» <b>${emergencyLocked ? "🚫 ON" : "✅ OFF"}</b>\n` +
     `🛡️ Security    » <b>${securityMode.toUpperCase()}</b>\n` +
     `🧠 Memory      » <b>${memMB} MB / ${totalMB} MB</b>\n` +
     `📋 Custom Texts» <b>${botCustomTexts.size} overrides</b>\n` +
@@ -10164,7 +10164,7 @@ async function main() {
         { command: "myid",         description: "🪪 Show your Telegram user ID" },
         { command: "createpost",   description: "📢 Create a post in your channel" },
         { command: "topvoters",    description: "🥇 Top participants ranking" },
-        { command: "active",       description: "🟢 Show all live giveaways" },
+        { command: "active",       description: "✅ Show all live giveaways" },
         { command: "winners",      description: "🏆 View winners of your giveaway" },
         { command: "glink",        description: "🔗 Get participation link" },
         { command: "support",      description: "💬 Contact Support" }
@@ -10184,7 +10184,7 @@ async function main() {
         { command: "myid",              description: "🪪 Your Telegram user ID" },
         { command: "createpost",        description: "📢 Create a channel post" },
         { command: "topvoters",         description: "🥇 Top participants ranking" },
-        { command: "active",            description: "🟢 Show all live giveaways" },
+        { command: "active",            description: "✅ Show all live giveaways" },
         { command: "winners",           description: "🏆 View winners of a giveaway" },
         { command: "glink",             description: "🔗 Get participation link" },
         { command: "support",           description: "💬 Contact Support — @drssupport" },
