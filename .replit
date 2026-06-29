@@ -32,3 +32,4 @@ args = "npm start"
 [userenv]
 
 [userenv.shared]
+GITHUB_REPO_URL = "https://github.com/mystricman0-cell/telegram-vote-bot"
