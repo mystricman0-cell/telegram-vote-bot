@@ -2713,7 +2713,8 @@ bot.on("callback_query", async (query) => {
             reply_markup: {
               inline_keyboard: [[{
                 text: `🗳️ Vote  ·  0`,
-                callback_data: `ch_vote:${gId}:${userId}`
+                callback_data: `ch_vote:${gId}:${userId}`,
+                style: "primary"
               }]]
             }
           }
@@ -2744,9 +2745,9 @@ bot.on("callback_query", async (query) => {
 
     // Build keyboard — channel open button always shows if channel is set
     const joinKb = [];
-    if (chOpenUrl) joinKb.push([{ text: "📢 Open Channel", url: chOpenUrl }]);
-    joinKb.push([{ text: "🗳️ Copy Vote Link", switch_inline_query: voteLink }]);
-    joinKb.push([{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}` }]);
+    if (chOpenUrl) joinKb.push([{ text: "📢 Open Channel", url: chOpenUrl, style: "primary" }]);
+    joinKb.push([{ text: "🗳️ Copy Vote Link", switch_inline_query: voteLink, style: "success" }]);
+    joinKb.push([{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}`, style: "primary" }]);
     joinKb.push([{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}`, style: "primary" }]);
     joinKb.push([{ text: "`ɢᴇᴛ ʟɪɴᴋꜱ, 🔄", style: "primary", callback_data: `my_links:${gId}` }]);
 
@@ -2938,7 +2939,7 @@ bot.on("callback_query", async (query) => {
             chat_id: userId, message_id: dmid, parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [[
-                { text: "🗳️ Share My Vote Link", switch_inline_query: `https://t.me/${BOT_USERNAME}?start=v_${g.id}_${participantUserId}` }
+                { text: "🗳️ Share My Vote Link", switch_inline_query: `https://t.me/${BOT_USERNAME}?start=v_${g.id}_${participantUserId}`, style: "success" }
               ]]
             }
           }
@@ -3180,9 +3181,9 @@ bot.on("callback_query", async (query) => {
         chat_id: chatId, message_id: msgId, parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "🗳️ Copy Vote Link", switch_inline_query: voteLink }],
-            [{ text: "📋 Copy Join Link", switch_inline_query: joinLink }],
-            [{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}` }],
+            [{ text: "🗳️ Copy Vote Link", switch_inline_query: voteLink, style: "success" }],
+            [{ text: "📋 Copy Join Link", switch_inline_query: joinLink, style: "primary" }],
+            [{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${gId}`, style: "primary" }],
             [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}`, style: "primary" }]
           ]
         }
@@ -4121,7 +4122,8 @@ async function updateChannelPost(g, participant) {
   const markup = {
     inline_keyboard: [[{
       text: `🗳️ Vote  ·  ${participant.votes}`,
-      callback_data: `ch_vote:${g.id}:${participant.id}`
+      callback_data: `ch_vote:${g.id}:${participant.id}`,
+      style: "primary"
     }]]
   };
   try {
@@ -4393,13 +4395,13 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
         announceSent = await bot.sendPhoto(g.channelId, g.customPhotoId, {
           caption: channelAnnouncement,
           parse_mode: "HTML",
-          reply_markup: { inline_keyboard: [[{ text: "✦ JOIN NOW — TAP HERE ✦", url: link }]] }
+          reply_markup: { inline_keyboard: [[{ text: "✦ JOIN NOW — TAP HERE ✦", url: link, style: "success" }]] }
         });
       } else {
         announceSent = await bot.sendPhoto(g.channelId, GIVEAWAY_IMAGE_URL, {
           caption: channelAnnouncement,
           parse_mode: "HTML",
-          reply_markup: { inline_keyboard: [[{ text: "✦ JOIN NOW — TAP HERE ✦", url: link }]] }
+          reply_markup: { inline_keyboard: [[{ text: "✦ JOIN NOW — TAP HERE ✦", url: link, style: "success" }]] }
         });
       }
       if (announceSent?.message_id) {
@@ -4433,9 +4435,9 @@ async function finishGiveawayCreation(userId, chatId, qrFileId) {
     {
       reply_markup: {
         inline_keyboard: [
-          [{ text: "⚙️ Manage Giveaway", callback_data: `mgmt:${gId}` }],
+          [{ text: "⚙️ Manage Giveaway", callback_data: `mgmt:${gId}`, style: "primary" }],
           [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}`, style: "primary" }],
-          [{ text: "📋 Copy Link", switch_inline_query: link }]
+          [{ text: "📋 Copy Link", switch_inline_query: link, style: "success" }]
         ]
       }
     }
@@ -10421,7 +10423,7 @@ async function checkAndSendReminders() {
             parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [[
-                { text: `⚡ Participate Now — ${timeStr} bachi!`, url: link }
+                { text: `⚡ Participate Now — ${timeStr} bachi!`, url: link, style: "success" }
               ]]
             }
           });
@@ -10476,7 +10478,7 @@ async function checkAndSendReminders() {
             parse_mode: "HTML",
             reply_markup: {
               inline_keyboard: [[
-                { text: "🗳️ Vote Now!", url: link },
+                { text: "🗳️ Vote Now!", url: link, style: "success" },
                 { text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${gId}`, style: "primary" }
               ]]
             }
