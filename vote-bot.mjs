@@ -159,6 +159,10 @@ const lbBroadcastTimers = new Map(); // gId → { intervalId, hours, nextAt, cha
 let scheduleCounter = 1;
 let paymentCounter = 1;
 
+// ─── Broadcast Stats ───
+// Stores last 20 broadcast results in-memory + persisted to MongoDB
+let broadcastHistory = []; // array of { target, mode, notif, total, sent, failed, reach, at }
+
 // ─── Premium Emoji System ───
 let premiumEmojis = []; // array of { id, label } — stored permanently in MongoDB
 let buttonTheme = "default"; // "default" | "red" | "blue" | "green"
@@ -688,6 +692,10 @@ async function loadStateFromDB() {
   // Load log destination (channel or user ID for user logs/notifications)
   const logDestCfg = await BotConfigModel.findOne({ key: "logDestId" });
   if (logDestCfg?.value) logDestId = logDestCfg.value;
+
+  // Load broadcast history
+  const bcHistCfg = await BotConfigModel.findOne({ key: "broadcastHistory" });
+  if (bcHistCfg?.value && Array.isArray(bcHistCfg.value)) broadcastHistory = bcHistCfg.value;
 
   // Load premium emojis
   const peCfg = await BotConfigModel.findOne({ key: "premiumEmojis" });
@@ -3382,6 +3390,19 @@ bot.on("callback_query", async (query) => {
       `Admin will verify and activate your membership. ✅`,
       { parse_mode: "HTML" }
     );
+    return;
+  }
+
+  // ─── Clear Broadcast Stats ───
+  if (data === "clearbroadcaststats") {
+    if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!" }).catch(() => {});
+    broadcastHistory = [];
+    await saveConfig("broadcastHistory", broadcastHistory);
+    await bot.answerCallbackQuery(query.id, { text: "✅ Broadcast stats cleared!", show_alert: false }).catch(() => {});
+    await bot.editMessageText(
+      `✅ <b>Broadcast Stats Cleared!</b>\n\nSaari history delete ho gayi.`,
+      { chat_id: chatId, message_id: msgId, parse_mode: "HTML" }
+    ).catch(() => {});
     return;
   }
 
@@ -6142,6 +6163,22 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
 
   const modeStr = composeMsg ? "📎 Composed" : replyTo ? "📋 Message-Copy" : "🖼️ Image+Text";
   const notif = silent ? "🔕 Silent" : "🔔 LOUD";
+  const reachPct = total > 0 ? Math.round((sent / total) * 100) : 0;
+
+  // ─── Save broadcast stats to history ───
+  const stat = {
+    target: targetLabel,
+    mode: `${notif} ${modeStr}`,
+    total,
+    sent,
+    failed,
+    reach: reachPct,
+    at: new Date().toISOString()
+  };
+  broadcastHistory.unshift(stat);
+  if (broadcastHistory.length > 20) broadcastHistory = broadcastHistory.slice(0, 20);
+  await saveConfig("broadcastHistory", broadcastHistory);
+
   await bot.sendMessage(adminChatId,
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
     `  ${silent ? "📢" : "🔔"}  <b>BROADCAST REPORT</b>\n` +
@@ -6151,11 +6188,74 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
     `◈ Mode     ▸  ${notif} ${modeStr}\n` +
     `◈ Total    ▸  ${total}\n` +
     `◈ Sent     ▸  ✅ ${sent}\n` +
-    `◈ Failed   ▸  ❌ ${failed}` +
+    `◈ Failed   ▸  ❌ ${failed}\n` +
+    `◈ Reach    ▸  📡 ${reachPct}%` +
     `</blockquote>`,
     { parse_mode: "HTML" }
   );
 }
+
+// ─── /broadcaststats — View reach stats of last 20 broadcasts ───
+bot.onText(/\/broadcaststats/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+
+  if (broadcastHistory.length === 0) {
+    return bot.sendMessage(chatId,
+      `📭 <b>Koi broadcast stats nahi hain abhi.</b>\n\n` +
+      `Pehle /broadcast ya /loud chalao — har broadcast ke baad reach % yahan track hogi.`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  // Aggregate totals
+  const totalBroadcasts = broadcastHistory.length;
+  const totalSent   = broadcastHistory.reduce((s, b) => s + b.sent, 0);
+  const totalFailed = broadcastHistory.reduce((s, b) => s + b.failed, 0);
+  const totalReach  = broadcastHistory.reduce((s, b) => s + b.reach, 0);
+  const avgReach    = Math.round(totalReach / totalBroadcasts);
+  const bestReach   = Math.max(...broadcastHistory.map(b => b.reach));
+
+  let text =
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+    `  📡  <b>BROADCAST STATS</b>\n` +
+    `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+    `<blockquote>` +
+    `◈ Total Broadcasts ▸  <b>${totalBroadcasts}</b>\n` +
+    `◈ Total Sent       ▸  ✅ <b>${totalSent}</b>\n` +
+    `◈ Total Failed     ▸  ❌ <b>${totalFailed}</b>\n` +
+    `◈ Avg Reach        ▸  📡 <b>${avgReach}%</b>\n` +
+    `◈ Best Reach       ▸  🏆 <b>${bestReach}%</b>` +
+    `</blockquote>\n\n` +
+    `<b>📋 Last ${Math.min(10, totalBroadcasts)} Broadcasts:</b>\n`;
+
+  for (let i = 0; i < Math.min(10, broadcastHistory.length); i++) {
+    const b = broadcastHistory[i];
+    const date = new Date(b.at);
+    const dateStr = date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+    const reachBar = b.reach >= 80 ? "🟢" : b.reach >= 50 ? "🟡" : "🔴";
+    text += `\n<b>${i + 1}.</b> ${reachBar} <b>${b.reach}%</b> reach\n`;
+    text += `   📅 ${dateStr} · 🎯 ${b.target}\n`;
+    text += `   ✅ ${b.sent} sent · ❌ ${b.failed} failed · 📦 ${b.total} total\n`;
+    text += `   📎 ${b.mode}\n`;
+  }
+
+  if (totalBroadcasts > 10) {
+    text += `\n<i>...aur ${totalBroadcasts - 10} aur broadcasts (last 20 stored)</i>`;
+  }
+
+  text += `\n\n💡 Stats har broadcast ke baad auto-save hoti hain MongoDB mein.`;
+
+  await bot.sendMessage(chatId, text, {
+    parse_mode: "HTML",
+    reply_markup: {
+      inline_keyboard: [[
+        { text: "🗑️ Clear Stats", callback_data: "clearbroadcaststats" },
+        { text: "🏠 Main Menu", callback_data: "main_menu" }
+      ]]
+    }
+  });
+});
 
 // ── Show broadcast target selection menu ──
 async function showBroadcastMenu(chatId, userId, adminMsg, text, silent, composeMsg = null) {
@@ -8448,10 +8548,12 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `</blockquote>\n\n` +
     `<b>📢 BROADCAST</b>\n` +
     `<blockquote>` +
-    `/broadcast\n  → Compose photo/doc/video+text, pick target (silent)\n\n` +
+    `/broadcast\n  → Compose photo/doc/video+text/sticker (Premium bhi!), pick target (silent)\n\n` +
     `/broadcast &lt;text&gt;\n  → Image+text broadcast (silent)\n\n` +
     `/loud\n  → Same as /broadcast with sound\n\n` +
-    `💡 <i>Reply to any msg + /broadcast → copy-forward mode</i>` +
+    `/broadcaststats\n  → Last 20 broadcasts ka reach % + stats dekho\n  Total sent · failed · avg reach · best reach\n\n` +
+    `💡 <i>Reply to any msg + /broadcast → copy-forward mode</i>\n` +
+    `💡 <i>Premium stickers bhi broadcast ho sakte hain via compose mode</i>` +
     `</blockquote>\n\n` +
     `<b>⏰ SCHEDULED BROADCAST</b>\n` +
     `<blockquote>` +

@@ -58,6 +58,16 @@
 - `/listpremiumemoji` — View all stored emoji IDs + preview tags
 - `/clearallpremiumemoji` — Remove all stored emojis
 
+### 📡 &nbsp;Broadcast Stats & Reach Tracking *(NEW in v3.1.0)*
+- **`/broadcaststats`** — Full reach dashboard for last 20 broadcasts
+- Shows: Total sent ✅ · Failed ❌ · **Reach %** per broadcast
+- Aggregate overview: Total broadcasts · Total sent · Avg reach · Best reach ever
+- Color-coded reach indicators: 🟢 80%+ · 🟡 50%+ · 🔴 below 50%
+- Each entry shows: date · target · mode · sent/failed/total count
+- **"🗑️ Clear Stats"** button to wipe history
+- Reach % added to every broadcast report after each send
+- Stats persist across restarts in MongoDB
+
 ### 🎭 &nbsp;Premium Sticker Broadcast *(NEW in v3.1.0)*
 - Admin can send **any Telegram sticker** (including animated & premium stickers) in compose mode
 - Bot detects sticker type: `🎭 Sticker` or `🌟 Premium Sticker`
