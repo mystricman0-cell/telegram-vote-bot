@@ -7,6 +7,7 @@
 
 import TelegramBot from "node-telegram-bot-api";
 import mongoose from "mongoose";
+import http from "http";
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const MAIN_ADMIN_ID = Number(process.env.ADMIN_ID);
@@ -166,6 +167,21 @@ let broadcastHistory = []; // array of { target, mode, notif, total, sent, faile
 // ─── Premium Emoji System ───
 let premiumEmojis = []; // array of { id, label } — stored permanently in MongoDB
 let buttonTheme = "default"; // "default" | "red" | "blue" | "green"
+
+// ─── Auto Heartbeat System ───
+const botStartTime = Date.now();
+let heartbeatReportEnabled = true; // send report to owner every 3 min
+const HEARTBEAT_PORT = process.env.PORT || 3000;
+
+function getUptimeStr() {
+  const ms = Date.now() - botStartTime;
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
 
 // Returns a theme emoji prefix based on current button theme
 function themeEmoji(type = "primary") {
@@ -9243,6 +9259,46 @@ bot.onText(/\/auditlog/, async (msg) => {
   await bot.sendMessage(msg.chat.id, `📋 <b>Audit Log (last 30)</b>\n\n<blockquote>${lines}</blockquote>`, { parse_mode: "HTML" });
 });
 
+// ─── /heartbeat — Manual heartbeat report ───
+bot.onText(/\/heartbeat/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const activeGiveaways = [...giveaways.values()].filter(g => g.active).length;
+  const totalGiveaways  = giveaways.size;
+  const totalUsers      = botUsers.size;
+  const dbState         = mongoose.connection.readyState === 1 ? "✅ Connected" : "❌ Disconnected";
+  const nowIST          = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  await bot.sendMessage(chatId,
+    `╔═══════════════════════╗\n` +
+    `║  💓  BOT HEARTBEAT  💓  ║\n` +
+    `╠═══════════════════════╣\n` +
+    `<blockquote>` +
+    `◈ Status      ▸  🟢 <b>ALIVE</b>\n` +
+    `◈ Time        ▸  🕐 <b>${nowIST} IST</b>\n` +
+    `◈ Uptime      ▸  ⏱️ <b>${getUptimeStr()}</b>\n` +
+    `◈ Users       ▸  👥 <b>${totalUsers}</b>\n` +
+    `◈ Giveaways   ▸  🎁 <b>${activeGiveaways} active / ${totalGiveaways} total</b>\n` +
+    `◈ Database    ▸  💾 <b>${dbState}</b>\n` +
+    `◈ Auto Report ▸  ${heartbeatReportEnabled ? "🟢 ON (every 3 min)" : "🔴 OFF"}\n` +
+    `◈ Health URL  ▸  <code>:${HEARTBEAT_PORT}/health</code>` +
+    `</blockquote>\n` +
+    `╚═══════════════════════╝`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// ─── /toggleheartbeat — Turn owner reports ON/OFF ───
+bot.onText(/\/toggleheartbeat/, async (msg) => {
+  if (!isAdmin(msg.from.id)) return;
+  heartbeatReportEnabled = !heartbeatReportEnabled;
+  await bot.sendMessage(msg.chat.id,
+    heartbeatReportEnabled
+      ? `💓 <b>Heartbeat Reports: ON</b>\n\nAb owner ID pe har 3 minute mein auto-report aayega.`
+      : `🔕 <b>Heartbeat Reports: OFF</b>\n\nAb koi auto-report nahi aayega. Bot alive rahega (silent ping).\n\n<i>/toggleheartbeat se wapas ON karo.</i>`,
+    { parse_mode: "HTML" }
+  );
+});
+
 // ─── /clearaudit ───
 bot.onText(/\/clearaudit/, async (msg) => {
   if (!isAdmin(msg.from.id)) return;
@@ -10744,26 +10800,98 @@ async function main() {
       console.log("✅ Bot commands registered!");
     } catch (e) { console.error("setMyCommands error:", e.message); }
 
+    // 🌐 HTTP Health Server — keeps bot alive via self-ping + external uptime monitors
+    http.createServer((req, res) => {
+      const url = req.url || "/";
+      if (url === "/ping") {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("OK");
+      } else if (url === "/health") {
+        const activeGiveaways = [...giveaways.values()].filter(g => g.active).length;
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          status: "alive",
+          uptime: getUptimeStr(),
+          users: botUsers.size,
+          activeGiveaways,
+          db: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
+          heartbeatReport: heartbeatReportEnabled
+        }));
+      } else {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end(`DRS Giveaway Bot — Alive ✅\nUptime: ${getUptimeStr()}`);
+      }
+    }).listen(HEARTBEAT_PORT, () => {
+      console.log(`🌐 Health server started on port ${HEARTBEAT_PORT}`);
+    });
+
     console.log(`
-✅ DRS Giveaway Bot v3.0.8 Started!
+✅ DRS Giveaway Bot v3.1.0 Started!
 🤖 @${me.username}
 👑 Admin ID: ${MAIN_ADMIN_ID}
 💾 MongoDB: Connected
 📢 Force Join: ${forceJoinChannels.filter(c => c.id).length}/${forceJoinChannels.length} channels configured
-💓 Heartbeat: every 5 min
+💓 Heartbeat: every 3 min (auto-report to owner)
+🌐 Health: http://localhost:${HEARTBEAT_PORT}/ping
 
 Ready!
     `);
 
-    // 💓 5-minute heartbeat — keeps bot alive on Railway 24x7
+    // 💓 3-minute Auto Heartbeat — keeps bot alive + reports to owner
     setInterval(async () => {
       try {
+        // 1. Ping Telegram API to keep connection alive
         await bot.getMe();
-        console.log(`💓 Heartbeat OK — ${new Date().toISOString()}`);
+
+        // 2. Self-ping HTTP server to prevent sleep
+        try {
+          await new Promise((resolve) => {
+            const req = http.get(`http://localhost:${HEARTBEAT_PORT}/ping`, (res) => {
+              res.resume();
+              resolve();
+            });
+            req.on("error", resolve);
+            req.setTimeout(5000, () => { req.destroy(); resolve(); });
+          });
+        } catch {}
+
+        console.log(`💓 Heartbeat OK — ${new Date().toISOString()} | Uptime: ${getUptimeStr()}`);
+
+        // 3. Send compact report to owner (if enabled)
+        if (heartbeatReportEnabled) {
+          const activeGiveaways = [...giveaways.values()].filter(g => g.active).length;
+          const totalGiveaways  = giveaways.size;
+          const totalUsers      = botUsers.size;
+          const dbState         = mongoose.connection.readyState === 1 ? "✅ Connected" : "❌ Disconnected";
+          const nowIST          = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+          await bot.sendMessage(ownerAdminId,
+            `╔═══════════════════════╗\n` +
+            `║  💓  BOT HEARTBEAT  💓  ║\n` +
+            `╠═══════════════════════╣\n` +
+            `<blockquote>` +
+            `◈ Status    ▸  🟢 <b>ALIVE</b>\n` +
+            `◈ Time      ▸  🕐 <b>${nowIST} IST</b>\n` +
+            `◈ Uptime    ▸  ⏱️ <b>${getUptimeStr()}</b>\n` +
+            `◈ Users     ▸  👥 <b>${totalUsers}</b>\n` +
+            `◈ Giveaways ▸  🎁 <b>${activeGiveaways} active / ${totalGiveaways} total</b>\n` +
+            `◈ Database  ▸  💾 <b>${dbState}</b>\n` +
+            `◈ Next ping ▸  ⏳ <b>3 minutes</b>` +
+            `</blockquote>\n` +
+            `╚═══════════════════════╝`,
+            { parse_mode: "HTML" }
+          ).catch(() => {});
+        }
       } catch (e) {
         console.error("💔 Heartbeat failed:", e.message);
+        try {
+          await bot.sendMessage(ownerAdminId,
+            `💔 <b>HEARTBEAT FAILED</b>\n\n<code>${e.message}</code>`,
+            { parse_mode: "HTML" }
+          );
+        } catch {}
       }
-    }, 5 * 60 * 1000);
+    }, 3 * 60 * 1000);
 
     // ⏳ Auto-Reminder — check every 2 minutes
     setInterval(checkAndSendReminders, 2 * 60 * 1000);

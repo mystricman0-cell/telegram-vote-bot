@@ -58,6 +58,38 @@
 - `/listpremiumemoji` — View all stored emoji IDs + preview tags
 - `/clearallpremiumemoji` — Remove all stored emojis
 
+### 💓 &nbsp;Auto Heartbeat & Keep-Alive System *(NEW in v3.1.0)*
+
+Bot kabhi sleep nahi karta — 24x7 alive:
+
+| Feature | Detail |
+|---------|--------|
+| **Self-ping** | Bot apne HTTP server ko har 3 min mein ping karta hai |
+| **Telegram ping** | `bot.getMe()` call har 3 min — connection alive |
+| **Owner report** | Compact status report owner ID pe har 3 min |
+| **HTTP server** | `/ping` → `OK` · `/health` → JSON stats |
+| **FloodWait safe** | Errors catch hote hain, bot rukta nahi |
+
+**Report format (har 3 min):**
+```
+💓 BOT HEARTBEAT
+◈ Status    ▸ 🟢 ALIVE
+◈ Time      ▸ 3:45:12 IST
+◈ Uptime    ▸ 2h 15m 30s
+◈ Users     ▸ 1234
+◈ Giveaways ▸ 5 active / 12 total
+◈ Database  ▸ ✅ Connected
+◈ Next ping ▸ 3 minutes
+```
+
+**Admin commands:**
+- `/heartbeat` — Manual status report karo kabhi bhi
+- `/toggleheartbeat` — Auto reports ON/OFF (bot alive rahega, sirf message band hoga)
+
+**Endpoints:**
+- `GET /ping` → `OK` (uptime monitoring ke liye)
+- `GET /health` → JSON with full stats
+
 ### 📢 &nbsp;NOBITA_MUSIC Style Broadcast System *(NEW in v3.1.0)*
 
 Full flag-based broadcast system — inspired by NOBITA_MUSIC bot:
