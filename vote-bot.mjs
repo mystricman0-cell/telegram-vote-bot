@@ -188,7 +188,8 @@ function themeEmoji(type = "primary") {
   if (buttonTheme === "red")   return type === "danger" ? "🔴 " : type === "success" ? "🟥 " : "❤️ ";
   if (buttonTheme === "blue")  return type === "danger" ? "🔵 " : type === "success" ? "🔷 " : "💙 ";
   if (buttonTheme === "green") return type === "danger" ? "🟡 " : type === "success" ? "🟢 " : "💚 ";
-  return "";
+  // Default: always show color emoji so buttons are visually styled
+  return type === "danger" ? "🔴 " : type === "success" ? "🟢 " : "🔵 ";
 }
 
 // Returns the first stored premium emoji as a <tg-emoji> tag, or fallback char
@@ -1244,11 +1245,11 @@ function getMembershipPlan(key) { return membershipPlans[key] || null; }
 function buildPlanButtons() {
   return [
     [
-      { text: `1D - ₹${membershipPlans["1d"].price}`, callback_data: "buy_mem:1d" },
-      { text: `7D - ₹${membershipPlans["7d"].price}`, callback_data: "buy_mem:7d" }
+      { text: `1D - ₹${membershipPlans["1d"].price}`, callback_data: "buy_mem:1d", style: "success" },
+      { text: `7D - ₹${membershipPlans["7d"].price}`, callback_data: "buy_mem:7d", style: "success" }
     ],
-    [{ text: `30D - ₹${membershipPlans["30d"].price}`, callback_data: "buy_mem:30d" }],
-    [{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "main_menu" }]
+    [{ text: `30D - ₹${membershipPlans["30d"].price}`, callback_data: "buy_mem:30d", style: "danger" }],
+    [{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "main_menu", style: "primary" }]
   ];
 }
 
@@ -1913,7 +1914,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
           parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${g.id}` }],
+              [{ text: "💰 Buy Paid Votes", callback_data: `buy_votes:${g.id}`, style: "success" }],
               [{ text: "`ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ, 🏆", callback_data: `lb:${g.id}`, style: "primary" }],
               [{ text: "`ɢᴇᴛ ʟɪɴᴋꜱ, 🔄", style: "primary", callback_data: `my_links:${g.id}` }]
             ]
@@ -1932,7 +1933,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
           inline_keyboard: [
             [
               { text: "`ᴄᴏɴꜰɪʀᴍ & ᴊᴏɪɴ, 🔥", style: "success", callback_data: `confirm_join:${g.id}` },
-              { text: "❌ Cancel", callback_data: "main_menu" }
+              { text: "❌ Cancel", callback_data: "main_menu", style: "danger" }
             ]
           ]
         }
@@ -2054,8 +2055,8 @@ bot.on("callback_query", async (query) => {
       text: (sa.permissions.has(p) ? "✅ " : "❌ ") + p,
       callback_data: `sadm_perm:${targetId}:${p}`
     }]);
-    buttons.push([{ text: "🗑️ Remove Sub-Admin", callback_data: `sadm_remove:${targetId}` }]);
-    buttons.push([{ text: "✖ Close", callback_data: "sadm_close" }]);
+    buttons.push([{ text: "🗑️ Remove Sub-Admin", callback_data: `sadm_remove:${targetId}`, style: "danger" }]);
+    buttons.push([{ text: "✖ Close", callback_data: "sadm_close", style: "primary" }]);
     await bot.editMessageReplyMarkup({ inline_keyboard: buttons }, { chat_id: chatId, message_id: msgId }).catch(() => {});
     return bot.answerCallbackQuery(query.id, { text: `${toggled ? "✅ Added" : "❌ Removed"}: ${perm}` }).catch(() => {});
   }
@@ -2110,7 +2111,7 @@ bot.on("callback_query", async (query) => {
     await bot.answerCallbackQuery(query.id).catch(() => {});
     return bot.sendMessage(chatId, editText, {
       parse_mode: "HTML",
-      reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "cust_cancel" }]] }
+      reply_markup: { inline_keyboard: [[{ text: "🔴 ❌ Cancel", callback_data: "cust_cancel", style: "danger" }]] }
     });
   }
   if (data === "cust_cancel") {
@@ -2314,7 +2315,7 @@ bot.on("callback_query", async (query) => {
             reply_markup: {
               inline_keyboard: [
                 [{ text: "👑 Get VIP Membership", callback_data: "vip_membership", style: "danger" }],
-                [{ text: "◀️ Back to Menu", callback_data: "main_menu" }]
+                [{ text: "🔵 ◀️ Back to Menu", callback_data: "main_menu", style: "primary" }]
               ]
             }
           }
@@ -2352,14 +2353,14 @@ bot.on("callback_query", async (query) => {
     const kb = {
       inline_keyboard: [
         [
-          { text: "✍️ Created (Active)", callback_data: "mglist:created_active" },
-          { text: "📋 Created (Past)", callback_data: "mglist:created_past" }
+          { text: "🟢 ✍️ Created (Active)", callback_data: "mglist:created_active", style: "success" },
+          { text: "🔵 📋 Created (Past)", callback_data: "mglist:created_past", style: "primary" }
         ],
         [
-          { text: "🤝 Joined (Active)", callback_data: "mglist:joined_active" },
-          { text: "📂 Joined (Past)", callback_data: "mglist:joined_past" }
+          { text: "🟢 🤝 Joined (Active)", callback_data: "mglist:joined_active", style: "success" },
+          { text: "🔵 📂 Joined (Past)", callback_data: "mglist:joined_past", style: "primary" }
         ],
-        [{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "main_menu" }]
+        [{ text: "🔴 `ʙᴀᴄᴋ, ◀️", callback_data: "main_menu", style: "danger" }]
       ]
     };
     const caption =
@@ -2399,9 +2400,10 @@ bot.on("callback_query", async (query) => {
     }
     const btns = list.map(g => ([{
       text: `${g.active ? "✅" : "🚫"} ${g.title}  ·  ${g.participants.size} 👥  ·  ${[...g.participants.values()].reduce((s, p) => s + p.votes, 0)} 🗳️`,
-      callback_data: `mgmt:${g.id}`
+      callback_data: `mgmt:${g.id}`,
+      style: g.active ? "success" : "primary"
     }]));
-    btns.push([{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "my_giveaways" }]);
+    btns.push([{ text: "🔴 `ʙᴀᴄᴋ, ◀️", callback_data: "my_giveaways", style: "danger" }]);
     await animAction(chatId,
       `${icon} <b>${label}</b>\n\n` +
       `◆ ─────────────────── ◆\n` +
@@ -2528,7 +2530,7 @@ bot.on("callback_query", async (query) => {
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
     await bot.editMessageText(text, {
       chat_id: chatId, message_id: msgId, parse_mode: "HTML",
-      reply_markup: { inline_keyboard: [[{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: `mgmt:${gId}` }]] }
+      reply_markup: { inline_keyboard: [[{ text: "🔴 `ʙᴀᴄᴋ, ◀️", callback_data: `mgmt:${gId}`, style: "danger" }]] }
     }).catch(() => {});
     return;
   }
@@ -2644,8 +2646,8 @@ bot.on("callback_query", async (query) => {
       {
         parse_mode: "HTML",
         reply_markup: { inline_keyboard: [[
-          { text: "🗑️ Haan, Delete Karo!", callback_data: `confirm_clear:${gId}` },
-          { text: "❌ Cancel", callback_data: `my_giveaways` }
+          { text: "🗑️ Haan, Delete Karo!", callback_data: `confirm_clear:${gId}`, style: "danger" },
+          { text: "❌ Cancel", callback_data: `my_giveaways`, style: "primary" }
         ]]}
       }
     );
@@ -3092,14 +3094,14 @@ bot.on("callback_query", async (query) => {
         const alertMarkup = {
           inline_keyboard: [
             [
-              { text: "➖ Votes Minus Karo", callback_data: `panel_minus:${gId}:${participantUserId}` },
-              { text: "🗑️ Hatao Participant", callback_data: `panel_remove:${gId}:${participantUserId}` }
+              { text: "➖ Votes Minus Karo", callback_data: `panel_minus:${gId}:${participantUserId}`, style: "danger" },
+              { text: "🗑️ Hatao Participant", callback_data: `panel_remove:${gId}:${participantUserId}`, style: "danger" }
             ],
             [
-              { text: "🚫 Ban + Remove", callback_data: `panel_ban:${gId}:${participantUserId}` },
-              { text: "⚠️ Warn Karo", callback_data: `panel_warn:${gId}:${participantUserId}` }
+              { text: "🚫 Ban + Remove", callback_data: `panel_ban:${gId}:${participantUserId}`, style: "danger" },
+              { text: "⚠️ Warn Karo", callback_data: `panel_warn:${gId}:${participantUserId}`, style: "danger" }
             ],
-            [{ text: "✅ Dismiss (Ignore)", callback_data: `panel_dismiss:${gId}:${participantUserId}` }]
+            [{ text: "✅ Dismiss (Ignore)", callback_data: `panel_dismiss:${gId}:${participantUserId}`, style: "success" }]
           ]
         };
 
@@ -3142,7 +3144,7 @@ bot.on("callback_query", async (query) => {
       btns.push([{ text: "🇮🇳 Pay via INR/UPI (QR)", callback_data: `pay_inr:${gId}`, style: "success" }]);
     if (g.paymentMode === "stars" || g.paymentMode === "both")
       btns.push([{ text: "⭐ Pay via Telegram Stars", style: "primary", callback_data: `pay_stars:${gId}` }]);
-    btns.push([{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: `my_links:${gId}` }]);
+    btns.push([{ text: "🔴 `ʙᴀᴄᴋ, ◀️", callback_data: `my_links:${gId}`, style: "danger" }]);
 
     await animLoading(chatId, msgId);
     await bot.editMessageText(
@@ -3319,7 +3321,7 @@ bot.on("callback_query", async (query) => {
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
 
     const kb = m
-      ? { inline_keyboard: [[{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "main_menu" }]] }
+      ? { inline_keyboard: [[{ text: "🔴 `ʙᴀᴄᴋ, ◀️", callback_data: "main_menu", style: "danger" }]] }
       : { inline_keyboard: buildPlanButtons() };
 
     await animFresh(chatId, msgId, featuresText, { reply_markup: kb });
@@ -3363,8 +3365,8 @@ bot.on("callback_query", async (query) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "✅ I've Paid", callback_data: `mem_paid:${payId}` },
-              { text: "Cancel", callback_data: "vip_membership" }
+              { text: "✅ I've Paid", callback_data: `mem_paid:${payId}`, style: "success" },
+              { text: "🔴 Cancel", callback_data: "vip_membership", style: "danger" }
             ]
           ]
         }
@@ -3592,10 +3594,10 @@ bot.on("callback_query", async (query) => {
     const permKeys = Object.keys(VALID_PERMS);
     const permButtons = permKeys.map(key => {
       const allowed = getUserPerm(targetId, key);
-      return [{ text: `${allowed ? "✅" : "❌"} ${VALID_PERMS[key]}`, callback_data: `toggle_perm:${targetId}:${key}` }];
+      return [{ text: `${allowed ? "✅" : "❌"} ${VALID_PERMS[key]}`, callback_data: `toggle_perm:${targetId}:${key}`, style: allowed ? "success" : "danger" }];
     });
-    permButtons.push([{ text: "🔄 Reset All (Enable All)", callback_data: `reset_perms:${targetId}` }]);
-    permButtons.push([{ text: "◀️ Done", callback_data: "main_menu" }]);
+    permButtons.push([{ text: "🔵 🔄 Reset All (Enable All)", callback_data: `reset_perms:${targetId}`, style: "primary" }]);
+    permButtons.push([{ text: "🔴 ◀️ Done", callback_data: "main_menu", style: "danger" }]);
     const caption =
       `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
       `  🔐  <b>PERMISSIONS</b>\n` +
@@ -3626,9 +3628,9 @@ bot.on("callback_query", async (query) => {
     const buName = bu?.firstName ? h(bu.firstName) : `User ${targetId}`;
     const buHandle = bu?.username ? `@${bu.username}` : `ID: ${targetId}`;
     const permKeys = Object.keys(VALID_PERMS);
-    const permButtons = permKeys.map(key => ([{ text: `✅ ${VALID_PERMS[key]}`, callback_data: `toggle_perm:${targetId}:${key}` }]));
-    permButtons.push([{ text: "🔄 Reset All (Enable All)", callback_data: `reset_perms:${targetId}` }]);
-    permButtons.push([{ text: "◀️ Done", callback_data: "main_menu" }]);
+    const permButtons = permKeys.map(key => ([{ text: `✅ ${VALID_PERMS[key]}`, callback_data: `toggle_perm:${targetId}:${key}`, style: "success" }]));
+    permButtons.push([{ text: "🔵 🔄 Reset All (Enable All)", callback_data: `reset_perms:${targetId}`, style: "primary" }]);
+    permButtons.push([{ text: "🔴 ◀️ Done", callback_data: "main_menu", style: "danger" }]);
     const caption =
       `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
       `  🔐  <b>PERMISSIONS</b>\n` +
@@ -3670,9 +3672,10 @@ bot.on("callback_query", async (query) => {
     // Multiple channels — show selection
     const chButtons = myChannels.map(([chId, ch]) => [{
       text: `${ch.type === "channel" ? "📢" : "🏘️"}  ${ch.title.slice(0, 28)}`,
-      callback_data: `cp_ch:${chId}`
+      callback_data: `cp_ch:${chId}`,
+      style: "primary"
     }]);
-    chButtons.push([{ text: "❌ Cancel", callback_data: "cancel_flow" }]);
+    chButtons.push([{ text: "🔴 ❌ Cancel", callback_data: "cancel_flow", style: "danger" }]);
     await replyToCallback(chatId, msgId,
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
       `  ◆  <b>CREATE POST</b>  ◆\n` +
@@ -3719,10 +3722,10 @@ bot.on("callback_query", async (query) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: `${themeEmoji()}🤖 Automatic End`, callback_data: "end_auto" },
-              { text: `${themeEmoji()}✋ Manual End`, callback_data: "end_manual" }
+              { text: `${themeEmoji("success")}🤖 Automatic End`, callback_data: "end_auto", style: "success" },
+              { text: `${themeEmoji("danger")}✋ Manual End`, callback_data: "end_manual", style: "danger" }
             ],
-            [{ text: `${themeEmoji()}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow" }]
+            [{ text: `${themeEmoji("danger")}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow", style: "danger" }]
           ]
         }
       }
@@ -3743,8 +3746,8 @@ bot.on("callback_query", async (query) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: `${themeEmoji()}🤖 Automatic End`, callback_data: "end_auto" },
-              { text: `${themeEmoji()}✋ Manual End`, callback_data: "end_manual" }
+              { text: `${themeEmoji("success")}🤖 Automatic End`, callback_data: "end_auto", style: "success" },
+              { text: `${themeEmoji("danger")}✋ Manual End`, callback_data: "end_manual", style: "danger" }
             ]
           ]
         }
@@ -3795,10 +3798,10 @@ bot.on("callback_query", async (query) => {
           parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [
-              [{ text: `${themeEmoji()}🇮🇳 INR via UPI/QR`, callback_data: "cur_inr" }],
-              [{ text: `${themeEmoji()}⭐ Telegram Stars`, callback_data: "cur_stars" }],
-              [{ text: `${themeEmoji()}🔄 Both (INR + Stars)`, callback_data: "cur_both" }],
-              [{ text: `${themeEmoji()}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow" }]
+              [{ text: `${themeEmoji("success")}🇮🇳 INR via UPI/QR`, callback_data: "cur_inr", style: "success" }],
+              [{ text: `${themeEmoji()}⭐ Telegram Stars`, callback_data: "cur_stars", style: "primary" }],
+              [{ text: `${themeEmoji("danger")}🔄 Both (INR + Stars)`, callback_data: "cur_both", style: "danger" }],
+              [{ text: `${themeEmoji("danger")}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow", style: "danger" }]
             ]
           }
         }
@@ -3986,7 +3989,8 @@ bot.on("callback_query", async (query) => {
         // Top row: user's own declared amount — most likely correct
         _rows.push([{
           text: `⭐ ₹${_userAmt} = ${_userVotes} votes  ← User ne bheja`,
-          callback_data: `quick_approve:${payId}:${_userVotes}`
+          callback_data: `quick_approve:${payId}:${_userVotes}`,
+          style: "success"
         }]);
       }
 
@@ -3997,11 +4001,11 @@ bot.on("callback_query", async (query) => {
         for (let j = i; j < Math.min(i + 2, _amounts.length); j++) {
           const amt = _amounts[j];
           const v = _rate * amt;
-          row.push({ text: `₹${amt} = ${v} votes`, callback_data: `quick_approve:${payId}:${v}` });
+          row.push({ text: `₹${amt} = ${v} votes`, callback_data: `quick_approve:${payId}:${v}`, style: "primary" });
         }
         _rows.push(row);
       }
-      _rows.push([{ text: "✏️ Custom Amount (Type Below)", callback_data: `approve_custom:${payId}` }]);
+      _rows.push([{ text: "🔵 ✏️ Custom Amount (Type Below)", callback_data: `approve_custom:${payId}`, style: "primary" }]);
 
       await bot.sendMessage(chatId,
         `✅ <b>Approve Payment</b>\n\n` +
@@ -4172,10 +4176,10 @@ async function askPaidVotes(chatId) {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
-          [{ text: `${themeEmoji("success")}✅ Enable Paid Votes`, callback_data: "paid_yes" }],
+          [{ text: `${themeEmoji("success")}✅ Enable Paid Votes`, callback_data: "paid_yes", style: "success" }],
           [
-            { text: `${themeEmoji("danger")}❌ Free Voting Only`, callback_data: "paid_no" },
-            { text: `${themeEmoji()}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow" }
+            { text: `${themeEmoji("danger")}❌ Free Voting Only`, callback_data: "paid_no", style: "danger" },
+            { text: `${themeEmoji("danger")}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow", style: "danger" }
           ]
         ]
       }
@@ -4368,7 +4372,7 @@ async function askCustomPhotoOrFinish(userId, chatId, qrFileId) {
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [[
-            { text: "⏭️ Skip — Use Default Image", callback_data: "skip_custom_photo" }
+            { text: "🔵 ⏭️ Skip — Use Default Image", callback_data: "skip_custom_photo", style: "primary" }
           ]]
         }
       }
@@ -4664,8 +4668,8 @@ bot.on("message", async (msg) => {
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`;
 
     const resolveKb = { inline_keyboard: [[
-      { text: "✅ Resolved",     callback_data: `sup_resolve:${userId}` },
-      { text: "❌ Not Resolved", callback_data: `sup_pending:${userId}` }
+      { text: "✅ Resolved",     callback_data: `sup_resolve:${userId}`, style: "success" },
+      { text: "❌ Not Resolved", callback_data: `sup_pending:${userId}`, style: "danger" }
     ]]};
 
     try {
@@ -4853,8 +4857,8 @@ bot.on("message", async (msg) => {
           reply_markup: {
             inline_keyboard: [
               [
-                { text: "✅ Approve", callback_data: `approve_mem:${payId}` },
-                { text: "❌ Reject", callback_data: `reject_mem:${payId}` }
+                { text: "✅ Approve", callback_data: `approve_mem:${payId}`, style: "success" },
+                { text: "❌ Reject", callback_data: `reject_mem:${payId}`, style: "danger" }
               ]
             ]
           }
@@ -4912,8 +4916,8 @@ bot.on("message", async (msg) => {
         `Approve karein? (quick buttons ya Approve tap karke number type karein)`;
       const notifMarkup = {
         inline_keyboard: [[
-          { text: "✅ Approve", callback_data: `approve_pay:${payId}` },
-          { text: "❌ Reject", callback_data: `reject_pay:${payId}` }
+          { text: "✅ Approve", callback_data: `approve_pay:${payId}`, style: "success" },
+          { text: "❌ Reject", callback_data: `reject_pay:${payId}`, style: "danger" }
         ]]
       };
 
@@ -5101,9 +5105,9 @@ bot.on("message", async (msg) => {
     userState.set(userId, state);
 
     const myChans = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
-    const btns = myChans.map(([id, c]) => ([{ text: `${themeEmoji()}📢 ${c.title}`, callback_data: `sel_ch:${id}` }]));
-    btns.push([{ text: `${themeEmoji()}✏️ Enter Manually`, callback_data: "ch_manual" }]);
-    btns.push([{ text: `${themeEmoji()}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow" }]);
+    const btns = myChans.map(([id, c]) => ([{ text: `${themeEmoji()}📢 ${c.title}`, callback_data: `sel_ch:${id}`, style: "primary" }]));
+    btns.push([{ text: `${themeEmoji("success")}✏️ Enter Manually`, callback_data: "ch_manual", style: "success" }]);
+    btns.push([{ text: `${themeEmoji("danger")}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow", style: "danger" }]);
 
     await bot.sendMessage(chatId,
       `<b>📢 Select Target Channel</b>\n\nChoose the channel where the giveaway will be posted.\n<i>Only channels where I am an Admin are shown below.</i>\n\n<b>Found: ${myChans.length} Channel${myChans.length !== 1 ? "s" : ""}</b>`,
@@ -5136,10 +5140,10 @@ bot.on("message", async (msg) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: `${themeEmoji()}🤖 Automatic End`, callback_data: "end_auto" },
-              { text: `${themeEmoji()}✋ Manual End`, callback_data: "end_manual" }
+              { text: `${themeEmoji("success")}🤖 Automatic End`, callback_data: "end_auto", style: "success" },
+              { text: `${themeEmoji("danger")}✋ Manual End`, callback_data: "end_manual", style: "danger" }
             ],
-            [{ text: `${themeEmoji()}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow" }]
+            [{ text: `${themeEmoji("danger")}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow", style: "danger" }]
           ]
         }
       }
@@ -5276,8 +5280,8 @@ bot.on("message", async (msg) => {
           reply_markup: {
             inline_keyboard: [
               [
-                { text: "⭐ Haan, Stars bhi add karo", callback_data: "add_stars_yes" },
-                { text: "❌ Nahi, skip karo", callback_data: "add_stars_no" }
+                { text: "⭐ Haan, Stars bhi add karo", callback_data: "add_stars_yes", style: "success" },
+                { text: "🔴 ❌ Nahi, skip karo", callback_data: "add_stars_no", style: "danger" }
               ]
             ]
           }
@@ -5359,7 +5363,7 @@ bot.on("message", async (msg) => {
       `└───────────────────────┘\n\n` +
       `<i>Bilkul waisa hi set ho gaya! ✅\nReset: /resettext ${h(key)}</i>`,
       { parse_mode: "HTML",
-        reply_markup: { inline_keyboard: [[{ text: "🎨 Back to Customize", callback_data: "cust_back" }, { text: "🔄 Reset to Default", callback_data: `cust_reset:${key}` }]] }
+        reply_markup: { inline_keyboard: [[{ text: "🔵 🎨 Back to Customize", callback_data: "cust_back", style: "primary" }, { text: "🔴 🔄 Reset to Default", callback_data: `cust_reset:${key}`, style: "danger" }]] }
       }
     );
     return;
@@ -5609,7 +5613,7 @@ bot.onText(/\/membership/, async (msg) => {
     `──────────◈◈◈──────────\n` +
     `Upgrade to unlock 🤌 <b>full control &amp; maximum reach</b> 👁️`;
   const kb = m
-    ? { inline_keyboard: [[{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "main_menu" }]] }
+    ? { inline_keyboard: [[{ text: "🔴 `ʙᴀᴄᴋ, ◀️", callback_data: "main_menu", style: "danger" }]] }
     : { inline_keyboard: buildPlanButtons() };
   await bot.sendMessage(chatId, text, { parse_mode: "HTML", reply_markup: kb });
 });
@@ -5630,8 +5634,8 @@ bot.onText(/\/myplan/, async (msg) => {
       `<blockquote>❌ <b>Koi active membership nahi hai.</b>\n\nVIP lene ke liye /membership use karo.</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
       { parse_mode: "HTML", reply_markup: { inline_keyboard: [
-        [{ text: "👑 VIP Lena Hai", callback_data: "vip_membership" }],
-        [{ text: "🏠 Main Menu", callback_data: "main_menu" }]
+        [{ text: "🔴 👑 VIP Lena Hai", callback_data: "vip_membership", style: "danger" }],
+        [{ text: "🔵 🏠 Main Menu", callback_data: "main_menu", style: "primary" }]
       ]}}
     );
     return;
