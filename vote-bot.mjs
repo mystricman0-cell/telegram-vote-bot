@@ -1532,7 +1532,7 @@ function cancelKeyboard() {
 }
 
 function backKeyboard(cb = "main_menu") {
-  return { inline_keyboard: [[{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: cb, style: "primary" }]] };
+  return { inline_keyboard: [[{ text: `${themeEmoji()}\`ʙᴀᴄᴋ, ◀️`, callback_data: cb, style: "primary" }]] };
 }
 
 function mgmtKeyboard(gId, g, showVipControls = false) {
@@ -3704,10 +3704,10 @@ bot.on("callback_query", async (query) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "🤖 Automatic End", callback_data: "end_auto" },
-              { text: "✋ Manual End", callback_data: "end_manual" }
+              { text: `${themeEmoji()}🤖 Automatic End`, callback_data: "end_auto" },
+              { text: `${themeEmoji()}✋ Manual End`, callback_data: "end_manual" }
             ],
-            [{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "cancel_flow" }]
+            [{ text: `${themeEmoji()}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow" }]
           ]
         }
       }
@@ -3728,8 +3728,8 @@ bot.on("callback_query", async (query) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "🤖 Automatic End", callback_data: "end_auto" },
-              { text: "✋ Manual End", callback_data: "end_manual" }
+              { text: `${themeEmoji()}🤖 Automatic End`, callback_data: "end_auto" },
+              { text: `${themeEmoji()}✋ Manual End`, callback_data: "end_manual" }
             ]
           ]
         }
@@ -3780,10 +3780,10 @@ bot.on("callback_query", async (query) => {
           parse_mode: "HTML",
           reply_markup: {
             inline_keyboard: [
-              [{ text: "🇮🇳 INR via UPI/QR", callback_data: "cur_inr" }],
-              [{ text: "⭐ Telegram Stars", callback_data: "cur_stars" }],
-              [{ text: "🔄 Both (INR + Stars)", callback_data: "cur_both" }],
-              [{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "cancel_flow" }]
+              [{ text: `${themeEmoji()}🇮🇳 INR via UPI/QR`, callback_data: "cur_inr" }],
+              [{ text: `${themeEmoji()}⭐ Telegram Stars`, callback_data: "cur_stars" }],
+              [{ text: `${themeEmoji()}🔄 Both (INR + Stars)`, callback_data: "cur_both" }],
+              [{ text: `${themeEmoji()}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow" }]
             ]
           }
         }
@@ -4157,10 +4157,10 @@ async function askPaidVotes(chatId) {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
-          [{ text: "✅ Enable Paid Votes", callback_data: "paid_yes" }],
+          [{ text: `${themeEmoji("success")}✅ Enable Paid Votes`, callback_data: "paid_yes" }],
           [
-            { text: "❌ Free Voting Only", callback_data: "paid_no" },
-            { text: "`ʙᴀᴄᴋ, ◀️", callback_data: "cancel_flow" }
+            { text: `${themeEmoji("danger")}❌ Free Voting Only`, callback_data: "paid_no" },
+            { text: `${themeEmoji()}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow" }
           ]
         ]
       }
@@ -5086,9 +5086,9 @@ bot.on("message", async (msg) => {
     userState.set(userId, state);
 
     const myChans = [...registeredChannels.entries()].filter(([, c]) => c.addedBy === userId || isAdmin(userId));
-    const btns = myChans.map(([id, c]) => ([{ text: `📢 ${c.title}`, callback_data: `sel_ch:${id}` }]));
-    btns.push([{ text: "✏️ Enter Manually", callback_data: "ch_manual" }]);
-    btns.push([{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "cancel_flow" }]);
+    const btns = myChans.map(([id, c]) => ([{ text: `${themeEmoji()}📢 ${c.title}`, callback_data: `sel_ch:${id}` }]));
+    btns.push([{ text: `${themeEmoji()}✏️ Enter Manually`, callback_data: "ch_manual" }]);
+    btns.push([{ text: `${themeEmoji()}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow" }]);
 
     await bot.sendMessage(chatId,
       `<b>📢 Select Target Channel</b>\n\nChoose the channel where the giveaway will be posted.\n<i>Only channels where I am an Admin are shown below.</i>\n\n<b>Found: ${myChans.length} Channel${myChans.length !== 1 ? "s" : ""}</b>`,
@@ -5121,10 +5121,10 @@ bot.on("message", async (msg) => {
         reply_markup: {
           inline_keyboard: [
             [
-              { text: "🤖 Automatic End", callback_data: "end_auto" },
-              { text: "✋ Manual End", callback_data: "end_manual" }
+              { text: `${themeEmoji()}🤖 Automatic End`, callback_data: "end_auto" },
+              { text: `${themeEmoji()}✋ Manual End`, callback_data: "end_manual" }
             ],
-            [{ text: "`ʙᴀᴄᴋ, ◀️", callback_data: "cancel_flow" }]
+            [{ text: `${themeEmoji()}\`ʙᴀᴄᴋ, ◀️`, callback_data: "cancel_flow" }]
           ]
         }
       }
