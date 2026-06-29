@@ -158,6 +158,30 @@ const scheduledMessages = new Map(); // id → { id, timeStr, text, timerId, cre
 const lbBroadcastTimers = new Map(); // gId → { intervalId, hours, nextAt, channelId }
 let scheduleCounter = 1;
 let paymentCounter = 1;
+
+// ─── Premium Emoji System ───
+let premiumEmojis = []; // array of { id, label } — stored permanently in MongoDB
+let buttonTheme = "default"; // "default" | "red" | "blue" | "green"
+
+// Returns a theme emoji prefix based on current button theme
+function themeEmoji(type = "primary") {
+  if (buttonTheme === "red")   return type === "danger" ? "🔴 " : type === "success" ? "🟥 " : "❤️ ";
+  if (buttonTheme === "blue")  return type === "danger" ? "🔵 " : type === "success" ? "🔷 " : "💙 ";
+  if (buttonTheme === "green") return type === "danger" ? "🟡 " : type === "success" ? "🟢 " : "💚 ";
+  return "";
+}
+
+// Returns the first stored premium emoji as a <tg-emoji> tag, or fallback char
+function getPremiumEmojiTag(fallback = "⭐") {
+  if (premiumEmojis.length === 0) return fallback;
+  return `<tg-emoji emoji-id="${premiumEmojis[0].id}">${fallback}</tg-emoji>`;
+}
+
+// Returns all stored premium emojis as tags (for decorative use in messages)
+function getAllPremiumEmojiTags(fallback = "✨") {
+  if (premiumEmojis.length === 0) return fallback;
+  return premiumEmojis.slice(0, 5).map(e => `<tg-emoji emoji-id="${e.id}">${fallback}</tg-emoji>`).join(" ");
+}
 let membershipPayCounter = 1;
 let welcomeImageUrl = null;
 const voteVelocity = new Map(); // "gId:partId" → { count, windowStart, alerted }
@@ -664,6 +688,14 @@ async function loadStateFromDB() {
   // Load log destination (channel or user ID for user logs/notifications)
   const logDestCfg = await BotConfigModel.findOne({ key: "logDestId" });
   if (logDestCfg?.value) logDestId = logDestCfg.value;
+
+  // Load premium emojis
+  const peCfg = await BotConfigModel.findOne({ key: "premiumEmojis" });
+  if (peCfg?.value && Array.isArray(peCfg.value)) premiumEmojis = peCfg.value;
+
+  // Load button theme
+  const themeCfg = await BotConfigModel.findOne({ key: "buttonTheme" });
+  if (themeCfg?.value) buttonTheme = themeCfg.value;
 
   console.log(`📦 Loaded: ${giveaways.size} giveaways, ${registeredChannels.size} channels, ${vipUsers.size} VIP users, ${botUsers.size} bot users, ${botCustomTexts.size} custom UI texts, ${subAdmins.size} sub-admins`);
   // Seed defaults (one-time — skips if already done)
@@ -6058,17 +6090,23 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
     const id = targets[i];
     try {
       if (composeMsg) {
+        // Premium stickers, animated stickers, and all message types preserved via copyMessage
         await bot.copyMessage(id, composeMsg.chat.id, composeMsg.message_id, {
           disable_notification: silent
         });
       } else if (replyTo) {
+        // Reply-to copy mode — also preserves premium stickers/emojis
         await bot.copyMessage(id, adminMsg.chat.id, replyTo.message_id, {
           disable_notification: silent
         });
       } else {
+        // Text broadcast — add premium emoji decoration if set
+        const premiumDeco = premiumEmojis.length > 0
+          ? premiumEmojis.slice(0, 3).map(e => `<tg-emoji emoji-id="${e.id}">⭐</tg-emoji>`).join("") + " "
+          : "";
         const caption =
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-          `  📢  <b>DRS BROADCAST</b>\n` +
+          `${premiumDeco}  📢  <b>DRS BROADCAST</b>  ${premiumDeco}\n` +
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
           `<blockquote>${h(textContent)}</blockquote>\n\n` +
           `✦ ─── <b>@${BOT_USERNAME || "DRS_GiveawayBot"}</b> ─── ✦`;
@@ -6125,7 +6163,7 @@ async function showBroadcastMenu(chatId, userId, adminMsg, text, silent, compose
   const notif = silent ? "🔕 Silent" : "🔔 LOUD";
   let mode, preview;
   if (composeMsg) {
-    const t = composeMsg.photo ? "📷 Photo" : composeMsg.document ? "📄 Document" : composeMsg.video ? "🎥 Video" : composeMsg.audio ? "🎵 Audio" : composeMsg.voice ? "🎙️ Voice" : "📝 Text";
+    const t = composeMsg.photo ? "📷 Photo" : composeMsg.document ? "📄 Document" : composeMsg.video ? "🎥 Video" : composeMsg.audio ? "🎵 Audio" : composeMsg.voice ? "🎙️ Voice" : composeMsg.sticker ? (composeMsg.sticker.premium_animation ? "🌟 Premium Sticker" : "🎭 Sticker") : "📝 Text";
     const cap = composeMsg.caption || composeMsg.text || "";
     mode = `📎 Composed — ${t}`;
     preview = cap ? `Caption: <i>${h(cap.slice(0, 60))}${cap.length > 60 ? "..." : ""}</i>` : `${t} ready ✅`;
@@ -6182,7 +6220,9 @@ bot.onText(/\/broadcast(?:\s+([\s\S]+))?/, async (msg, match) => {
     `▸ 📷 Photo + caption (text)\n` +
     `▸ 📄 Document + caption (text)\n` +
     `▸ 🎥 Video + caption (text)\n` +
-    `▸ 🎵 Audio / Voice note\n\n` +
+    `▸ 🎵 Audio / Voice note\n` +
+    `▸ 🎭 Sticker (Premium stickers bhi!)\n` +
+    `▸ 🌟 Premium Emojis automatically preserve honge\n\n` +
     `<i>Ya /broadcast &lt;text&gt; likho seedha text ke liye</i>` +
     `</blockquote>`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]] } }
@@ -6208,11 +6248,196 @@ bot.onText(/\/loud(?:\s+([\s\S]+))?/, async (msg, match) => {
     `▸ 📷 Photo + caption (text)\n` +
     `▸ 📄 Document + caption (text)\n` +
     `▸ 🎥 Video + caption (text)\n` +
-    `▸ 🎵 Audio / Voice note\n\n` +
+    `▸ 🎵 Audio / Voice note\n` +
+    `▸ 🎭 Sticker (Premium stickers bhi!)\n` +
+    `▸ 🌟 Premium Emojis automatically preserve honge\n\n` +
     `<i>Ya /loud &lt;text&gt; likho seedha text ke liye</i>` +
     `</blockquote>`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]] } }
   );
+});
+
+// ============================================================
+// PREMIUM EMOJI MANAGEMENT
+// Admin sets premium emoji IDs — stored permanently in MongoDB
+// Even if admin's Telegram Premium expires, stored emojis stay
+// ============================================================
+
+// /setpremiumemoji <emoji_id> [label] — Add a premium emoji by custom_emoji_id
+bot.onText(/\/setpremiumemoji(?:\s+(\S+)(?:\s+([\s\S]+))?)?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+
+  // Also extract from entities in the message (if admin typed/forwarded premium emoji)
+  let emojiId = match?.[1]?.trim();
+  const label = match?.[2]?.trim() || "Premium Emoji";
+
+  // Check if message contains a custom emoji entity
+  const entities = msg.entities || msg.caption_entities || [];
+  const customEmojiEntity = entities.find(e => e.type === "custom_emoji");
+  if (customEmojiEntity?.custom_emoji_id && !emojiId) {
+    emojiId = customEmojiEntity.custom_emoji_id;
+  }
+
+  if (!emojiId) {
+    return bot.sendMessage(chatId,
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
+      `  🌟  <b>SET PREMIUM EMOJI</b>\n` +
+      `◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n` +
+      `<blockquote>` +
+      `Usage: <code>/setpremiumemoji &lt;emoji_id&gt; [label]</code>\n\n` +
+      `Example: <code>/setpremiumemoji 5368324170671202286 fire</code>\n\n` +
+      `💡 <b>Tip:</b> Apna custom_emoji_id kaise pata karo:\n` +
+      `▸ @GetStickersBot se emoji bhejo\n` +
+      `▸ Ya /listpremiumemoji se IDs dekho\n\n` +
+      `Current stored: <b>${premiumEmojis.length}</b> emoji(s)` +
+      `</blockquote>`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  // Check duplicate
+  if (premiumEmojis.some(e => e.id === emojiId)) {
+    return bot.sendMessage(chatId, `⚠️ <b>Yeh emoji ID already saved hai!</b>\n\n<code>${emojiId}</code>`, { parse_mode: "HTML" });
+  }
+
+  premiumEmojis.push({ id: emojiId, label, addedAt: new Date().toISOString() });
+  await saveConfig("premiumEmojis", premiumEmojis);
+
+  await bot.sendMessage(chatId,
+    `✅ <b>Premium Emoji Saved!</b>\n\n` +
+    `<blockquote>` +
+    `◈ Emoji ID  ▸  <code>${emojiId}</code>\n` +
+    `◈ Label     ▸  ${h(label)}\n` +
+    `◈ Total     ▸  ${premiumEmojis.length} emoji(s) stored\n\n` +
+    `🌟 Yeh emoji broadcasts mein automatically use hoga!\n` +
+    `💡 Admin ka premium khatam hone ke baad bhi yeh saved rahega.` +
+    `</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// /removepremiumemoji <emoji_id> — Remove a stored premium emoji
+bot.onText(/\/removepremiumemoji\s+(\S+)/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const emojiId = match[1].trim();
+
+  const idx = premiumEmojis.findIndex(e => e.id === emojiId);
+  if (idx === -1) {
+    return bot.sendMessage(chatId, `❌ <b>Emoji ID nahi mila:</b>\n<code>${h(emojiId)}</code>\n\nList dekhne ke liye: /listpremiumemoji`, { parse_mode: "HTML" });
+  }
+
+  const removed = premiumEmojis.splice(idx, 1)[0];
+  await saveConfig("premiumEmojis", premiumEmojis);
+
+  await bot.sendMessage(chatId,
+    `🗑️ <b>Premium Emoji Removed!</b>\n\n` +
+    `<blockquote>◈ Removed  ▸  <code>${removed.id}</code> (${h(removed.label)})\n` +
+    `◈ Remaining ▸  ${premiumEmojis.length} emoji(s)</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// /listpremiumemoji — View all stored premium emojis
+bot.onText(/\/listpremiumemoji/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+
+  if (premiumEmojis.length === 0) {
+    return bot.sendMessage(chatId,
+      `📭 <b>Koi premium emoji nahi hai.</b>\n\n` +
+      `Add karne ke liye:\n<code>/setpremiumemoji &lt;emoji_id&gt; [label]</code>`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  let text = `◈━━━━━━━━━━━━━━━━━━━━━━◈\n  🌟  <b>PREMIUM EMOJIS</b>\n◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n`;
+  for (let i = 0; i < premiumEmojis.length; i++) {
+    const e = premiumEmojis[i];
+    text += `<b>${i + 1}.</b> <code>${e.id}</code>\n   Label: ${h(e.label)}\n   Tag: <tg-emoji emoji-id="${e.id}">⭐</tg-emoji>\n\n`;
+  }
+  text += `💡 Remove: <code>/removepremiumemoji &lt;id&gt;</code>\n`;
+  text += `🗑️ Clear all: <code>/clearallpremiumemoji</code>`;
+
+  await bot.sendMessage(chatId, text, { parse_mode: "HTML" });
+});
+
+// /clearallpremiumemoji — Remove all stored premium emojis
+bot.onText(/\/clearallpremiumemoji/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const count = premiumEmojis.length;
+  premiumEmojis = [];
+  await saveConfig("premiumEmojis", premiumEmojis);
+  await bot.sendMessage(chatId, `✅ <b>${count} premium emoji(s) clear ho gaye!</b>`, { parse_mode: "HTML" });
+});
+
+// ============================================================
+// BUTTON THEME — Red / Blue / Green / Default
+// ============================================================
+
+// /setbuttontheme <red|blue|green|default> — Set button color theme
+bot.onText(/\/setbuttontheme(?:\s+(\S+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  const chatId = msg.chat.id;
+  const theme = match?.[1]?.toLowerCase().trim();
+
+  const validThemes = ["red", "blue", "green", "default"];
+  if (!theme || !validThemes.includes(theme)) {
+    const previewMap = {
+      default: "Normal buttons (no extra emoji)",
+      red:    "❤️ Primary  🔴 Danger  🟥 Success",
+      blue:   "💙 Primary  🔵 Danger  🔷 Success",
+      green:  "💚 Primary  🟡 Danger  🟢 Success",
+    };
+    let menuText = `◈━━━━━━━━━━━━━━━━━━━━━━◈\n  🎨  <b>BUTTON THEME</b>\n◈━━━━━━━━━━━━━━━━━━━━━━◈\n\n`;
+    menuText += `Current: <b>${buttonTheme}</b>\n\n<blockquote>`;
+    for (const [t, preview] of Object.entries(previewMap)) {
+      menuText += `▸ <code>/setbuttontheme ${t}</code>\n  ${preview}\n\n`;
+    }
+    menuText += `</blockquote>`;
+    return bot.sendMessage(chatId, menuText, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "❤️ Red", callback_data: "btntheme:red" },
+            { text: "💙 Blue", callback_data: "btntheme:blue" }
+          ],
+          [
+            { text: "💚 Green", callback_data: "btntheme:green" },
+            { text: "⬛ Default", callback_data: "btntheme:default" }
+          ]
+        ]
+      }
+    });
+  }
+
+  buttonTheme = theme;
+  await saveConfig("buttonTheme", buttonTheme);
+
+  const themeNames = { default: "Default", red: "🔴 Red", blue: "🔵 Blue", green: "🟢 Green" };
+  await bot.sendMessage(chatId,
+    `✅ <b>Button Theme Set!</b>\n\n` +
+    `<blockquote>◈ Theme ▸  <b>${themeNames[theme]}</b>\n\nSaare buttons ab ${themeNames[theme]} theme mein honge.\n💡 Buttons ke text mein colored emojis add honge automatically.</blockquote>`,
+    { parse_mode: "HTML" }
+  );
+});
+
+// Callback for button theme selection
+bot.on("callback_query", async (query) => {
+  if (!query.data?.startsWith("btntheme:")) return;
+  if (!isAdmin(query.from.id)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!" }).catch(() => {});
+  const theme = query.data.replace("btntheme:", "");
+  buttonTheme = theme;
+  await saveConfig("buttonTheme", buttonTheme);
+  const themeNames = { default: "Default", red: "🔴 Red", blue: "🔵 Blue", green: "🟢 Green" };
+  await bot.answerCallbackQuery(query.id, { text: `✅ Theme set to ${themeNames[theme]}!`, show_alert: false }).catch(() => {});
+  await bot.editMessageText(
+    `✅ <b>Button Theme: ${themeNames[theme]}</b>\n\nChange: /setbuttontheme`,
+    { chat_id: query.message.chat.id, message_id: query.message.message_id, parse_mode: "HTML" }
+  ).catch(() => {});
 });
 
 bot.onText(/\/pin\s+(-?\d+)\s+([\s\S]+)/, async (msg, match) => {
@@ -8284,12 +8509,27 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `/listadmins\n  → List all sub-admins + their permissions\n\n` +
     `/editadminperms &lt;userId&gt;\n  → Edit sub-admin permissions via button UI` +
     `</blockquote>\n\n` +
+    `<b>🌟 PREMIUM EMOJI MANAGEMENT</b>\n` +
+    `<blockquote>` +
+    `/setpremiumemoji &lt;emoji_id&gt; [label]\n  → Premium emoji ko permanently save karo\n  Bot broadcasts mein use karta hai\n  Admin ka premium khatam ho tab bhi emojis saved rehte hain\n  Example: /setpremiumemoji 5368324170671202286 fire\n\n` +
+    `/removepremiumemoji &lt;emoji_id&gt;\n  → Ek premium emoji remove karo\n\n` +
+    `/listpremiumemoji\n  → Saare saved premium emojis dekho\n\n` +
+    `/clearallpremiumemoji\n  → Saare premium emojis clear karo` +
+    `</blockquote>\n\n` +
+    `<b>🎨 BUTTON THEME</b>\n` +
+    `<blockquote>` +
+    `/setbuttontheme &lt;red|blue|green|default&gt;\n  → Button ka color theme set karo\n  Red: ❤️🔴🟥 · Blue: 💙🔵🔷 · Green: 💚🟢🟡\n  Example: /setbuttontheme red\n\n` +
+    `/setbuttontheme\n  → Theme picker menu with preview` +
+    `</blockquote>\n\n` +
     `<b>🖼️ UTILITY COMMANDS</b>\n` +
     `<blockquote>` +
     `/setstartimage &lt;url&gt;\n  → Set welcome image directly (no wizard)\n\n` +
     `/clearstates\n  → Clear all stuck user conversation states\n\n` +
     `/gcount\n  → Quick giveaway count breakdown\n\n` +
     `/topusers\n  → Top 10 users by giveaways created\n\n` +
+    `/setownerid &lt;userId&gt;\n  → Change main admin ID at runtime\n\n` +
+    `/setlogdest &lt;chatId&gt;\n  → Set log destination (channel/user for notifications)\n\n` +
+    `/clearlogdest\n  → Reset log destination to admin DM\n\n` +
     `/pushgithub [message]\n  → Push vote-bot.mjs to GitHub\n  Example: /pushgithub fix: update welcome text` +
     `</blockquote>\n\n` +
     `<b>👤 USER COMMANDS (reference)</b>\n` +

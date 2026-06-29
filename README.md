@@ -12,7 +12,7 @@
 ║                                                      ║
 ║    ✦  N  E  T  W  O  R  K  ✦                        ║
 ║    ─────────────────────────                         ║
-║    🎁  GIVEAWAY & VOTE BOT  v3.0.8  🏆               ║
+║    🎁  GIVEAWAY & VOTE BOT  v3.1.0  🏆               ║
 ║                                                      ║
 ╚══════════════════════════════════════════════════════╝
 ```
@@ -47,6 +47,32 @@
                     FEATURES
 ✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦
 ```
+
+### 🌟 &nbsp;Premium Emoji System *(NEW in v3.1.0)*
+- **Permanent storage** — Admin sets premium emoji IDs via `/setpremiumemoji <emoji_id> [label]`; stored in MongoDB forever
+- **Survives premium expiry** — Even if admin's Telegram Premium expires, all saved emoji IDs remain active in the bot
+- **Auto-used in broadcasts** — All text-mode broadcasts automatically decorate headers with stored premium emojis
+- **Compose mode preserves emojis** — Broadcasts using compose/forward mode copy messages as-is, preserving all premium emojis inside
+- `/setpremiumemoji <id> [label]` — Add emoji permanently
+- `/removepremiumemoji <id>` — Remove one emoji
+- `/listpremiumemoji` — View all stored emoji IDs + preview tags
+- `/clearallpremiumemoji` — Remove all stored emojis
+
+### 🎭 &nbsp;Premium Sticker Broadcast *(NEW in v3.1.0)*
+- Admin can send **any Telegram sticker** (including animated & premium stickers) in compose mode
+- Bot detects sticker type: `🎭 Sticker` or `🌟 Premium Sticker`
+- Uses `copyMessage` API to forward sticker **exactly as-is** — same animation, same quality
+- Premium sticker packs are preserved in full fidelity to all broadcast targets
+- `/broadcast` → then send sticker → select target → done!
+
+### 🎨 &nbsp;Button Color Themes *(NEW in v3.1.0)*
+- Set a **Red / Blue / Green / Default** color theme for all bot buttons
+- `/setbuttontheme red` → all buttons show ❤️ 🔴 🟥 colored emoji indicators
+- `/setbuttontheme blue` → 💙 🔵 🔷 theme
+- `/setbuttontheme green` → 💚 🟢 🟡 theme
+- `/setbuttontheme default` → no extra color indicators
+- `/setbuttontheme` (no args) → interactive picker with preview
+- Theme persists across restarts via MongoDB
 
 ### 🗳️ &nbsp;Vote via Share Link *(NEW in v3.0.6)*
 - Participants get a **dedicated vote link**: `https://t.me/bot?start=v_gId_userId`
