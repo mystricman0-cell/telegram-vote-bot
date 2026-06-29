@@ -90,9 +90,9 @@ Bot kabhi sleep nahi karta — 24x7 alive:
 - `GET /ping` → `OK` (uptime monitoring ke liye)
 - `GET /health` → JSON with full stats
 
-### 📢 &nbsp;NOBITA_MUSIC Style Broadcast System *(NEW in v3.1.0)*
+### 📢 &nbsp;DARKLORD$ Style Broadcast System *(NEW in v3.1.0)*
 
-Full flag-based broadcast system — inspired by NOBITA_MUSIC bot:
+Full flag-based broadcast system — inspired by DARKLORD$ idea:
 
 | Flag | Effect |
 |------|--------|
