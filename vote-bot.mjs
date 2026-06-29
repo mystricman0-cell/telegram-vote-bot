@@ -382,13 +382,13 @@ const DEFAULT_UI_TEXTS = {
   "welcome.support_url":       "https://t.me/drssupport",
   "welcome.support_name":      "𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊",
   // ── Welcome Screen — Buttons ──
-  "welcome.btn_new_giveaway":  "🎁 ɴᴇᴡ ɢɪᴠᴇᴀᴡᴀʏ ✦",
-  "welcome.btn_my_giveaways":  "✦ ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ 📂",
-  "welcome.btn_add_channel":   "📢 ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ ⚡",
-  "welcome.btn_add_group":     "⚡ ᴀᴅᴅ ɢʀᴏᴜᴘ 👥",
-  "welcome.btn_vip":           "👑 ᴠɪᴘ ᴍᴇᴍʙᴇʀꜱʜɪᴘ 💎",
-  "welcome.btn_create_post":   "🚀 ᴄʀᴇᴀᴛᴇ ᴘᴏꜱᴛ ✍️",
-  "welcome.btn_guide":         "🌟 ─── ɢᴜɪᴅᴇ & ʜᴇʟᴘ ─── 🌟",
+  "welcome.btn_new_giveaway":  "`ɴᴇᴡ ɢɪᴠᴇᴀᴡᴀʏ, 🎁",
+  "welcome.btn_my_giveaways":  "`ᴍʏ ɢɪᴠᴇᴀᴡᴀʏꜱ, 📂",
+  "welcome.btn_add_channel":   "`ᴀᴅᴅ ᴄʜᴀɴɴᴇʟ, 📢",
+  "welcome.btn_add_group":     "`ᴀᴅᴅ ɢʀᴏᴜᴘ, 👥",
+  "welcome.btn_vip":           "`ᴠɪᴘ ᴍᴇᴍʙᴇʀꜱʜɪᴘ, 👑",
+  "welcome.btn_create_post":   "`ᴄʀᴇᴀᴛᴇ ᴘᴏꜱᴛ, 🚀",
+  "welcome.btn_guide":         "`ɢᴜɪᴅᴇ & ʜᴇʟᴘ,",
   // ── Legacy keys (kept for compatibility) ──
   "welcome.header":            "🎁 <b>DRS GIVEAWAY BOT</b> 🎁",
   "welcome.tagline":           "✦ Fair · Fast · Automated ✦",
@@ -1454,19 +1454,22 @@ function mainMenuKeyboard() {
   const btn = key => stripTgEmoji(getUI(key));
   return {
     inline_keyboard: [
+      // Row 1 — full-width main CTA (blue feel)
+      [{ text: btn("welcome.btn_new_giveaway"), callback_data: "new_giveaway" }],
+      // Row 2 — two side-by-side (green | red feel)
       [
-        { text: btn("welcome.btn_new_giveaway"), callback_data: "new_giveaway" },
-        { text: btn("welcome.btn_my_giveaways"), callback_data: "my_giveaways" }
+        { text: btn("welcome.btn_my_giveaways"), callback_data: "my_giveaways" },
+        { text: btn("welcome.btn_add_channel"),  callback_data: "add_channel" }
       ],
+      // Row 3 — full-width (green feel)
+      [{ text: btn("welcome.btn_add_group"),    callback_data: "add_group" }],
+      // Row 4 — full-width (red feel)
+      [{ text: btn("welcome.btn_vip"),          callback_data: "vip_membership" }],
+      // Row 5 — two side-by-side
       [
-        { text: btn("welcome.btn_add_channel"), callback_data: "add_channel" },
-        { text: btn("welcome.btn_add_group"),   callback_data: "add_group" }
-      ],
-      [
-        { text: btn("welcome.btn_vip"),         callback_data: "vip_membership" },
-        { text: btn("welcome.btn_create_post"), callback_data: "create_post" }
-      ],
-      [{ text: btn("welcome.btn_guide"),        callback_data: "how_to_use" }]
+        { text: btn("welcome.btn_create_post"), callback_data: "create_post" },
+        { text: btn("welcome.btn_guide"),       callback_data: "how_to_use" }
+      ]
     ]
   };
 }
