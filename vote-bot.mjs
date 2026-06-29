@@ -1439,9 +1439,10 @@ function shouldShowForceJoin(userId) {
 function forceJoinKeyboard(channels) {
   const btns = channels.map(ch => ([{
     text: `📢 ${ch.label} — Join Now`,
-    url: ch.link
+    url: ch.link,
+    style: "primary"
   }]));
-  btns.push([{ text: "✅ Joined — Verify & Continue", callback_data: "check_force_join" }]);
+  btns.push([{ text: "✅ Joined — Verify & Continue", callback_data: "check_force_join", style: "success" }]);
   return { inline_keyboard: btns };
 }
 
@@ -1687,8 +1688,8 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
         // Save pending vote so user can verify after joining
         pendingVoteMap.set(userId, { gId, participantUserId });
         const kb = [];
-        if (channelUrl) kb.push([{ text: "📢 Channel Join Karo", url: channelUrl }]);
-        kb.push([{ text: "✅ Join Ho Gaya — Vote Do", callback_data: `cpv:${gId}:${participantUserId}` }]);
+        if (channelUrl) kb.push([{ text: "📢 Channel Join Karo", url: channelUrl, style: "primary" }]);
+        kb.push([{ text: "✅ Join Ho Gaya — Vote Do", callback_data: `cpv:${gId}:${participantUserId}`, style: "success" }]);
         return bot.sendMessage(chatId,
           `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
           `  🔒  <b>CHANNEL JOIN REQUIRED</b>\n` +
@@ -1806,7 +1807,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
           {
             parse_mode: "HTML",
             reply_markup: channelUrl ? {
-              inline_keyboard: [[{ text: "📢 Join Channel", url: channelUrl }]]
+              inline_keyboard: [[{ text: "📢 Join Channel", url: channelUrl, style: "primary" }]]
             } : undefined
           }
         );
@@ -1835,7 +1836,7 @@ bot.onText(/\/start(?:\s+(.+))?/, async (msg, match) => {
           {
             parse_mode: "HTML",
             reply_markup: fjUrl ? {
-              inline_keyboard: [[{ text: "📢 Join Channel", url: fjUrl }]]
+              inline_keyboard: [[{ text: "📢 Join Channel", url: fjUrl, style: "primary" }]]
             } : undefined
           }
         );
@@ -2799,8 +2800,8 @@ bot.on("callback_query", async (query) => {
           try { channelUrl = await bot.exportChatInviteLink(g.channelId); } catch {}
         }
         const kb = [];
-        if (channelUrl) kb.push([{ text: "📢 Channel Join Karo", url: channelUrl }]);
-        kb.push([{ text: "✅ Join Ho Gaya — Vote Do", callback_data: `cpv:${gId}:${participantUserId}` }]);
+        if (channelUrl) kb.push([{ text: "📢 Channel Join Karo", url: channelUrl, style: "primary" }]);
+        kb.push([{ text: "✅ Join Ho Gaya — Vote Do", callback_data: `cpv:${gId}:${participantUserId}`, style: "success" }]);
         await bot.answerCallbackQuery(query.id, { text: "⚠️ Pehle channel join karo, phir try karo!", show_alert: true }).catch(() => {});
         await bot.editMessageReplyMarkup(
           { inline_keyboard: kb },
