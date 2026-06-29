@@ -2270,7 +2270,7 @@ bot.on("callback_query", async (query) => {
       `╚══════════════════════╝`,
       { parse_mode: "HTML" }
     );
-    await doBroadcast(chatId, state.adminMsg, state.text, state.silent, target, state.composeMsg || null, progressMsg.message_id);
+    await doBroadcast(chatId, state.adminMsg, state.text, state.silent, target, state.composeMsg || null, progressMsg.message_id, state.flags || {});
     return;
   }
 
@@ -6063,7 +6063,8 @@ function buildProgressBar(pct) {
 
 // ── Broadcast helper ──
 // target: "users" | "channels" | "groups" | "all"
-async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = "all", composeMsg = null, progressMsgId = null) {
+// flags: { pin, pinloud, nobot, userOnly }
+async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = "all", composeMsg = null, progressMsgId = null, flags = {}) {
   const channelIds = [...registeredChannels.entries()]
     .filter(([, c]) => c.type === "channel")
     .map(([id]) => id);
@@ -6073,16 +6074,25 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
   const userIds = [...botUsers.keys()];
 
   let targets = [];
-  if (target === "users")         targets = userIds;
+  // -nobot / -user flag: broadcast to users only, skip groups & channels
+  if (flags.nobot || flags.userOnly) {
+    targets = userIds;
+  } else if (target === "users")         targets = userIds;
   else if (target === "channels") targets = channelIds;
   else if (target === "groups")   targets = groupIds;
   else targets = [...new Set([...channelIds, ...groupIds, ...userIds])];
 
-  const targetLabel = { users: "👥 Users", channels: "📢 Channels", groups: "🏘️ Groups", all: "🌐 All" }[target];
+  const targetLabel = flags.nobot
+    ? "👥 Users (-nobot)"
+    : flags.userOnly
+    ? "👥 Users (-user)"
+    : { users: "👥 Users", channels: "📢 Channels", groups: "🏘️ Groups", all: "🌐 All" }[target] || "🌐 All";
+
   const replyTo = adminMsg?.reply_to_message;
-  let sent = 0, failed = 0;
+  let sent = 0, failed = 0, pinned = 0;
   const total = targets.length;
   let lastPct = -1;
+  const willPin = flags.pin || flags.pinloud;
 
   const updateProgress = async (done) => {
     if (!progressMsgId) return;
@@ -6100,6 +6110,7 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
         `📊 Progress » <code>${buildProgressBar(rounded)}</code>\n` +
         `✅ Sent     » ${sent}\n` +
         `❌ Failed   » ${failed}` +
+        (willPin ? `\n📌 Pinned   » ${pinned}` : ``) +
         `</blockquote>\n` +
         `╚══════════════════════╝`,
         { chat_id: adminChatId, message_id: progressMsgId, parse_mode: "HTML" }
@@ -6109,35 +6120,66 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
 
   for (let i = 0; i < targets.length; i++) {
     const id = targets[i];
-    try {
-      if (composeMsg) {
-        // Premium stickers, animated stickers, and all message types preserved via copyMessage
-        await bot.copyMessage(id, composeMsg.chat.id, composeMsg.message_id, {
-          disable_notification: silent
-        });
-      } else if (replyTo) {
-        // Reply-to copy mode — also preserves premium stickers/emojis
-        await bot.copyMessage(id, adminMsg.chat.id, replyTo.message_id, {
-          disable_notification: silent
-        });
-      } else {
-        // Text broadcast — add premium emoji decoration if set
-        const premiumDeco = premiumEmojis.length > 0
-          ? premiumEmojis.slice(0, 3).map(e => `<tg-emoji emoji-id="${e.id}">⭐</tg-emoji>`).join("") + " "
-          : "";
-        const caption =
-          `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
-          `${premiumDeco}  📢  <b>DRS BROADCAST</b>  ${premiumDeco}\n` +
-          `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
-          `<blockquote>${h(textContent)}</blockquote>\n\n` +
-          `✦ ─── <b>@${BOT_USERNAME || "DRS_GiveawayBot"}</b> ─── ✦`;
-        await bot.sendPhoto(id, GIVEAWAY_IMAGE_URL, {
-          caption, parse_mode: "HTML", disable_notification: silent
-        });
+    let sentMsg = null;
+    let succeeded = false;
+    let retries = 0;
+
+    // FloodWait-aware send loop (NOBITA_MUSIC style)
+    while (!succeeded && retries < 3) {
+      try {
+        if (composeMsg) {
+          // Premium stickers, animated stickers, all types preserved via copyMessage
+          sentMsg = await bot.copyMessage(id, composeMsg.chat.id, composeMsg.message_id, {
+            disable_notification: silent
+          });
+        } else if (replyTo) {
+          // Reply-to forward mode
+          sentMsg = await bot.copyMessage(id, adminMsg.chat.id, replyTo.message_id, {
+            disable_notification: silent
+          });
+        } else {
+          // Image+Text mode — auto-inject premium emojis
+          const premiumDeco = premiumEmojis.length > 0
+            ? premiumEmojis.slice(0, 3).map(e => `<tg-emoji emoji-id="${e.id}">⭐</tg-emoji>`).join("") + " "
+            : "";
+          const caption =
+            `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+            `${premiumDeco}  📢  <b>DRS BROADCAST</b>  ${premiumDeco}\n` +
+            `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
+            `<blockquote>${h(textContent)}</blockquote>\n\n` +
+            `✦ ─── <b>@${BOT_USERNAME || "DRS_GiveawayBot"}</b> ─── ✦`;
+          sentMsg = await bot.sendPhoto(id, GIVEAWAY_IMAGE_URL, {
+            caption, parse_mode: "HTML", disable_notification: silent
+          });
+        }
+        succeeded = true;
+        sent++;
+
+        // -pin / -pinloud: pin the sent message
+        if (willPin && sentMsg?.message_id) {
+          try {
+            await bot.pinChatMessage(id, sentMsg.message_id, {
+              disable_notification: !flags.pinloud
+            });
+            pinned++;
+          } catch {}
+        }
+      } catch (err) {
+        // Smart FloodWait handling: wait if ≤200s, else skip (NOBITA_MUSIC style)
+        const retryAfter = err?.response?.body?.parameters?.retry_after
+          ?? (typeof err?.message === "string" ? parseInt(err.message.match(/retry after (\d+)/i)?.[1]) : null)
+          ?? null;
+        if (retryAfter && Number(retryAfter) <= 200) {
+          await sleep(Number(retryAfter) * 1000);
+          retries++;
+        } else {
+          failed++;
+          break;
+        }
       }
-      sent++;
-    } catch { failed++; }
-    await sleep(50);
+    }
+    if (!succeeded && retries >= 3) failed++;
+    await sleep(200); // 200ms between sends (flood-safe)
     await updateProgress(i + 1);
   }
 
@@ -6154,6 +6196,7 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
         `✅ Sent     » ${sent}\n` +
         `❌ Failed   » ${failed}\n` +
         `📦 Total    » ${total}` +
+        (willPin ? `\n📌 Pinned   » ${pinned}` : ``) +
         `</blockquote>\n` +
         `╚══════════════════════╝`,
         { chat_id: adminChatId, message_id: progressMsgId, parse_mode: "HTML" }
@@ -6164,6 +6207,12 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
   const modeStr = composeMsg ? "📎 Composed" : replyTo ? "📋 Message-Copy" : "🖼️ Image+Text";
   const notif = silent ? "🔕 Silent" : "🔔 LOUD";
   const reachPct = total > 0 ? Math.round((sent / total) * 100) : 0;
+  const flagStr = [
+    flags.pin     ? "-pin"     : null,
+    flags.pinloud ? "-pinloud" : null,
+    flags.nobot   ? "-nobot"   : null,
+    flags.userOnly? "-user"    : null,
+  ].filter(Boolean).join(" ") || "none";
 
   // ─── Save broadcast stats to history ───
   const stat = {
@@ -6186,9 +6235,11 @@ async function doBroadcast(adminChatId, adminMsg, textContent, silent, target = 
     `<blockquote>` +
     `◈ Target   ▸  ${targetLabel}\n` +
     `◈ Mode     ▸  ${notif} ${modeStr}\n` +
+    `◈ Flags    ▸  <code>${flagStr}</code>\n` +
     `◈ Total    ▸  ${total}\n` +
     `◈ Sent     ▸  ✅ ${sent}\n` +
     `◈ Failed   ▸  ❌ ${failed}\n` +
+    (willPin ? `◈ Pinned   ▸  📌 ${pinned}\n` : ``) +
     `◈ Reach    ▸  📡 ${reachPct}%` +
     `</blockquote>`,
     { parse_mode: "HTML" }
@@ -6257,9 +6308,21 @@ bot.onText(/\/broadcaststats/, async (msg) => {
   });
 });
 
+// ── Parse broadcast flags from raw text ──
+// Returns { flags, cleanText }
+function parseBroadcastFlags(raw = "") {
+  const flags = { pin: false, pinloud: false, nobot: false, userOnly: false };
+  let text = raw;
+  if (/-pinloud\b/i.test(text)) { flags.pinloud = true; text = text.replace(/-pinloud\b/gi, ""); }
+  if (/-pin\b/i.test(text))     { flags.pin     = true; text = text.replace(/-pin\b/gi, ""); }
+  if (/-nobot\b/i.test(text))   { flags.nobot   = true; text = text.replace(/-nobot\b/gi, ""); }
+  if (/-user\b/i.test(text))    { flags.userOnly = true; text = text.replace(/-user\b/gi, ""); }
+  return { flags, cleanText: text.trim() };
+}
+
 // ── Show broadcast target selection menu ──
-async function showBroadcastMenu(chatId, userId, adminMsg, text, silent, composeMsg = null) {
-  userState.set(userId, { step: "broadcast_pending", adminMsg, text, silent, composeMsg });
+async function showBroadcastMenu(chatId, userId, adminMsg, text, silent, composeMsg = null, flags = {}) {
+  userState.set(userId, { step: "broadcast_pending", adminMsg, text, silent, composeMsg, flags });
   const notif = silent ? "🔕 Silent" : "🔔 LOUD";
   let mode, preview;
   if (composeMsg) {
@@ -6301,15 +6364,35 @@ async function showBroadcastMenu(chatId, userId, adminMsg, text, silent, compose
   );
 }
 
-// /broadcast — Silent broadcast with target selection
+// /broadcast — Silent broadcast with optional flags (-pin, -pinloud, -nobot, -user)
 bot.onText(/\/broadcast(?:\s+([\s\S]+))?/, async (msg, match) => {
   if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "broadcast")) return;
-  const text = match[1]?.trim();
-  if (text || msg.reply_to_message) {
-    return showBroadcastMenu(msg.chat.id, msg.from.id, msg, text || "", true);
+  const rawText = match[1]?.trim() || "";
+  const { flags, cleanText } = parseBroadcastFlags(rawText);
+  const hasFlags = flags.pin || flags.pinloud || flags.nobot || flags.userOnly;
+
+  if (cleanText || msg.reply_to_message) {
+    // Has content — show target menu (or direct if flags set target)
+    if (hasFlags && (flags.nobot || flags.userOnly)) {
+      // -nobot / -user bypasses menu — sends to users directly
+      const progressMsg = await bot.sendMessage(msg.chat.id,
+        `╔══════════════════════╗\n║  📢  <b>BROADCASTING</b>  ║\n╠══════════════════════╣\n<blockquote>🎯 Target  » 👥 Users (flag)\n📊 Progress » <code>[░░░░░░░░░░]  0%</code>\n✅ Sent     » 0\n❌ Failed   » 0</blockquote>\n╚══════════════════════╝`,
+        { parse_mode: "HTML" }
+      );
+      return doBroadcast(msg.chat.id, msg, cleanText, true, "users", null, progressMsg.message_id, flags);
+    }
+    return showBroadcastMenu(msg.chat.id, msg.from.id, msg, cleanText, true, null, flags);
+  }
+  if (hasFlags && msg.reply_to_message) {
+    // Reply + flags — direct broadcast
+    const progressMsg = await bot.sendMessage(msg.chat.id,
+      `╔══════════════════════╗\n║  📢  <b>BROADCASTING</b>  ║\n╠══════════════════════╣\n<blockquote>🎯 Target  » 🌐 All\n📊 Progress » <code>[░░░░░░░░░░]  0%</code>\n✅ Sent     » 0\n❌ Failed   » 0</blockquote>\n╚══════════════════════╝`,
+      { parse_mode: "HTML" }
+    );
+    return doBroadcast(msg.chat.id, msg, "", true, "all", null, progressMsg.message_id, flags);
   }
   // No text, no reply — ask admin to compose content
-  userState.set(msg.from.id, { step: "broadcast_compose", silent: true });
+  userState.set(msg.from.id, { step: "broadcast_compose", silent: true, flags });
   await bot.sendMessage(msg.chat.id,
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
     `  📢  <b>BROADCAST — COMPOSE</b>\n` +
@@ -6323,21 +6406,39 @@ bot.onText(/\/broadcast(?:\s+([\s\S]+))?/, async (msg, match) => {
     `▸ 🎵 Audio / Voice note\n` +
     `▸ 🎭 Sticker (Premium stickers bhi!)\n` +
     `▸ 🌟 Premium Emojis automatically preserve honge\n\n` +
-    `<i>Ya /broadcast &lt;text&gt; likho seedha text ke liye</i>` +
+    `💡 Flags: <code>-pin</code> <code>-pinloud</code> <code>-nobot</code> <code>-user</code>\n` +
+    `<i>Example: /broadcast -pin -user Hello Everyone!</i>` +
     `</blockquote>`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]] } }
   );
 });
 
-// /loud — LOUD broadcast with target selection
+// /loud — LOUD broadcast with optional flags (-pin, -pinloud, -nobot, -user)
 bot.onText(/\/loud(?:\s+([\s\S]+))?/, async (msg, match) => {
   if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "broadcast")) return;
-  const text = match[1]?.trim();
-  if (text || msg.reply_to_message) {
-    return showBroadcastMenu(msg.chat.id, msg.from.id, msg, text || "", false);
+  const rawText = match[1]?.trim() || "";
+  const { flags, cleanText } = parseBroadcastFlags(rawText);
+  const hasFlags = flags.pin || flags.pinloud || flags.nobot || flags.userOnly;
+
+  if (cleanText || msg.reply_to_message) {
+    if (hasFlags && (flags.nobot || flags.userOnly)) {
+      const progressMsg = await bot.sendMessage(msg.chat.id,
+        `╔══════════════════════╗\n║  🔔  <b>BROADCASTING (LOUD)</b>  ║\n╠══════════════════════╣\n<blockquote>🎯 Target  » 👥 Users (flag)\n📊 Progress » <code>[░░░░░░░░░░]  0%</code>\n✅ Sent     » 0\n❌ Failed   » 0</blockquote>\n╚══════════════════════╝`,
+        { parse_mode: "HTML" }
+      );
+      return doBroadcast(msg.chat.id, msg, cleanText, false, "users", null, progressMsg.message_id, flags);
+    }
+    return showBroadcastMenu(msg.chat.id, msg.from.id, msg, cleanText, false, null, flags);
+  }
+  if (hasFlags && msg.reply_to_message) {
+    const progressMsg = await bot.sendMessage(msg.chat.id,
+      `╔══════════════════════╗\n║  🔔  <b>BROADCASTING (LOUD)</b>  ║\n╠══════════════════════╣\n<blockquote>🎯 Target  » 🌐 All\n📊 Progress » <code>[░░░░░░░░░░]  0%</code>\n✅ Sent     » 0\n❌ Failed   » 0</blockquote>\n╚══════════════════════╝`,
+      { parse_mode: "HTML" }
+    );
+    return doBroadcast(msg.chat.id, msg, "", false, "all", null, progressMsg.message_id, flags);
   }
   // No text, no reply — ask admin to compose content
-  userState.set(msg.from.id, { step: "broadcast_compose", silent: false });
+  userState.set(msg.from.id, { step: "broadcast_compose", silent: false, flags });
   await bot.sendMessage(msg.chat.id,
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
     `  🔔  <b>LOUD BROADCAST — COMPOSE</b>\n` +
@@ -6351,7 +6452,8 @@ bot.onText(/\/loud(?:\s+([\s\S]+))?/, async (msg, match) => {
     `▸ 🎵 Audio / Voice note\n` +
     `▸ 🎭 Sticker (Premium stickers bhi!)\n` +
     `▸ 🌟 Premium Emojis automatically preserve honge\n\n` +
-    `<i>Ya /loud &lt;text&gt; likho seedha text ke liye</i>` +
+    `💡 Flags: <code>-pin</code> <code>-pinloud</code> <code>-nobot</code> <code>-user</code>\n` +
+    `<i>Example: /loud -pin Hello Everyone!</i>` +
     `</blockquote>`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]] } }
   );
@@ -8548,12 +8650,18 @@ bot.onText(/\/adminhelp/, async (msg) => {
     `</blockquote>\n\n` +
     `<b>📢 BROADCAST</b>\n` +
     `<blockquote>` +
-    `/broadcast\n  → Compose photo/doc/video+text/sticker (Premium bhi!), pick target (silent)\n\n` +
+    `/broadcast\n  → Compose mode — photo/doc/video/sticker/text, target chuno\n\n` +
     `/broadcast &lt;text&gt;\n  → Image+text broadcast (silent)\n\n` +
-    `/loud\n  → Same as /broadcast with sound\n\n` +
-    `/broadcaststats\n  → Last 20 broadcasts ka reach % + stats dekho\n  Total sent · failed · avg reach · best reach\n\n` +
-    `💡 <i>Reply to any msg + /broadcast → copy-forward mode</i>\n` +
-    `💡 <i>Premium stickers bhi broadcast ho sakte hain via compose mode</i>` +
+    `/broadcast -pin &lt;text&gt;\n  → Broadcast + har chat mein silently PIN karo\n\n` +
+    `/broadcast -pinloud &lt;text&gt;\n  → Broadcast + loud notification ke saath pin karo\n\n` +
+    `/broadcast -nobot &lt;text&gt;\n  → Sirf users ko bhejo (groups/channels skip)\n\n` +
+    `/broadcast -user &lt;text&gt;\n  → Sirf users target (same as -nobot)\n\n` +
+    `/loud &lt;text&gt;\n  → Same as /broadcast but with sound (notification ON)\n\n` +
+    `/loud -pin &lt;text&gt;\n  → Loud + pin in every chat\n\n` +
+    `💡 <i>Reply to msg + /broadcast [-pin] → forward + pin</i>\n` +
+    `💡 <i>Flags combine ho sakte hain: /broadcast -pin -user Hello</i>\n` +
+    `💡 <i>FloodWait auto-handle (wait ≤200s, else skip chat)</i>\n\n` +
+    `/broadcaststats\n  → Last 20 broadcasts ka reach % + stats\n  Avg reach · best reach · pinned count` +
     `</blockquote>\n\n` +
     `<b>⏰ SCHEDULED BROADCAST</b>\n` +
     `<blockquote>` +

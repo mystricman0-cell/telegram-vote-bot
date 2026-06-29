@@ -58,6 +58,37 @@
 - `/listpremiumemoji` — View all stored emoji IDs + preview tags
 - `/clearallpremiumemoji` — Remove all stored emojis
 
+### 📢 &nbsp;NOBITA_MUSIC Style Broadcast System *(NEW in v3.1.0)*
+
+Full flag-based broadcast system — inspired by NOBITA_MUSIC bot:
+
+| Flag | Effect |
+|------|--------|
+| `-pin` | Broadcast + silently **pin** message in every chat |
+| `-pinloud` | Broadcast + pin **with notification** |
+| `-nobot` | Skip groups/channels → send **to users only** |
+| `-user` | Same as `-nobot` — users only |
+
+**Usage examples:**
+```
+/broadcast -pin Hello everyone!
+/broadcast -pinloud -user Important update!
+/loud -pin -user Breaking news!
+```
+
+**Reply-to + flag mode:**
+> Reply to any message → `/broadcast -pin` → forwards + pins in all chats
+
+**FloodWait smart handling (NOBITA_MUSIC style):**
+- If Telegram throttles → waits automatically (up to 200s)
+- If wait > 200s → skips that chat and continues
+- 200ms delay between each send (flood-safe)
+
+**Broadcast report shows:**
+- ✅ Sent · ❌ Failed · 📌 Pinned · 📡 Reach % · Flags used
+
+**Flags can be combined:** `/broadcast -pin -user -pinloud` all work together
+
 ### 📡 &nbsp;Broadcast Stats & Reach Tracking *(NEW in v3.1.0)*
 - **`/broadcaststats`** — Full reach dashboard for last 20 broadcasts
 - Shows: Total sent ✅ · Failed ❌ · **Reach %** per broadcast
