@@ -2250,7 +2250,7 @@ bot.on("callback_query", async (query) => {
       `✦━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `<blockquote>Action has been cancelled.\nReturn to the main menu to start again.</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+      { reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }]] } }
     );
     return;
   }
@@ -3431,7 +3431,7 @@ bot.on("callback_query", async (query) => {
     if (isResolved) {
       // Edit the admin's message to remove buttons and mark resolved
       await bot.editMessageReplyMarkup(
-        { inline_keyboard: [[{ text: "✅ RESOLVED", callback_data: "noop" }]] },
+        { inline_keyboard: [[{ text: "✅ RESOLVED", callback_data: "noop", style: "success" }]] },
         { chat_id: chatId, message_id: msgId }
       ).catch(() => {});
       await bot.answerCallbackQuery(query.id, { text: "✅ Marked as Resolved", show_alert: false }).catch(() => {});
@@ -3447,7 +3447,7 @@ bot.on("callback_query", async (query) => {
           `Agar aur koi problem ho toh /support pe dubara message karein. 🙏` +
           `</blockquote>\n\n` +
           `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-          { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+          { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }]] } }
         );
       } catch (e) { console.error("Support resolve notify:", e.message); }
     } else {
@@ -3519,7 +3519,7 @@ bot.on("callback_query", async (query) => {
         `⏳ Khatam: <b>${safeFormatDateTime(expiry)}</b>\n` +
         `⏱️ Baki:   <b>${timeRemaining(expiry)}</b>\n\n` +
         `Premium features ab available hain!`,
-        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 My Membership", callback_data: "vip_membership" }]] } }
+        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "👑 My Membership", callback_data: "vip_membership", style: "danger" }]] } }
       );
     } catch {}
     return;
@@ -4700,7 +4700,7 @@ bot.on("message", async (msg) => {
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `<blockquote>Aapka message admin ko bhej diya gaya hai.\nJald hi reply milega. 🙏</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }]] } }
     );
     return;
   }
@@ -4754,7 +4754,7 @@ bot.on("message", async (msg) => {
       `💬━━━━━━━━━━━━━━━━━━━━━━💬\n\n` +
       `<blockquote>Shukriya! Aapka feedback admin tak pahuch gaya.\nHum ise zaroor consider karenge. 🙏</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }]] } }
     );
     return;
   }
@@ -4789,7 +4789,7 @@ bot.on("message", async (msg) => {
       `◈ Status   ▸  ${sent ? "✅ Published" : "🚫 Failed (bot may lack post permission)"}` +
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "◀️ Main Menu", callback_data: "main_menu" }]] } }
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "◀️ Main Menu", callback_data: "main_menu", style: "primary" }]] } }
     );
     return;
   }
@@ -4963,7 +4963,7 @@ bot.on("message", async (msg) => {
       `⚡ Powered by <b>DRS NETWORK</b>` +
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }]] } }
     );
     return;
   }
@@ -5314,7 +5314,7 @@ bot.on("message", async (msg) => {
         `<b>✅ ${h(state.type === "channel" ? "Channel" : "Group")} Registered!</b>\n\n` +
         `<b>${h(chatInfo.title || text)}</b>\n` +
         `ID: <code>${chatInfo.id}</code>`,
-        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+        { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }]] } }
       );
     } catch {
       await bot.sendMessage(chatId, `❌ Chat not found. Make sure the bot is an admin in the channel, then try again.`, { parse_mode: "HTML" });
@@ -5432,7 +5432,7 @@ bot.on("message", async (msg) => {
     await saveVip(userId, vipData);
     await bot.sendMessage(chatId,
       `<b>👑 VIP Activated!</b>\n\n📅 Shuru:  <b>${safeFormatDateTime(new Date())}</b>\n⏳ Khatam: <b>${safeFormatDateTime(expiry)}</b>\n⏱️ Baki:   <b>${timeRemaining(expiry)}</b>`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] } }
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }]] } }
     );
     return;
   }
@@ -5673,7 +5673,7 @@ bot.onText(/\/myplan/, async (msg) => {
 
   await bot.sendMessage(chatId, text, {
     parse_mode: "HTML",
-    reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu" }]] }
+    reply_markup: { inline_keyboard: [[{ text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }]] }
   });
 });
 
@@ -5813,7 +5813,7 @@ bot.onText(/\/help/, async (msg) => {
     `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️\n` +
     `<blockquote>⚡️ ᴘᴏᴡᴇʀᴇᴅ : <a href="https://t.me/rchiex">𝐃𝐑𝐒 ɴᴇᴛᴡᴏʀᴋ</a> 🔥\n` +
     `🔥 ꜱᴜᴘᴘᴏʀᴛ :— <a href="https://t.me/drssupport">𝐀𝐁𝐇𝐈𝐒𝐇𝐄𝐊</a> 🔥</blockquote>`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu", style: "primary" }]] } }
   );
 });
 
@@ -5831,7 +5831,7 @@ bot.onText(/\/leaderboard/, async (msg) => {
       `  🏆  <b>ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ</b>\n` +
       `✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
       `<blockquote>◈ Koi active giveaway nahi mila.\n\nPehle ek giveaway create karo!</blockquote>`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🎁 ɴᴇᴡ ɢɪᴠᴇᴀᴡᴀʏ", callback_data: "new_giveaway" }]] } }
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🎁 ɴᴇᴡ ɢɪᴠᴇᴀᴡᴀʏ", callback_data: "new_giveaway", style: "success" }]] } }
     );
   }
   const buttons = active.map(([gId, g]) => [{
@@ -5875,7 +5875,7 @@ bot.onText(/\/mystats/, async (msg) => {
     `◈ ᴛᴏᴛᴀʟ ᴠᴏᴛᴇꜱ ᴄᴀꜱᴛ  ▸  ${totalVotes}` +
     `</blockquote>\n\n` +
     `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu", style: "primary" }]] } }
   );
 });
 
@@ -5939,7 +5939,7 @@ bot.onText(/\/botstatus/, async (msg) => {
     `◈ ᴘᴇɴᴅɪɴɢ ᴘᴀʏꜱ   ▸  ${pendingTotal}` +
     `</blockquote>\n\n` +
     `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu", style: "primary" }]] } }
   );
 });
 
@@ -6059,7 +6059,7 @@ bot.onText(/\/createpost/, async (msg) => {
     text: `${ch.type === "channel" ? "📢" : "🏘️"}  ${ch.title.slice(0, 28)}`,
     callback_data: `cp_ch:${chId}`
   }]);
-  chButtons.push([{ text: "❌ Cancel", callback_data: "cancel_flow" }]);
+  chButtons.push([{ text: "❌ Cancel", callback_data: "cancel_flow", style: "danger" }]);
   await bot.sendMessage(chatId,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
     `  ◆  <b>CREATE POST</b>  ◆\n` +
@@ -6319,8 +6319,8 @@ bot.onText(/\/broadcaststats/, async (msg) => {
     parse_mode: "HTML",
     reply_markup: {
       inline_keyboard: [[
-        { text: "🗑️ Clear Stats", callback_data: "clearbroadcaststats" },
-        { text: "🏠 Main Menu", callback_data: "main_menu" }
+        { text: "🗑️ Clear Stats", callback_data: "clearbroadcaststats", style: "danger" },
+        { text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }
       ]]
     }
   });
@@ -6368,14 +6368,14 @@ async function showBroadcastMenu(chatId, userId, adminMsg, text, silent, compose
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "👥 Users only", callback_data: "bc_target:users" },
-            { text: "📢 Channels only", callback_data: "bc_target:channels" }
+            { text: "👥 Users only", callback_data: "bc_target:users", style: "primary" },
+            { text: "📢 Channels only", callback_data: "bc_target:channels", style: "primary" }
           ],
           [
-            { text: "🏘️ Groups only", callback_data: "bc_target:groups" },
-            { text: "🌐 All", callback_data: "bc_target:all" }
+            { text: "🏘️ Groups only", callback_data: "bc_target:groups", style: "primary" },
+            { text: "🌐 All", callback_data: "bc_target:all", style: "success" }
           ],
-          [{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]
+          [{ text: "❌ Cancel", callback_data: "bc_target:cancel", style: "danger" }]
         ]
       }
     }
@@ -6427,7 +6427,7 @@ bot.onText(/\/broadcast(?:\s+([\s\S]+))?/, async (msg, match) => {
     `💡 Flags: <code>-pin</code> <code>-pinloud</code> <code>-nobot</code> <code>-user</code>\n` +
     `<i>Example: /broadcast -pin -user Hello Everyone!</i>` +
     `</blockquote>`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]] } }
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel", style: "danger" }]] } }
   );
 });
 
@@ -6473,7 +6473,7 @@ bot.onText(/\/loud(?:\s+([\s\S]+))?/, async (msg, match) => {
     `💡 Flags: <code>-pin</code> <code>-pinloud</code> <code>-nobot</code> <code>-user</code>\n` +
     `<i>Example: /loud -pin Hello Everyone!</i>` +
     `</blockquote>`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]] } }
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel", style: "danger" }]] } }
   );
 });
 
@@ -6622,12 +6622,12 @@ bot.onText(/\/setbuttontheme(?:\s+(\S+))?/, async (msg, match) => {
       reply_markup: {
         inline_keyboard: [
           [
-            { text: "❤️ Red", callback_data: "btntheme:red" },
-            { text: "💙 Blue", callback_data: "btntheme:blue" }
+            { text: "❤️ Red", callback_data: "btntheme:red", style: "danger" },
+            { text: "💙 Blue", callback_data: "btntheme:blue", style: "primary" }
           ],
           [
-            { text: "💚 Green", callback_data: "btntheme:green" },
-            { text: "⬛ Default", callback_data: "btntheme:default" }
+            { text: "💚 Green", callback_data: "btntheme:green", style: "success" },
+            { text: "⬛ Default", callback_data: "btntheme:default", style: "primary" }
           ]
         ]
       }
@@ -6838,7 +6838,7 @@ bot.onText(/\/givemem\s+(\d+)\s+(1d|7d|30d)/, async (msg, match) => {
       `📊 Full giveaway management panel\n\n` +
       `Use /myplan to check your status anytime.` +
       `</blockquote>`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🎁 Go to Bot", callback_data: "main_menu" }]] } }
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🎁 Go to Bot", callback_data: "main_menu", style: "primary" }]] } }
     );
   } catch {}
 });
@@ -7175,8 +7175,8 @@ bot.onText(/\/perms\s+(\d+)/, async (msg, match) => {
     const allowed = getUserPerm(targetId, key);
     return [{ text: `${allowed ? "✅" : "❌"} ${VALID_PERMS[key]}`, callback_data: `toggle_perm:${targetId}:${key}` }];
   });
-  permButtons.push([{ text: "🔄 Reset All (Enable All)", callback_data: `reset_perms:${targetId}` }]);
-  permButtons.push([{ text: "◀️ Done", callback_data: "main_menu" }]);
+  permButtons.push([{ text: "🔄 Reset All (Enable All)", callback_data: `reset_perms:${targetId}`, style: "success" }]);
+  permButtons.push([{ text: "◀️ Done", callback_data: "main_menu", style: "primary" }]);
 
   await bot.sendMessage(msg.chat.id,
     `◈━━━━━━━━━━━━━━━━━━━━━━◈\n` +
@@ -7380,13 +7380,13 @@ bot.onText(/\/cleandb$/, async (msg) => {
 
   const keyboard = {
     inline_keyboard: [
-      [{ text: `🗑️ Ended Giveaways 30d+ (${oldGiveaways})`, callback_data: "cleandb:giveaways" }],
-      [{ text: `💸 Old Pending Payments 7d+ (${oldPayments})`, callback_data: "cleandb:payments" }],
-      [{ text: `💳 Old Membership Claims 3d+ (${oldMemberships})`, callback_data: "cleandb:memberships" }],
-      [{ text: `👑 Mark Expired VIP Inactive (${expiredVip})`, callback_data: "cleandb:vip" }],
-      [{ text: `🛡️ Old Security Logs 7d+ (${oldSecLogDB})`, callback_data: "cleandb:seclogs" }],
+      [{ text: `🗑️ Ended Giveaways 30d+ (${oldGiveaways})`, callback_data: "cleandb:giveaways", style: "danger" }],
+      [{ text: `💸 Old Pending Payments 7d+ (${oldPayments})`, callback_data: "cleandb:payments", style: "danger" }],
+      [{ text: `💳 Old Membership Claims 3d+ (${oldMemberships})`, callback_data: "cleandb:memberships", style: "danger" }],
+      [{ text: `👑 Mark Expired VIP Inactive (${expiredVip})`, callback_data: "cleandb:vip", style: "danger" }],
+      [{ text: `🛡️ Old Security Logs 7d+ (${oldSecLogDB})`, callback_data: "cleandb:seclogs", style: "danger" }],
       [{ text: `🧹 CLEAN ALL ABOVE`, callback_data: "cleandb:all" }],
-      [{ text: "❌ Cancel", callback_data: "cleandb:cancel" }]
+      [{ text: "❌ Cancel", callback_data: "cleandb:cancel", style: "danger" }]
     ]
   };
   await bot.sendMessage(chatId,
@@ -7507,7 +7507,7 @@ bot.onText(/\/setwelcomemsg/, async (msg) => {
     `<b>📝 Custom Welcome Message</b>\n\n` +
     `<blockquote>Ab naya welcome message type karo.\nHTML formatting allowed hai (<b>bold</b>, <i>italic</i>, <code>code</code>).\n\n` +
     `Ya /clearwelcomemsg bhejo default restore karne ke liye.</blockquote>`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel" }]] } }
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel", style: "danger" }]] } }
   );
 });
 
@@ -8446,7 +8446,7 @@ bot.onText(/\/winners(?:\s+(\S+))?/, async (msg, match) => {
     `🗳️ Total Votes   ▸  <b>${totalVotes}</b>\n` +
     `📅 Status        ▸  ${endedAt}` +
     `</blockquote>`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Home", callback_data: "main_menu" }]] } }
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Home", callback_data: "main_menu", style: "primary" }]] } }
   );
 });
 
@@ -8516,7 +8516,7 @@ bot.onText(/\/active/, async (msg) => {
     `✦━━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
     `${lines}`,
     { parse_mode: "HTML", disable_web_page_preview: true,
-      reply_markup: { inline_keyboard: [[{ text: "🏠 Home", callback_data: "main_menu" }]] }
+      reply_markup: { inline_keyboard: [[{ text: "🏠 Home", callback_data: "main_menu", style: "primary" }]] }
     }
   );
 });
@@ -9634,7 +9634,7 @@ bot.onText(/\/about/, async (msg) => {
   await bot.sendMessage(msg.chat.id,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n   ℹ️  <b>𝐀𝐁𝐎𝐔𝐓 𝐃𝐑𝐒 𝐁𝐎𝐓</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
     `<blockquote>◈ ɴᴀᴍᴇ     ▸  <b>DRS Giveaway Bot</b>\n◈ ᴠᴇʀꜱɪᴏɴ  ▸  <b>v3.0.8</b>\n◈ ɴᴇᴛᴡᴏʀᴋ  ▸  <a href="https://t.me/rchiex">DRS Network</a>\n◈ ꜱᴜᴘᴘᴏʀᴛ  ▸  <a href="https://t.me/drssupport">@drssupport</a>\n◈ ʙᴀꜱᴇ    ▸  MongoDB · Node.js · Telegram API\n◈ ꜰᴇᴀᴛᴜʀᴇꜱ ▸  Giveaway · Voting · VIP · Anti-Cheat · Security Engine</blockquote>\n\n✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } });
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu", style: "primary" }]] } });
 });
 
 // ─── /version ───
@@ -9664,7 +9664,7 @@ bot.onText(/\/rules/, async (msg) => {
   await bot.sendMessage(msg.chat.id,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n   📜  <b>ʙᴏᴛ ʀᴜʟᴇꜱ</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
     `<blockquote>1️⃣ <b>Fair Play</b> — Vote manipulation strictly banned\n\n2️⃣ <b>No Spam</b> — Repeated commands = auto-rate-limit + warning\n\n3️⃣ <b>No Hacking</b> — API exploit / bot hack attempt = permanent ban\n\n4️⃣ <b>Payments</b> — Sirf verified screenshots accepted, fake = ban\n\n5️⃣ <b>Channel Membership</b> — Channel chhoda = votes auto-deduct\n\n6️⃣ <b>Respect</b> — Abusive language = warning + ban\n\n7️⃣ <b>VIP Features</b> — Premium features ke liye VIP plan chahiye\n\n⚠️ <i>Rules tod ne par warning aur phir ban — no notice.</i></blockquote>\n\n✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } });
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu", style: "primary" }]] } });
 });
 
 // ─── /faq ───
@@ -9673,7 +9673,7 @@ bot.onText(/\/faq/, async (msg) => {
   await bot.sendMessage(msg.chat.id,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n   ❓  <b>ꜰᴀQ</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
     `<blockquote><b>Q: Giveaway kaise banate hain?</b>\n▸ /start → 🎁 New Giveaway → wizard follow karo\n\n<b>Q: Vote kaise milte hain?</b>\n▸ Free: Channel member bano aur vote karo\n▸ Extra: INR ya ⭐ Stars se kharido\n\n<b>Q: VIP ke kya fayde hain?</b>\n▸ Custom thumbnail, unlimited giveaways, extra force-join gate\n\n<b>Q: Vote kyu cut hue?</b>\n▸ Channel chhoda → votes auto-deduct hote hain\n\n<b>Q: Payment verify nahi hui?</b>\n▸ /support se admin ko screenshot bhejo\n\n<b>Q: Bot respond nahi kar raha?</b>\n▸ /start karo, ya /support se contact karo\n\n<b>Q: Winner kaise decide hota hai?</b>\n▸ Top vote wale participants auto-selected hote hain</blockquote>\n\n✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } });
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu", style: "primary" }]] } });
 });
 
 // ─── /terms ───
@@ -9682,7 +9682,7 @@ bot.onText(/\/terms/, async (msg) => {
   await bot.sendMessage(msg.chat.id,
     `✦━━━━━━━━━━━━━━━━━━━━━✦\n   📄  <b>ᴛᴇʀᴍꜱ ᴏꜰ ꜱᴇʀᴠɪᴄᴇ</b>\n✦━━━━━━━━━━━━━━━━━━━━━✦\n\n` +
     `<blockquote>▸ Bot use karna = yeh terms accept karna\n▸ Payments non-refundable hain\n▸ Fake payments/screenshots = permanent ban\n▸ DRS Network kisi bhi time rules change kar sakta hai\n▸ Giveaway winners bot algorithm se decide hote hain\n▸ API abuse ya bot hack attempt → legal action possible\n▸ Admin ka decision final hoga</blockquote>`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } });
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu", style: "primary" }]] } });
 });
 
 // ─── /countdown ───
@@ -9819,7 +9819,7 @@ bot.on("message", async (msg) => {
     await bot.sendMessage(msg.chat.id,
       `❓━━━━━━━━━━━━━━━━━━━━━━❓\n   <b>ᴜɴᴋɴᴏᴡɴ ᴄᴏᴍᴍᴀɴᴅ</b>\n❓━━━━━━━━━━━━━━━━━━━━━━❓\n\n` +
       `<blockquote>◈ Command <code>/${cmd}</code> exist nahi karta.\n\n📖 Saare commands:\n/help — User commands\n\n💡 Koi problem ho toh /support karo.</blockquote>`,
-      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "📖 ʜᴇʟᴘ", callback_data: "show_help" }, { text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "📖 ʜᴇʟᴘ", callback_data: "show_help", style: "primary" }, { text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu", style: "primary" }]] } }
     ).catch(() => {});
   } catch (e) { console.error("unknown_cmd handler error:", e.message); }
 });
@@ -9906,11 +9906,11 @@ function custKeyboard(page) {
     callback_data: `cust_edit:${k}`
   }]);
   const nav = [];
-  if (page > 0) nav.push({ text: "⬅️ Prev", callback_data: `cust_page:${page - 1}` });
+  if (page > 0) nav.push({ text: "⬅️ Prev", callback_data: `cust_page:${page - 1}`, style: "primary" });
   nav.push({ text: `📄 ${page + 1}/${Math.ceil(UI_KEYS.length / CUST_PAGE_SIZE)}`, callback_data: "cust_noop" });
-  if (start + CUST_PAGE_SIZE < UI_KEYS.length) nav.push({ text: "Next ➡️", callback_data: `cust_page:${page + 1}` });
+  if (start + CUST_PAGE_SIZE < UI_KEYS.length) nav.push({ text: "Next ➡️", callback_data: `cust_page:${page + 1}`, style: "primary" });
   rows.push(nav);
-  rows.push([{ text: "🔙 Close", callback_data: "cust_close" }]);
+  rows.push([{ text: "🔙 Close", callback_data: "cust_close", style: "danger" }]);
   return { inline_keyboard: rows };
 }
 
@@ -10042,8 +10042,8 @@ bot.onText(/\/preview(?:\s+(\S+))?/, async (msg, match) => {
   await bot.sendMessage(msg.chat.id, msg2, {
     parse_mode: "HTML",
     reply_markup: { inline_keyboard: [
-      [{ text: "✏️ Edit This Key", callback_data: `cust_edit:${key}` }],
-      ...(isCustom ? [[{ text: "🔄 Reset to Default", callback_data: `cust_reset:${key}` }]] : [])
+      [{ text: "✏️ Edit This Key", callback_data: `cust_edit:${key}`, style: "primary" }],
+      ...(isCustom ? [[{ text: "🔄 Reset to Default", callback_data: `cust_reset:${key}`, style: "danger" }]] : [])
     ]}
   });
 });
@@ -10140,7 +10140,7 @@ bot.onText(/\/setlogdest(?:\s+(\S+))?/, async (msg, match) => {
     `✅ DB mein save ho gaya — restart ke baad bhi yahi setting rahegi.` +
     `</blockquote>\n\n` +
     `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Home", callback_data: "main_menu" }]] } }
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 Home", callback_data: "main_menu", style: "primary" }]] } }
   );
 });
 
@@ -10188,7 +10188,7 @@ bot.onText(/\/setownerid(?:\s+(\d+))?/, async (msg, match) => {
     `◈ ɴᴀʏᴀ ɪᴅ    ▸  <code>${newId}</code>\n\n` +
     `✅ DB mein save ho gaya. Restart ke baad bhi yahi ID owner rahega.</blockquote>\n\n` +
     `✈️━━━━<a href="https://t.me/rchiex">━ 𝐃𝐑𝐒 ━</a>━━━━✈️`,
-    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu" }]] } }
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "🏠 ʜᴏᴍᴇ", callback_data: "main_menu", style: "primary" }]] } }
   );
 
   // Notify new owner
@@ -10250,8 +10250,8 @@ bot.onText(/\/resetui/, async (msg) => {
     {
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: [[
-        { text: "✅ Haan, sab reset karo", callback_data: "resetui_confirm" },
-        { text: "❌ Cancel", callback_data: "resetui_cancel" }
+        { text: "✅ Haan, sab reset karo", callback_data: "resetui_confirm", style: "success" },
+        { text: "❌ Cancel", callback_data: "resetui_cancel", style: "danger" }
       ]]}
     });
 });
@@ -10635,8 +10635,8 @@ bot.onText(/\/editadminperms\s+(\d+)/, async (msg, match) => {
     text: (sa.permissions.has(perm) ? "✅ " : "❌ ") + perm,
     callback_data: `sadm_perm:${targetId}:${perm}`
   }]);
-  buttons.push([{ text: "🗑️ Remove Sub-Admin", callback_data: `sadm_remove:${targetId}` }]);
-  buttons.push([{ text: "✖ Close", callback_data: "sadm_close" }]);
+  buttons.push([{ text: "🗑️ Remove Sub-Admin", callback_data: `sadm_remove:${targetId}`, style: "danger" }]);
+  buttons.push([{ text: "✖ Close", callback_data: "sadm_close", style: "danger" }]);
 
   await bot.sendMessage(chatId,
     `✦━━━━━━━━━━━━━━━━━✦\n  🔑  ADMIN PERMISSIONS\n✦━━━━━━━━━━━━━━━━━✦\n\n` +
@@ -10941,7 +10941,7 @@ Ready!
               `</blockquote>\n\n` +
               `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
               { parse_mode: "HTML", reply_markup: { inline_keyboard: [
-                [{ text: "👑 Renew Membership", callback_data: "vip_membership" }]
+                [{ text: "👑 Renew Membership", callback_data: "vip_membership", style: "danger" }]
               ]}}
             );
           } catch {}
