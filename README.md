@@ -48,6 +48,61 @@
 ✦━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━✦
 ```
 
+### 📡 &nbsp;Dynamic Log Destination *(NEW in v3.1.0)*
+
+Owner can change where ALL bot logs go (support tickets, feedback, payment alerts, new users) at any time — no restart needed:
+
+| Command | Effect |
+|---------|--------|
+| `/setlogdest` | View current destination + inline buttons to reset |
+| `/setlogdest 123456789` | Route logs to any user ID |
+| `/setlogdest -1001234567890` | Route logs to a channel/group |
+| `/setlogdest reset` | Reset back to owner (default) |
+
+- ✅ Persists in MongoDB — survives restarts
+- ✅ Test message auto-sent to verify access before saving
+- ✅ **Inline button** to reset with one tap
+
+---
+
+### 👁️ &nbsp;Broadcast Preview *(NEW in v3.1.0)*
+
+See exactly how your broadcast will look **before** sending to everyone:
+
+```
+/broadcastpreview Hello everyone!
+```
+Or reply to any message → `/broadcastpreview`
+
+- Shows full DRS header with your stored premium emojis
+- Shows recipient count + premium emoji status
+- **Send Now** buttons (Silent / Loud) right from preview
+- Works for text, photo, and media messages
+
+---
+
+### 💓 &nbsp;Fixed Heartbeat Display *(v3.1.0)*
+
+Heartbeat report now shows cleanly inside the box:
+
+```
+╔═══════════════════════╗
+║  💓  BOT HEARTBEAT  💓  ║
+╠═══════════════════════╣
+║ ◈ Status    ▸ 🟢 ALIVE
+║ ◈ Time      ▸ 🕐 09:35:43 am IST
+║ ◈ Uptime    ▸ ⏱️ 15h 51m 15s
+║ ◈ Users     ▸ 👥 51
+║ ◈ Giveaways ▸ 🎁 1 active / 17 total
+║ ◈ Database  ▸ 💾 ✅ Connected
+║ ◈ Next ping ▸ ⏳ 3 minutes
+╚═══════════════════════╝
+```
+
+Commands: `/heartbeat` (manual check) · `/toggleheartbeat` (ON/OFF auto reports)
+
+---
+
 ### 🎨 &nbsp;Colored Button UI Theme System *(NEW in v3.1.0)*
 
 Every button across the entire bot now has a **visual color style** — no more plain grey buttons:

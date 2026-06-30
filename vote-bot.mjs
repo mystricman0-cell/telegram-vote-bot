@@ -9436,16 +9436,14 @@ bot.onText(/\/heartbeat/, async (msg) => {
     `╔═══════════════════════╗\n` +
     `║  💓  BOT HEARTBEAT  💓  ║\n` +
     `╠═══════════════════════╣\n` +
-    `<blockquote>` +
-    `◈ Status      ▸  🟢 <b>ALIVE</b>\n` +
-    `◈ Time        ▸  🕐 <b>${nowIST} IST</b>\n` +
-    `◈ Uptime      ▸  ⏱️ <b>${getUptimeStr()}</b>\n` +
-    `◈ Users       ▸  👥 <b>${totalUsers}</b>\n` +
-    `◈ Giveaways   ▸  🎁 <b>${activeGiveaways} active / ${totalGiveaways} total</b>\n` +
-    `◈ Database    ▸  💾 <b>${dbState}</b>\n` +
-    `◈ Auto Report ▸  ${heartbeatReportEnabled ? "🟢 ON (every 3 min)" : "🔴 OFF"}\n` +
-    `◈ Health URL  ▸  <code>:${HEARTBEAT_PORT}/health</code>` +
-    `</blockquote>\n` +
+    `║ ◈ Status      ▸ 🟢 <b>ALIVE</b>\n` +
+    `║ ◈ Time        ▸ 🕐 <b>${nowIST} IST</b>\n` +
+    `║ ◈ Uptime      ▸ ⏱️ <b>${getUptimeStr()}</b>\n` +
+    `║ ◈ Users       ▸ 👥 <b>${totalUsers}</b>\n` +
+    `║ ◈ Giveaways   ▸ 🎁 <b>${activeGiveaways} active / ${totalGiveaways} total</b>\n` +
+    `║ ◈ Database    ▸ 💾 <b>${dbState}</b>\n` +
+    `║ ◈ Auto Report ▸ ${heartbeatReportEnabled ? "🟢 ON (every 3 min)" : "🔴 OFF"}\n` +
+    `║ ◈ Health URL  ▸ <code>:${HEARTBEAT_PORT}/health</code>\n` +
     `╚═══════════════════════╝`,
     { parse_mode: "HTML" }
   );
@@ -11039,15 +11037,13 @@ Ready!
             `╔═══════════════════════╗\n` +
             `║  💓  BOT HEARTBEAT  💓  ║\n` +
             `╠═══════════════════════╣\n` +
-            `<blockquote>` +
-            `◈ Status    ▸  🟢 <b>ALIVE</b>\n` +
-            `◈ Time      ▸  🕐 <b>${nowIST} IST</b>\n` +
-            `◈ Uptime    ▸  ⏱️ <b>${getUptimeStr()}</b>\n` +
-            `◈ Users     ▸  👥 <b>${totalUsers}</b>\n` +
-            `◈ Giveaways ▸  🎁 <b>${activeGiveaways} active / ${totalGiveaways} total</b>\n` +
-            `◈ Database  ▸  💾 <b>${dbState}</b>\n` +
-            `◈ Next ping ▸  ⏳ <b>3 minutes</b>` +
-            `</blockquote>\n` +
+            `║ ◈ Status    ▸ 🟢 <b>ALIVE</b>\n` +
+            `║ ◈ Time      ▸ 🕐 <b>${nowIST} IST</b>\n` +
+            `║ ◈ Uptime    ▸ ⏱️ <b>${getUptimeStr()}</b>\n` +
+            `║ ◈ Users     ▸ 👥 <b>${totalUsers}</b>\n` +
+            `║ ◈ Giveaways ▸ 🎁 <b>${activeGiveaways} active / ${totalGiveaways} total</b>\n` +
+            `║ ◈ Database  ▸ 💾 <b>${dbState}</b>\n` +
+            `║ ◈ Next ping ▸ ⏳ <b>3 minutes</b>\n` +
             `╚═══════════════════════╝`,
             { parse_mode: "HTML" }
           ).catch(() => {});
