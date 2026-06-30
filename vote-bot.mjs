@@ -3423,6 +3423,40 @@ bot.on("callback_query", async (query) => {
   }
 
   // ─── Admin: Support Ticket — Resolved / Not Resolved ───
+  // ── Log Destination inline buttons ──
+  if (data.startsWith("logdest:")) {
+    if (userId !== ownerAdminId) return bot.answerCallbackQuery(query.id, { text: "❌ Owner only!", show_alert: true }).catch(() => {});
+    const sub = data.split(":")[1];
+    if (sub === "reset") {
+      logDestId = null;
+      await BotConfigModel.findOneAndDelete({ key: "logDestId" }).catch(() => {});
+      await bot.answerCallbackQuery(query.id, { text: "✅ Reset! Logs aapke paas aayenge.", show_alert: false }).catch(() => {});
+      await bot.editMessageReplyMarkup({ inline_keyboard: [[{ text: "✅ Reset — Logs Owner ko ja rahe hain", callback_data: "noop", style: "success" }]] }, { chat_id: chatId, message_id: msgId }).catch(() => {});
+    } else if (sub === "copy") {
+      const destId = data.split(":")[2] || "";
+      await bot.answerCallbackQuery(query.id, { text: `Current ID: ${destId}`, show_alert: true }).catch(() => {});
+    }
+    return;
+  }
+
+  // ── Broadcast preview send buttons ──
+  if (data.startsWith("bc_preview_send:")) {
+    if (!hasAdminPerm(userId, "broadcast")) return bot.answerCallbackQuery(query.id, { text: "❌ No permission!", show_alert: true }).catch(() => {});
+    const action = data.split(":")[1];
+    if (action === "cancel") {
+      await bot.answerCallbackQuery(query.id, { text: "❌ Cancelled", show_alert: false }).catch(() => {});
+      await bot.editMessageReplyMarkup({ inline_keyboard: [[{ text: "❌ Cancelled", callback_data: "noop", style: "danger" }]] }, { chat_id: chatId, message_id: msgId }).catch(() => {});
+      return;
+    }
+    await bot.answerCallbackQuery(query.id, { text: "📢 Broadcast shuru ho raha hai...", show_alert: false }).catch(() => {});
+    await bot.editMessageReplyMarkup({ inline_keyboard: [[{ text: "📢 Broadcasting...", callback_data: "noop", style: "primary" }]] }, { chat_id: chatId, message_id: msgId }).catch(() => {});
+    const isSilent = action === "silent";
+    const state = userState.get(userId);
+    const progressMsg = await bot.sendMessage(chatId, `📢 <b>Broadcast starting...</b>`, { parse_mode: "HTML" }).catch(() => null);
+    await doBroadcast(chatId, null, "", isSilent, "all", state?.composeMsg || null, progressMsg?.message_id || null, {});
+    return;
+  }
+
   if (data.startsWith("sup_resolve:") || data.startsWith("sup_pending:")) {
     if (!isAdmin(userId)) return;
     const isResolved = data.startsWith("sup_resolve:");
@@ -6470,6 +6504,93 @@ bot.onText(/\/broadcast(?:\s+([\s\S]+))?/, async (msg, match) => {
     `</blockquote>`,
     { parse_mode: "HTML", reply_markup: { inline_keyboard: [[{ text: "❌ Cancel", callback_data: "bc_target:cancel", style: "danger" }]] } }
   );
+});
+
+// /broadcastpreview — Preview exactly how your broadcast will look (with premium emojis)
+bot.onText(/\/broadcastpreview(?:\s+([\s\S]+))?/, async (msg, match) => {
+  if (msg.chat.type !== "private" || !hasAdminPerm(msg.from.id, "broadcast")) return;
+  const chatId = msg.chat.id;
+  const rawText = match[1]?.trim() || "";
+  const replyTo = msg.reply_to_message;
+
+  const premiumDeco = premiumEmojis.length > 0
+    ? premiumEmojis.slice(0, 3).map(e => `<tg-emoji emoji-id="${e.id}">⭐</tg-emoji>`).join("") + " "
+    : "";
+  const bcHeader =
+    `✦━━━━━━━━━━━━━━━━━━━━━✦\n` +
+    `${premiumDeco}  📢  <b>DRS BROADCAST</b>  ${premiumDeco}\n` +
+    `✦━━━━━━━━━━━━━━━━━━━━━✦`;
+  const bcFooter = `✦ ─── <b>@${BOT_USERNAME || "DRS_GiveawayBot"}</b> ─── ✦`;
+
+  if (!rawText && !replyTo) {
+    return bot.sendMessage(chatId,
+      `👁━━━━━━━━━━━━━━━━━━━━━━━━👁\n` +
+      `  <b>BROADCAST PREVIEW</b>\n` +
+      `👁━━━━━━━━━━━━━━━━━━━━━━━━👁\n\n` +
+      `<blockquote>Is command se aap dekh sakte ho ke broadcast bhejne ke baad kaisa dikhega — premium emoji ke saath.\n\n` +
+      `<b>Usage:</b>\n` +
+      `Text:  <code>/broadcastpreview Hello Everyone!</code>\n` +
+      `Media: Reply karo kisi message pe → <code>/broadcastpreview</code>\n\n` +
+      `⚡ Premium emojis auto-inject honge agar /setpremiumemoji set hai.</blockquote>\n\n` +
+      `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
+      { parse_mode: "HTML" }
+    );
+  }
+
+  await bot.sendMessage(chatId,
+    `👁 <b>BROADCAST PREVIEW</b>\n<i>(Exactly aisa dikhega recipients ko)</i>`,
+    { parse_mode: "HTML" }
+  );
+
+  try {
+    if (replyTo && replyTo.text) {
+      const bodyHtml = buildHtmlValue(replyTo.text, replyTo.entities || [], 0);
+      await bot.sendMessage(chatId,
+        `${bcHeader}\n\n<blockquote>${bodyHtml}</blockquote>\n\n${bcFooter}`,
+        { parse_mode: "HTML" }
+      );
+    } else if (replyTo && replyTo.photo) {
+      const rawCap = replyTo.caption || "";
+      const capHtml = rawCap ? buildHtmlValue(rawCap, replyTo.caption_entities || [], 0) : "";
+      const fullCap = `${bcHeader}\n\n${capHtml ? `<blockquote>${capHtml}</blockquote>\n\n` : ""}${bcFooter}`;
+      await bot.sendPhoto(chatId, replyTo.photo[replyTo.photo.length - 1].file_id, {
+        caption: fullCap, parse_mode: "HTML"
+      });
+    } else if (replyTo) {
+      await bot.sendMessage(chatId,
+        `<blockquote>ℹ️ Is type ke message (${replyTo.sticker ? "Sticker" : replyTo.video ? "Video" : replyTo.document ? "Document" : "Media"}) ke liye copyMessage use hoga — premium emoji header automatically nahi lagega.</blockquote>`,
+        { parse_mode: "HTML" }
+      );
+      await bot.copyMessage(chatId, msg.chat.id, replyTo.message_id);
+    } else {
+      const fullCaption =
+        `${bcHeader}\n\n` +
+        `<blockquote>${h(rawText)}</blockquote>\n\n` +
+        `${bcFooter}`;
+      await bot.sendPhoto(chatId, GIVEAWAY_IMAGE_URL, {
+        caption: fullCaption, parse_mode: "HTML"
+      });
+    }
+
+    const premiumCount = premiumEmojis.length;
+    await bot.sendMessage(chatId,
+      `✅ <b>Preview Complete!</b>\n\n` +
+      `<blockquote>` +
+      `◈ Premium Emojis  ▸  ${premiumCount > 0 ? `${premiumCount} stored ✅` : `❌ Koi nahi — /setpremiumemoji use karo`}\n` +
+      `◈ Recipients       ▸  ${[...botUsers.keys()].length} users + channels\n\n` +
+      `Broadcast bhejne ke liye → /broadcast</blockquote>`,
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [
+        [{ text: "📢 Send Now (Silent)", callback_data: "bc_preview_send:silent", style: "primary" }],
+        [{ text: "🔔 Send Now (Loud)", callback_data: "bc_preview_send:loud", style: "success" }],
+        [{ text: "❌ Cancel", callback_data: "bc_preview_send:cancel", style: "danger" }]
+      ]}}
+    );
+  } catch (e) {
+    await bot.sendMessage(chatId,
+      `❌ Preview error: <code>${h(e.message)}</code>`,
+      { parse_mode: "HTML" }
+    );
+  }
 });
 
 // /loud — LOUD broadcast with optional flags (-pin, -pinloud, -nobot, -user)
@@ -10103,24 +10224,30 @@ bot.onText(/\/setlogdest(?:\s+(\S+))?/, async (msg, match) => {
   if (!arg) {
     const currentDest = logDestId || ownerAdminId;
     const destType = logDestId
-      ? (String(logDestId).startsWith("-") ? "📢 Channel" : "👤 User")
+      ? (String(logDestId).startsWith("-") ? "📢 Channel/Group" : "👤 User")
       : "👑 Owner (Default)";
+    const isCustom = !!logDestId;
     return bot.sendMessage(chatId,
       `📡━━━━━━━━━━━━━━━━━━━━━━━━📡\n` +
       `  🔧  <b>LOG DESTINATION</b>\n` +
       `📡━━━━━━━━━━━━━━━━━━━━━━━━📡\n\n` +
       `<blockquote>` +
       `◈ Current Dest  ▸  <code>${currentDest}</code>\n` +
-      `◈ Type          ▸  ${destType}\n\n` +
-      `📌 <b>Usage:</b>\n` +
-      `Set user ID:  <code>/setlogdest 123456789</code>\n` +
-      `Set channel:  <code>/setlogdest -1001234567890</code>\n` +
-      `Reset to me:  <code>/setlogdest reset</code>\n\n` +
-      `⚠️ <b>Channel ke liye:</b> Bot ko us channel ka admin banana padega.\n` +
-      `✅ Private aur Public dono channels supported hain.` +
+      `◈ Type          ▸  ${destType}\n` +
+      `◈ Status        ▸  ${isCustom ? "🟢 Custom set" : "🔵 Using owner default"}\n\n` +
+      `📌 <b>Kaise change karein:</b>\n` +
+      `Kisi user pe:     <code>/setlogdest 123456789</code>\n` +
+      `Channel/Group pe: <code>/setlogdest -1001234567890</code>\n` +
+      `Apne paas reset:  <code>/setlogdest reset</code>\n\n` +
+      `⚠️ Channel ke liye bot ko admin banana padega.\n` +
+      `💡 Apna ID jaanne ke liye: @userinfobot` +
       `</blockquote>\n\n` +
       `✦ ─── <b>DRS NETWORK</b> ─── ✦`,
-      { parse_mode: "HTML" }
+      { parse_mode: "HTML", reply_markup: { inline_keyboard: [
+        [{ text: "🔄 Reset to Me (Owner)", callback_data: "logdest:reset", style: "danger" }],
+        [{ text: "📋 Copy Current ID", callback_data: `logdest:copy:${currentDest}`, style: "primary" }],
+        [{ text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }]
+      ]}}
     );
   }
 
