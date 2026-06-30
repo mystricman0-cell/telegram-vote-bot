@@ -171,6 +171,7 @@ let buttonTheme = "default"; // "default" | "red" | "blue" | "green"
 // ─── Auto Heartbeat System ───
 const botStartTime = Date.now();
 let heartbeatReportEnabled = true; // send report to owner every 3 min
+let unknownCmdAlertEnabled = true; // show alert for unknown commands
 const HEARTBEAT_PORT = process.env.PORT || 3000;
 
 function getUptimeStr() {
@@ -3423,6 +3424,18 @@ bot.on("callback_query", async (query) => {
   }
 
   // ─── Admin: Support Ticket — Resolved / Not Resolved ───
+  // ── Toggle unknown command alert ──
+  if (data === "toggle_unknowncmd") {
+    if (!isAdmin(userId)) return bot.answerCallbackQuery(query.id, { text: "❌ Admin only!", show_alert: true }).catch(() => {});
+    unknownCmdAlertEnabled = !unknownCmdAlertEnabled;
+    await bot.answerCallbackQuery(query.id, { text: unknownCmdAlertEnabled ? "✅ Unknown Command Alert: ON" : "🔕 Unknown Command Alert: OFF", show_alert: true }).catch(() => {});
+    await bot.editMessageReplyMarkup({ inline_keyboard: [[
+      { text: unknownCmdAlertEnabled ? "🔕 Turn OFF" : "✅ Turn ON", callback_data: "toggle_unknowncmd", style: unknownCmdAlertEnabled ? "danger" : "success" },
+      { text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }
+    ]]}, { chat_id: chatId, message_id: msgId }).catch(() => {});
+    return;
+  }
+
   // ── Log Destination inline buttons ──
   if (data.startsWith("logdest:")) {
     if (userId !== ownerAdminId) return bot.answerCallbackQuery(query.id, { text: "❌ Owner only!", show_alert: true }).catch(() => {});
@@ -9965,9 +9978,28 @@ const KNOWN_COMMANDS = new Set([
   "pushgithub","health",
   "about","version","uptime","rules","faq","terms","countdown","rank","invite","notify","refer","feedback",
   "autoclean","cloneui","resetui","memstats",
-  "setownerid",
-  "setlogdest"
+  "setownerid","setlogdest",
+  "heartbeat","toggleheartbeat",
+  "broadcastpreview","broadcaststats","clearbroadcaststats",
+  "setpremiumemoji","removepremiumemoji","listpremiumemoji","clearallpremiumemoji",
+  "setbuttontheme","theme","btntheme",
+  "toggleunknowncmd","unknowncmd"
 ]);
+
+// /toggleunknowncmd — Admin: Turn unknown command alert ON/OFF
+bot.onText(/\/toggleunknowncmd/, async (msg) => {
+  if (msg.chat.type !== "private" || !isAdmin(msg.from.id)) return;
+  unknownCmdAlertEnabled = !unknownCmdAlertEnabled;
+  await bot.sendMessage(msg.chat.id,
+    unknownCmdAlertEnabled
+      ? `✅ <b>Unknown Command Alert: ON</b>\n\n<blockquote>Ab users ko unknown commands pe error message dikehga.</blockquote>`
+      : `🔕 <b>Unknown Command Alert: OFF</b>\n\n<blockquote>Ab unknown commands silently ignore honge — koi message nahi aayega.\n\n<i>/toggleunknowncmd se wapas ON karo.</i></blockquote>`,
+    { parse_mode: "HTML", reply_markup: { inline_keyboard: [[
+      { text: unknownCmdAlertEnabled ? "🔕 Turn OFF" : "✅ Turn ON", callback_data: "toggle_unknowncmd", style: unknownCmdAlertEnabled ? "danger" : "success" },
+      { text: "🏠 Main Menu", callback_data: "main_menu", style: "primary" }
+    ]]}}
+  );
+});
 
 bot.on("message", async (msg) => {
   try {
@@ -9975,7 +10007,7 @@ bot.on("message", async (msg) => {
     if (!msg.text?.startsWith("/")) return;
     const cmd = msg.text.split(" ")[0].split("@")[0].slice(1).toLowerCase();
     if (KNOWN_COMMANDS.has(cmd)) return;
-    const userId = msg.from.id;
+    if (!unknownCmdAlertEnabled) return; // silently ignore if alert is OFF
     await bot.sendMessage(msg.chat.id,
       `❓━━━━━━━━━━━━━━━━━━━━━━❓\n   <b>ᴜɴᴋɴᴏᴡɴ ᴄᴏᴍᴍᴀɴᴅ</b>\n❓━━━━━━━━━━━━━━━━━━━━━━❓\n\n` +
       `<blockquote>◈ Command <code>/${cmd}</code> exist nahi karta.\n\n📖 Saare commands:\n/help — User commands\n\n💡 Koi problem ho toh /support karo.</blockquote>`,
